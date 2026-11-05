@@ -37,8 +37,15 @@ fn consume(character: i32, out: &mut Counts, linebytes: &mut usize, inword: &mut
     };
 };
 
-fn scan(fp: *c::FILE, out: &mut Counts, singlebyte_c: bool) bool = {
+fn scan(fp: *c::FILE, out: &mut Counts, singlebyte_c: bool, line_fast: bool,
+        chars: bool, debug: bool, backend_reported: &mut bool) bool = {
     out.lines = 0usize; out.words = 0usize; out.chars = 0usize; out.bytes = 0usize; out.maxline = 0usize;
+    if (debug && line_fast && !*backend_reported) {
+        let backend: i32 = stream::wcnewlinebackend();
+        if (backend == 2i32) { c::fprintf(c::stderr, "wc: using avx512 hardware support\n"); }
+        else if (backend == 1i32) { c::fprintf(c::stderr, "wc: using avx2 hardware support\n"); };
+        *backend_reported = true;
+    };
     let mut linebytes: usize = 0usize;
     let mut inword: bool = false;
     let mut pending: usize = 0usize;
@@ -51,6 +58,11 @@ fn scan(fp: *c::FILE, out: &mut Counts, singlebyte_c: bool) bool = {
         if (read_count < 0i64) { return false; };
         let n: usize = read_count as usize;
         out.bytes += n;
+        if (line_fast) {
+            out.lines += stream::wccountnewlines((&buf[0usize]) as *u8, n);
+            if (chars) { out.chars += n; };
+            continue;
+        };
         if (singlebyte_c) {
             for (let i in 0..n) {
                 let b: u8 = buf[i];
@@ -226,6 +238,7 @@ export fn run(start: usize, argc: usize) i32 = {
     let mut chars: bool = false;
     let mut bytes: bool = false;
     let mut maxline: bool = false;
+    let mut debug: bool = false;
     let mut total_mode: str = "auto";
     let mut files0_from: str = "";
     let mut files0_given: bool = false;
@@ -301,9 +314,9 @@ export fn run(start: usize, argc: usize) i32 = {
             else if (longmatch(key, "--chars")) { chars = true; }
             else if (longmatch(key, "--bytes")) { bytes = true; }
             else if (longmatch(key, "--max-line-length")) { maxline = true; }
-            else if (longmatch(key, "--debug")) { }
+            else if (longmatch(key, "--debug")) { debug = true; }
             else if (longmatch(key, "--help")) { help(); if (!stream::finishoutputbrief("wc")) { return 1; }; return 0; }
-            else if (longmatch(key, "--version")) { io::println("wc (zovutils) 0.1.58"); if (!stream::finishoutputbrief("wc")) { return 1; }; return 0; };
+            else if (longmatch(key, "--version")) { io::println("wc (zovutils) 0.1.59"); if (!stream::finishoutputbrief("wc")) { return 1; }; return 0; };
             i += 1usize; continue;
         };
         if (arg.len >= 2usize && arg.data[1usize] != 45u8) {
@@ -320,6 +333,8 @@ export fn run(start: usize, argc: usize) i32 = {
         i += 1usize;
     };
     if (!lines && !words && !chars && !bytes && !maxline) { lines = true; words = true; bytes = true; };
+    let line_fast: bool = lines && !words && !maxline && (!chars || singlebyte_c);
+    let mut backend_reported: bool = false;
     let mut file_list: String = String::new();
     if (files0_given) {
         if (files.len() > 0usize) {
@@ -370,7 +385,7 @@ export fn run(start: usize, argc: usize) i32 = {
     if (nfiles == 0usize) {
         let seekable: bool = stream::regularfile(c::stdin);
         let mut v: Counts = Counts{ lines = 0usize, words = 0usize, chars = 0usize, bytes = 0usize, maxline = 0usize };
-        if (!scan(c::stdin, &mut v, singlebyte_c)) { stream::errorprefix("wc", "standard input"); status = 1; };
+        if (!scan(c::stdin, &mut v, singlebyte_c, line_fast, chars, debug, &mut backend_reported)) { stream::errorprefix("wc", "standard input"); status = 1; };
         let mut width: usize = 1usize;
         if (seekable) {
             if (lines && digits(v.lines) > width) { width = digits(v.lines); };
@@ -405,7 +420,7 @@ export fn run(start: usize, argc: usize) i32 = {
                 fp = raw!; owned = true;
             };
             let mut v: Counts = Counts{ lines = 0usize, words = 0usize, chars = 0usize, bytes = 0usize, maxline = 0usize };
-            if (scan(fp, &mut v, singlebyte_c)) {
+            if (scan(fp, &mut v, singlebyte_c, line_fast, chars, debug, &mut backend_reported)) {
                 counts.push(v); names.push(path);
                 total.lines += v.lines; total.words += v.words; total.chars += v.chars; total.bytes += v.bytes;
                 if (v.maxline > total.maxline) { total.maxline = v.maxline; };

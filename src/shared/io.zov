@@ -3,6 +3,7 @@ use <platform_errno.h> as platform_errno;
 use <sys/stat.h> as sysc;
 use <unistd.h> as posix;
 use <platform_stat.h> as platform_stat;
+use <wc_backend.h> as wc_backend;
 
 export type StreamError = !i32;
 
@@ -26,6 +27,14 @@ export fn readonce(fp: *c::FILE, buf: *u8, cap: usize) i64 = {
 
 export fn regularfile(fp: *c::FILE) bool = {
     return platform_stat::zov_file_is_regular(c::fileno(fp)) != 0;
+};
+
+export fn wcnewlinebackend() i32 = {
+    return wc_backend::zov_wc_newline_backend();
+};
+
+export fn wccountnewlines(buf: *u8, len: usize) usize = {
+    return wc_backend::zov_wc_count_newlines(buf, len);
 };
 
 // Use read(2) for commands that must forward a partial pipe read immediately.
