@@ -40,3 +40,10 @@ def run(s: Suite) -> None:
                             options.append(flag)
                     args = [*options, fixture]
                 s.case(utility, args)
+
+    suffix_fixture = fixtures[0]
+    for suffix in [*(chr(codepoint) for codepoint in range(1, 128)), "é"]:
+        value = "1" + suffix
+        for utility in ("head", "tail"):
+            for flag in ("-n", "-c"):
+                s.case(utility, [flag, value, suffix_fixture])

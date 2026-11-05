@@ -155,6 +155,26 @@ export fn printquoted(fp: *c::FILE, text: str, force: bool) void = {
     shellmixed(fp, text);
 };
 
+export fn printquotedargument(fp: *c::FILE, text: str) void = {
+    c::fputc(39, fp);
+    for (let i in 0..text.len) {
+        let b: u8 = text.data[i];
+        if (b == 39u8 || b == 92u8) {
+            c::fputc(92, fp);
+            c::fputc(b as i32, fp);
+        } else if (b == 7u8) { c::fputs("\\a", fp); }
+        else if (b == 8u8) { c::fputs("\\b", fp); }
+        else if (b == 9u8) { c::fputs("\\t", fp); }
+        else if (b == 10u8) { c::fputs("\\n", fp); }
+        else if (b == 11u8) { c::fputs("\\v", fp); }
+        else if (b == 12u8) { c::fputs("\\f", fp); }
+        else if (b == 13u8) { c::fputs("\\r", fp); }
+        else if (b < 32u8 || b >= 127u8) { c::fprintf(fp, "\\%03o", b as i32); }
+        else { c::fputc(b as i32, fp); };
+    };
+    c::fputc(39, fp);
+};
+
 export fn outputfailed() bool = {
     return c::ferror(c::stdout) != 0;
 };

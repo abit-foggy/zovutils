@@ -10,7 +10,9 @@ fn parsecount(text: str) (numparse::ByteCount | ParseError) = {
 };
 
 fn invalidnumber(unit: str, text: str) void = {
-    c::fprintf(c::stderr, "head: invalid number of %s: '%s'\n", unit, text);
+    c::fprintf(c::stderr, "head: invalid number of %s: ", unit);
+    stream::printquotedargument(c::stderr, text);
+    c::fputc(10, c::stderr);
 };
 
 fn badshort(opt: u8) void = {
@@ -225,7 +227,7 @@ export fn run(start: usize, argc: usize) i32 = {
             };
             if (longmatch(key, "--version")) {
                 if (has_equal) { badargument("--version"); return 1; };
-                io::println("head (zovutils) 0.1.36"); if (!stream::finishoutput("head")) { return 1; }; return 0;
+                io::println("head (zovutils) 0.1.37"); if (!stream::finishoutput("head")) { return 1; }; return 0;
             };
             badlong(arg); return 1;
         };
