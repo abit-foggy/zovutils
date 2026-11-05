@@ -11,6 +11,7 @@ def run(s: Suite) -> None:
     binary = s.fixture("wc-binary", b"a\0b\n\xffz")
     tabs = s.fixture("wc-tabs", b"a\tb\n")
     controls = s.fixture("wc-controls", b"a\rb\v\f\x7f\n")
+    invalid_multibyte = s.fixture("wc-invalid-multibyte", b"\xff\n")
     large = s.fixture("wc-large", b"streaming-row\n" * 25000)
     missing = s.path("wc-missing")
     files0 = s.fixture("wc-files0", (text + "\0" + binary + "\0").encode())
@@ -21,7 +22,7 @@ def run(s: Suite) -> None:
     for mask in range(1 << 5):
         flags = "".join(flag for bit, flag in enumerate("lwmcL") if mask & (1 << bit))
         args = (["-" + flags] if flags else []) + [text]
-        for fixture in (text, binary, tabs, controls):
+        for fixture in (text, binary, tabs, controls, invalid_multibyte):
             s.case("wc", [*args[:-1], fixture])
 
     for option in ("--lines", "--words", "--chars", "--bytes", "--max-line-length", "--total", "--files0-from"):
