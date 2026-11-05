@@ -6,13 +6,14 @@ The Python parity suite is split into shared support and command-specific
 scripts under `tests/parity/`. It requires a directory of GNU 9.11 executables
 in `GNU_COREUTILS_DIR` and checks the oracle version before running cases.
 
-Parity tests set `LC_ALL=C`, `TZ=UTC0`, and `TERM=dumb` so byte, time, and help
-output is stable. Each case compares standard output, standard error, and exit
-status. Utility `--version` output identifies zovutils and its package version;
-it is checked separately from GNU output. Fixtures cover empty input, binary
-bytes, missing final newlines, multiple files, missing files, and large
-streamed inputs. Platform-dependent cases will run on the same host for both
-implementations.
+Base parity tests set `LC_ALL=C`, `TZ=UTC0`, and `TERM=dumb` so byte, time, and
+help output is stable. `wc` also checks character counts, whitespace, invalid
+sequences, and display widths under an installed UTF-8 locale. Each case
+compares standard output, standard error, and exit status. Utility `--version`
+output identifies zovutils and its package version; it is checked separately
+from GNU output. Fixtures cover empty input, binary bytes, missing final
+newlines, multiple files, missing files, and large streamed inputs.
+Platform-dependent cases run both implementations on the same host.
 
 `tail --debug` reports the zovutils polling backend. GNU may report its native
 notification backend on systems where it is available, so this diagnostic is
