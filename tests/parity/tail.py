@@ -18,10 +18,17 @@ def _follow(
     rotation: bool = False,
     initial_missing: bool = False,
     truncation: bool = False,
+    multi_file: bool = False,
+    quiet: bool = False,
+    verbose: bool = False,
 ) -> None:
     path = s.path(f"tail-follow-{mode}")
     if not initial_missing:
         s.fixture(f"tail-follow-{mode}", b"initial\n")
+    paths = [path]
+    if multi_file:
+        second_path = s.fixture(f"tail-follow-{mode}-second", b"second\n")
+        paths.append(second_path)
     zov_out = open(s.path(f"{mode}-zov.out"), "wb")
     gnu_out = open(s.path(f"{mode}-gnu.out"), "wb")
     zov_err_file = open(s.path(f"{mode}-zov.err"), "wb")
@@ -38,6 +45,10 @@ def _follow(
         args = ["--fo=name", "--sleep-interval=0.1", "--max-unchanged-stats=1"]
     else:
         args = ["--follow=name", "--sleep-interval=0.1", "--max-unchanged-stats=1"]
+    if quiet:
+        args.append("--quiet")
+    if verbose:
+        args.append("--verbose")
     if initial_missing:
         args.append("--retry")
     child: subprocess.Popen[bytes] | None = None
@@ -48,11 +59,20 @@ def _follow(
             child = subprocess.Popen(["python3", "-c", "import time; time.sleep(0.7)"])
             args.extend(["--pid", str(child.pid), "-s", "0.1"])
         zov = subprocess.Popen(
-            [str(s.zovutils), "tail", *args, path], stdout=zov_out, stderr=zov_err_file, env=s.env
+            [str(s.zovutils), "tail", *args, *paths], stdout=zov_out, stderr=zov_err_file, env=s.env
         )
         gnu = subprocess.Popen(
-            [str(s.gnu_dir / "tail"), *args, path], stdout=gnu_out, stderr=gnu_err_file, env=s.env
+            [str(s.gnu_dir / "tail"), *args, *paths], stdout=gnu_out, stderr=gnu_err_file, env=s.env
         )
+        has_headers = verbose or (multi_file and not quiet)
+        if multi_file and has_headers:
+            initial_output = f"==> {path} <==\ninitial\n\n==> {paths[-1]} <==\nsecond\n".encode()
+        elif multi_file:
+            initial_output = b"initial\nsecond\n"
+        elif verbose:
+            initial_output = f"==> {path} <==\ninitial\n".encode()
+        else:
+            initial_output = b"initial\n"
         deadline = time.monotonic() + 5
         while time.monotonic() < deadline:
             zov_out.flush()
@@ -62,7 +82,7 @@ def _follow(
             if initial_missing:
                 ready = all(Path(s.path(f"{mode}-{who}.err")).read_bytes().startswith(b"tail: cannot open") for who in ("zov", "gnu"))
             else:
-                ready = all(Path(s.path(f"{mode}-{who}.out")).read_bytes().startswith(b"initial\n") for who in ("zov", "gnu"))
+                ready = all(Path(s.path(f"{mode}-{who}.out")).read_bytes().startswith(initial_output) for who in ("zov", "gnu"))
             if ready:
                 break
             time.sleep(0.02)
@@ -84,6 +104,10 @@ def _follow(
         else:
             with open(path, "ab") as fixture:
                 fixture.write(b"appended\n")
+        if multi_file:
+            time.sleep(0.25)
+            with open(paths[1], "ab") as fixture:
+                fixture.write(b"appended-second\n")
         if not pid_bound:
             time.sleep(1.2 if mode == "legacy-follow" else 0.4)
             zov.terminate()
@@ -352,6 +376,11 @@ def run(s: Suite) -> None:
     s.permission_denied_case("tail", ["-n", "1", unreadable, lines], unreadable)
     _follow(s, "descriptor")
     _follow(s, "descriptor-truncate", truncation=True)
+    _follow(s, "descriptor-multi", multi_file=True)
+    _follow(s, "name-multi", multi_file=True)
+    _follow(s, "quiet-multi", multi_file=True, quiet=True)
+    _follow(s, "verbose-single", verbose=True)
+    _follow(s, "name-multi-retry", initial_missing=True, multi_file=True)
     _follow(s, "legacy-follow")
     _follow(s, "descriptor-long")
     _follow(s, "name")

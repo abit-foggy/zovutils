@@ -206,6 +206,19 @@ fn help() void = {
     io::print("or available locally via: info '(coreutils) tail invocation'\n");
 };
 
+fn printheader(path: str, index: usize, printed: &mut bool, last_index: &mut usize) void = {
+    if (*printed) { io::println(""); };
+    let mut label: str = path;
+    if (path == "-") { label = "standard input"; };
+    c::fprintf(c::stdout, "==> %s <==\n", label);
+    *printed = true;
+    *last_index = index;
+};
+
+fn printfollowheader(path: str, index: usize, printed: &mut bool, last_index: &mut usize) void = {
+    if (*last_index != index) { printheader(path, index, printed, last_index); };
+};
+
 fn interval(text: str) (f64 | ParseError) = {
     if (text.len == 0usize) { return ParseError; };
     let start: *i8 = text.data as *i8;
@@ -384,7 +397,7 @@ export fn run(start: usize, argc: usize) i32 = {
             };
             if (longmatch(key, "--version")) {
                 if (has_equal) { badargument("--version"); return 1; };
-                io::println("tail (zovutils) 0.1.39"); if (!stream::finishoutput("tail")) { return 1; }; return 0;
+                io::println("tail (zovutils) 0.1.41"); if (!stream::finishoutput("tail")) { return 1; }; return 0;
             };
             badlong(arg); return 1;
         };
@@ -494,8 +507,10 @@ export fn run(start: usize, argc: usize) i32 = {
     if (files.len() == 0usize) { files.push("-"); };
     if (debug && follow) { c::fprintf(c::stderr, "tail: using polling method\n"); };
     let headers: bool = verbose || (!quiet && files.len() > 1usize);
+    let follow_headers: bool = !quiet && files.len() > 1usize;
     let mut status: i32 = 0;
     let mut printed: bool = false;
+    let mut last_header_index: usize = ~0usize;
     for (let k in 0..files.len()) {
         let path: str = files.get(k);
         let mut fp: *c::FILE = c::stdin;
@@ -510,10 +525,7 @@ export fn run(start: usize, argc: usize) i32 = {
             fp = raw!; owned = true;
         };
         if (headers && follow) {
-            if (printed) { io::println(""); };
-            let mut label: str = path;
-            if (path == "-") { label = "standard input"; };
-            c::fprintf(c::stdout, "==> %s <==\n", label); printed = true;
+            printheader(path, k, &mut printed, &mut last_header_index);
         };
         let mut stage: nullable *c::FILE = null;
         let mut dest: *c::FILE = c::stdout;
@@ -539,10 +551,7 @@ export fn run(start: usize, argc: usize) i32 = {
             else {
                 let outsize: i64 = c::ftell(output);
                 if (count > 0usize || plus) {
-                    if (printed) { io::println(""); };
-                    let mut label: str = path;
-                    if (path == "-") { label = "standard input"; };
-                    c::fprintf(c::stdout, "==> %s <==\n", label); printed = true;
+                    printheader(path, k, &mut printed, &mut last_header_index);
                 };
                 if (outsize > 0i64) {
                     if (!copyfrom(output, 0i64, c::stdout)) { status = 1; };
@@ -578,9 +587,11 @@ export fn run(start: usize, argc: usize) i32 = {
                         let next: *c::FILE = raw!;
                         c::fprintf(c::stderr, "tail: "); stream::printquoted(c::stderr, path, true);
                         c::fprintf(c::stderr, " has appeared;  following new file\n");
+                        let mut output_started: bool = false;
                         while (true) {
                             let n: usize = stream::readbytes(next, ((&buf[0usize]) as *u8), 65536usize);
                             if (n == 0usize) { break; };
+                            if (follow_headers && !output_started) { printfollowheader(path, k, &mut printed, &mut last_header_index); output_started = true; };
                             if (!stream::writebytes(c::stdout, ((&buf[0usize]) as *u8), n)) { follow_write_failed = true; status = 1; break; };
                         };
                         if (!follow_write_failed && !stream::finishoutput("tail")) { follow_write_failed = true; status = 1; };
@@ -605,6 +616,7 @@ export fn run(start: usize, argc: usize) i32 = {
                             c::fprintf(c::stderr, " has been replaced;  following new file\n");
                         };
                         if (end > begin && c::fseek(next, begin, c::SEEK_SET) == 0) {
+                            if (follow_headers) { printfollowheader(path, k, &mut printed, &mut last_header_index); };
                             while (true) {
                                 let n: usize = stream::readbytes(next, ((&buf[0usize]) as *u8), 65536usize);
                                 if (n == 0usize) { break; };
@@ -631,6 +643,7 @@ export fn run(start: usize, argc: usize) i32 = {
                     };
                     let n: usize = stream::readbytes(fp, ((&buf[0usize]) as *u8), 65536usize);
                     if (n > 0usize) {
+                        if (follow_headers) { printfollowheader(path, k, &mut printed, &mut last_header_index); };
                         stream::writebytes(c::stdout, ((&buf[0usize]) as *u8), n);
                         if (!stream::finishoutput("tail")) { follow_write_failed = true; status = 1; break; };
                     }
