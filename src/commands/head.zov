@@ -227,7 +227,7 @@ export fn run(start: usize, argc: usize) i32 = {
             };
             if (longmatch(key, "--version")) {
                 if (has_equal) { badargument("--version"); return 1; };
-                io::println("head (zovutils) 0.1.46"); if (!stream::finishoutput("head")) { return 1; }; return 0;
+                io::println("head (zovutils) 0.1.47"); if (!stream::finishoutput("head")) { return 1; }; return 0;
             };
             badlong(arg); return 1;
         };
@@ -339,9 +339,14 @@ export fn run(start: usize, argc: usize) i32 = {
         if (negative) { ok = copyexclude(fp, count, bytes, delim); }
         else {
             let mut input_limit: i64 = -1i64;
-            if (stream::sameopenfile(fp, c::stdout) && c::fseek(fp, 0i64, c::SEEK_END) == 0) {
-                input_limit = c::ftell(fp);
-                if (input_limit >= 0i64 && c::fseek(fp, 0i64, c::SEEK_SET) != 0) { input_limit = -1i64; };
+            if (stream::sameopenfile(fp, c::stdout)) {
+                let position: i64 = c::ftell(fp);
+                if (position >= 0i64 && c::fseek(fp, 0i64, c::SEEK_END) == 0) {
+                    let end: i64 = c::ftell(fp);
+                    if (end >= position) { input_limit = end - position; }
+                    else { input_limit = 0i64; };
+                    if (c::fseek(fp, position, c::SEEK_SET) != 0) { input_limit = -1i64; };
+                };
             };
             ok = copyhead(fp, count, bytes, delim, input_limit);
         };

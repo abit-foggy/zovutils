@@ -243,3 +243,32 @@ def run(s: Suite) -> None:
     s.count += 1
     if duplicate_results[0] != duplicate_results[1]:
         raise AssertionError(f"head duplicate same-file output differs: {duplicate_results!r}")
+
+    for input_offset in (0, 2, 6):
+        for output_offset in (0, 2, 6):
+            outcomes = []
+            for command in (
+                [str(s.zovutils), "head", "-c", "2", "-"],
+                [str(s.gnu_dir / "head"), "-c", "2", "-"],
+            ):
+                with open(same_path, "wb") as fixture:
+                    fixture.write(b"abcdef")
+                with open(same_path, "rb") as source, open(same_path, "r+b") as output:
+                    source.seek(input_offset)
+                    output.seek(output_offset)
+                    proc = subprocess.run(
+                        command,
+                        stdin=source,
+                        stdout=output,
+                        stderr=subprocess.PIPE,
+                        env=s.env,
+                        timeout=5,
+                        check=False,
+                    )
+                outcomes.append((proc.returncode, proc.stderr, open(same_path, "rb").read()))
+            s.count += 1
+            if outcomes[0] != outcomes[1]:
+                raise AssertionError(
+                    f"head same-file stdin/output offsets differ: "
+                    f"input={input_offset} output={output_offset} outcomes={outcomes!r}"
+                )
