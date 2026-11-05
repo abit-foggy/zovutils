@@ -23,6 +23,17 @@ def run(s: Suite) -> None:
     all_bytes = s.fixture("wc-all-bytes", bytes(range(256)))
     large = s.fixture("wc-large", b"streaming-row\n" * 25000)
     large_count = s.fixture("wc-large-count", b"x" * 10000000)
+    sparse = s.path("wc-sparse-count")
+    try:
+        with open(sparse, "wb") as sparse_file:
+            sparse_file.truncate(2 * (1024**6))
+    except (OSError, OverflowError):
+        sparse = ""
+    if sparse:
+        s.case("wc", ["-c", sparse])
+        sparse_inputs = [sparse] * 8
+        s.case("wc", ["--total=only", "-c", *sparse_inputs])
+        s.case("wc", ["--total=never", "-c", *sparse_inputs])
     wide_bytes_narrow_line = s.fixture("wc-wide-bytes-narrow-line", (b"x" * 50 + b"\n") * 3)
     missing = s.path("wc-missing")
     files0 = s.fixture("wc-files0", (text + "\0" + binary + "\0").encode())
@@ -263,6 +274,33 @@ def run(s: Suite) -> None:
         if args == ["--files0-from=-"]:
             stdin = (text + "\0" + binary + "\0").encode()
         s.case("wc", args, stdin=stdin)
+
+    regular_files0_stdin = s.fixture(
+        "wc-files0-regular-stdin",
+        os.fsencode(text) + b"\0" + os.fsencode(binary) + b"\0",
+    )
+    regular_files0_results = []
+    for command in (
+        [str(s.zovutils), "wc", "--files0-from=-"],
+        [str(s.gnu_dir / "wc"), "--files0-from=-"],
+    ):
+        with open(regular_files0_stdin, "rb") as source:
+            result = subprocess.run(
+                command,
+                stdin=source,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                env=s.env,
+                timeout=5,
+                check=False,
+            )
+        regular_files0_results.append((result.returncode, result.stdout, result.stderr))
+    s.count += 1
+    if regular_files0_results[0] != regular_files0_results[1]:
+        raise AssertionError(
+            f"wc files0-from regular stdin formatting differs: {regular_files0_results!r}"
+        )
+
     for args, stdin in (
         (["-"], b"one two\n"),
         (["-lc", "-"], b"one two\n"),

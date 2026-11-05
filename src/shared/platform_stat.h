@@ -19,4 +19,17 @@ static inline int zov_file_is_append(int descriptor) {
     return flags >= 0 && (flags & O_APPEND) != 0;
 }
 
+static inline long long zov_regular_bytes_remaining(int descriptor) {
+    struct stat info;
+    if (fstat(descriptor, &info) != 0 || !S_ISREG(info.st_mode)
+        || info.st_size <= info.st_blksize)
+        return -1;
+    off_t position = lseek(descriptor, 0, SEEK_CUR);
+    if (position < 0)
+        return -1;
+    if (position >= info.st_size)
+        return 0;
+    return (long long) (info.st_size - position);
+}
+
 #endif

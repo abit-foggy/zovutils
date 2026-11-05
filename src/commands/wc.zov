@@ -145,6 +145,17 @@ fn digits(n: usize) usize = {
     return width;
 };
 
+fn saturating_add(target: &mut usize, value: usize) bool = {
+    let maximum: usize = ~0usize;
+    if (maximum - *target < value) { *target = maximum; return true; };
+    *target += value;
+    return false;
+};
+
+fn total_overflow(unit: str) void = {
+    c::fprintf(c::stderr, "wc: total %s: Value too large for defined data type\n", unit);
+};
+
 fn columns(lines: bool, words: bool, chars: bool, bytes: bool, maxline: bool) usize = {
     let mut count: usize = 0usize;
     if (lines) { count += 1usize; };
@@ -332,7 +343,7 @@ export fn run(start: usize, argc: usize) i32 = {
             else if (longmatch(key, "--max-line-length")) { maxline = true; }
             else if (longmatch(key, "--debug")) { debug = true; }
             else if (longmatch(key, "--help")) { help(); if (!stream::finishoutputbrief("wc")) { return 1; }; return 0; }
-            else if (longmatch(key, "--version")) { io::println("wc (zovutils) 0.1.83"); if (!stream::finishoutputbrief("wc")) { return 1; }; return 0; };
+            else if (longmatch(key, "--version")) { io::println("wc (zovutils) 0.1.85"); if (!stream::finishoutputbrief("wc")) { return 1; }; return 0; };
             i += 1usize; continue;
         };
         if (arg.len >= 2usize && arg.data[1usize] != 45u8) {
@@ -412,6 +423,10 @@ export fn run(start: usize, argc: usize) i32 = {
 
     let mut total: Counts = Counts{ lines = 0usize, words = 0usize, chars = 0usize, bytes = 0usize, maxline = 0usize };
     let mut status: i32 = 0;
+    let mut total_lines_overflow: bool = false;
+    let mut total_words_overflow: bool = false;
+    let mut total_chars_overflow: bool = false;
+    let mut total_bytes_overflow: bool = false;
     if (files0_invalid) { status = 1; };
     let mut counts = vec::new[Counts]();
     defer counts.free();
@@ -429,7 +444,13 @@ export fn run(start: usize, argc: usize) i32 = {
     if (nfiles == 0usize) {
         let seekable: bool = stream::regularfile(c::stdin);
         let mut v: Counts = Counts{ lines = 0usize, words = 0usize, chars = 0usize, bytes = 0usize, maxline = 0usize };
-        if (!scan(c::stdin, &mut v, singlebyte_c, line_fast, chars, debug, &mut backend_reported)) { stream::errorprefix("wc", "standard input"); status = 1; };
+        let mut scanned: bool = true;
+        if (bytes && !lines && !words && !chars && !maxline) {
+            let remaining: i64 = stream::regularbytesremaining(c::stdin);
+            if (remaining >= 0i64) { v.bytes = remaining as usize; }
+            else { scanned = scan(c::stdin, &mut v, singlebyte_c, line_fast, chars, debug, &mut backend_reported); };
+        } else { scanned = scan(c::stdin, &mut v, singlebyte_c, line_fast, chars, debug, &mut backend_reported); };
+        if (!scanned) { stream::errorprefix("wc", "standard input"); status = 1; };
         let mut width: usize = 1usize;
         if (seekable) {
             if (lines && digits(v.lines) > width) { width = digits(v.lines); };
@@ -473,9 +494,18 @@ export fn run(start: usize, argc: usize) i32 = {
                 fp = raw!; owned = true;
             };
             let mut v: Counts = Counts{ lines = 0usize, words = 0usize, chars = 0usize, bytes = 0usize, maxline = 0usize };
-            if (scan(fp, &mut v, singlebyte_c, line_fast, chars, debug, &mut backend_reported)) {
+            let mut scanned: bool = true;
+            if (bytes && !lines && !words && !chars && !maxline) {
+                let remaining: i64 = stream::regularbytesremaining(fp);
+                if (remaining >= 0i64) { v.bytes = remaining as usize; }
+                else { scanned = scan(fp, &mut v, singlebyte_c, line_fast, chars, debug, &mut backend_reported); };
+            } else { scanned = scan(fp, &mut v, singlebyte_c, line_fast, chars, debug, &mut backend_reported); };
+            if (scanned) {
                 counts.push(v); names.push(path);
-                total.lines += v.lines; total.words += v.words; total.chars += v.chars; total.bytes += v.bytes;
+                if (saturating_add(&mut total.lines, v.lines)) { total_lines_overflow = true; };
+                if (saturating_add(&mut total.words, v.words)) { total_words_overflow = true; };
+                if (saturating_add(&mut total.chars, v.chars)) { total_chars_overflow = true; };
+                if (saturating_add(&mut total.bytes, v.bytes)) { total_bytes_overflow = true; };
                 if (v.maxline > total.maxline) { total.maxline = v.maxline; };
             } else {
                 if (path == "-") { stream::errorprefix("wc", "standard input"); }
@@ -508,7 +538,7 @@ export fn run(start: usize, argc: usize) i32 = {
             if ((columns(lines, words, chars, bytes, maxline) > 1usize || total_operands > 1usize) && digits(total.bytes) > width) { width = digits(total.bytes); };
         };
         if (stdin_operand && !stdin_seekable && (total_operands > 1usize || columns(lines, words, chars, bytes, maxline) > 1usize) && width < 7usize) { width = 7usize; };
-        if (files0_given && files0_from == "-") { width = 1usize; };
+        if (files0_given && files0_from == "-" && !stream::regularfile(c::stdin)) { width = 1usize; };
         if (total_mode == "only") { width = 1usize; };
         if (total_mode != "only") {
             for (let k in 0..counts.len()) { print_counts(counts.get(k), lines, words, chars, bytes, maxline, names.get(k), true, width); };
@@ -518,6 +548,10 @@ export fn run(start: usize, argc: usize) i32 = {
             let mut total_hasname: bool = true;
             if (total_mode == "only") { total_name = ""; total_hasname = false; };
             print_counts(total, lines, words, chars, bytes, maxline, total_name, total_hasname, width);
+            if (lines && total_lines_overflow) { total_overflow("lines"); status = 1; };
+            if (words && total_words_overflow) { total_overflow("words"); status = 1; };
+            if (chars && total_chars_overflow) { total_overflow("characters"); status = 1; };
+            if (bytes && total_bytes_overflow) { total_overflow("bytes"); status = 1; };
         };
     };
     if (!stream::finishoutput("wc")) { status = 1; };

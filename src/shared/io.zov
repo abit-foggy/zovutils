@@ -37,6 +37,10 @@ export fn appendfile(fp: *c::FILE) bool = {
     return platform_stat::zov_file_is_append(c::fileno(fp)) != 0;
 };
 
+export fn regularbytesremaining(fp: *c::FILE) i64 = {
+    return platform_stat::zov_regular_bytes_remaining(c::fileno(fp));
+};
+
 export fn wcnewlinebackend() i32 = {
     return wc_backend::zov_wc_newline_backend();
 };
