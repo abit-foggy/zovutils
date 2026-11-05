@@ -5,9 +5,16 @@ from __future__ import annotations
 import subprocess
 import time
 import os
+import resource
+import signal
 from pathlib import Path
 
 from support import ParityFailure, Suite
+
+
+def _limit_output_file() -> None:
+    resource.setrlimit(resource.RLIMIT_FSIZE, (65536, 65536))
+    signal.signal(signal.SIGXFSZ, signal.SIG_IGN)
 
 
 def _follow(
@@ -376,6 +383,68 @@ def run(s: Suite) -> None:
     s.case("tail", [lines, "-", "-"], stdin=b"stdin is consumed once\n")
     s.case("tail", ["-c", "4"], stdin=b"a\0b\n\xff")
     s.permission_denied_case("tail", ["-n", "1", unreadable, lines], unreadable)
+
+    same_path = s.path("tail-same-file")
+    same_file_options = ([], ["-c", "2"], ["-c", "+2"], ["-c", "-2"], ["-n", "1"], ["-n", "+1"], ["-n", "-1"], ["-z", "-n", "1"])
+    for opts in same_file_options:
+        for offset in (0, 2, 6):
+            outcomes = []
+            for command in (
+                [str(s.zovutils), "tail", *opts, "-"],
+                [str(s.gnu_dir / "tail"), *opts, "-"],
+            ):
+                with open(same_path, "wb") as fixture:
+                    fixture.write(b"a\nb\nc\n")
+                with open(same_path, "r+b") as stream:
+                    stream.seek(offset)
+                    proc = subprocess.run(
+                        command,
+                        stdin=stream,
+                        stdout=stream,
+                        stderr=subprocess.PIPE,
+                        env=s.env,
+                        timeout=5,
+                        check=False,
+                        preexec_fn=_limit_output_file,
+                    )
+                outcomes.append((proc.returncode, proc.stderr, open(same_path, "rb").read()))
+            s.count += 1
+            if outcomes[0] != outcomes[1]:
+                raise AssertionError(
+                    f"tail shared-descriptor behavior differs: "
+                    f"options={opts!r} offset={offset}: {outcomes!r}"
+                )
+
+        for input_offset in (0, 2, 6):
+            for output_offset in (0, 2, 6):
+                outcomes = []
+                for command in (
+                    [str(s.zovutils), "tail", *opts, "-"],
+                    [str(s.gnu_dir / "tail"), *opts, "-"],
+                ):
+                    with open(same_path, "wb") as fixture:
+                        fixture.write(b"a\nb\nc\n")
+                    with open(same_path, "rb") as source, open(same_path, "r+b") as output:
+                        source.seek(input_offset)
+                        output.seek(output_offset)
+                        proc = subprocess.run(
+                            command,
+                            stdin=source,
+                            stdout=output,
+                            stderr=subprocess.PIPE,
+                            env=s.env,
+                            timeout=5,
+                            check=False,
+                            preexec_fn=_limit_output_file,
+                        )
+                    outcomes.append((proc.returncode, proc.stderr, open(same_path, "rb").read()))
+                s.count += 1
+                if outcomes[0] != outcomes[1]:
+                    raise AssertionError(
+                        f"tail same-file input/output offsets differ: "
+                        f"options={opts!r} input={input_offset} output={output_offset}: {outcomes!r}"
+                    )
+
     _follow(s, "descriptor")
     _follow(s, "descriptor-truncate", truncation=True)
     _follow(s, "descriptor-multi", multi_file=True)
