@@ -2,11 +2,13 @@
 
 import os
 import random
+import re
 import resource
 import select
 import signal
 import subprocess
 import sys
+from pathlib import Path
 
 from support import Suite
 
@@ -189,6 +191,25 @@ def run(s: Suite) -> None:
     s.case("cat", [], stdin=b"stdin\0bytes\n")
     s.case("cat", ["-", "-"], stdin=b"stdin is consumed once\n")
     s.permission_denied_case("cat", [unreadable, text], unreadable)
+
+    proc_cpuinfo = Path("/proc/cpuinfo")
+    if sys.platform == "linux" and proc_cpuinfo.is_file():
+        normalized = []
+        for command in (
+            [str(s.zovutils), "cat"],
+            [str(s.gnu_dir / "cat")],
+        ):
+            plain = s._run([*command, str(proc_cpuinfo)], b"")
+            visible = s._run([*command, "-E", str(proc_cpuinfo)], b"")
+            if plain[0] != 0 or visible[0] != 0 or plain[2] or visible[2]:
+                raise AssertionError(
+                    f"cat /proc/cpuinfo failed: plain={plain!r} visible={visible!r}"
+                )
+            normalize = lambda data: re.sub(rb"[0-9]+", b"D", data).replace(b"$", b"")
+            normalized.append((normalize(plain[1]), normalize(visible[1])))
+        s.count += 1
+        if normalized[0] != normalized[1] or normalized[0][0] != normalized[0][1]:
+            raise AssertionError(f"cat -E /proc/cpuinfo differs from cat: {normalized!r}")
 
     # Force the first stdin read to return EINTR. GNU retries this transient
     # error, so cat must resume reading and preserve the input bytes.
