@@ -1,8 +1,6 @@
 """Parity cases for cat."""
 
 from support import Suite
-from pathlib import Path
-import re
 
 
 def run(s: Suite) -> None:
@@ -118,11 +116,4 @@ def run(s: Suite) -> None:
     if zov != gnu:
         raise AssertionError("cat argv[0] symlink dispatch differs from GNU")
 
-    package = Path(__file__).resolve().parents[2] / "zov.toml"
-    package_version = re.search(r'^version = "([^"]+)"$', package.read_text(), re.MULTILINE)
-    if package_version is None:
-        raise AssertionError("zov.toml does not declare a package version")
-    status, stdout, stderr = s._run([str(s.zovutils), "cat", "--version"], b"")
-    expected = f"cat (zovutils) {package_version.group(1)}\n".encode()
-    if (status, stdout, stderr) != (0, expected, b""):
-        raise AssertionError(f"cat --version does not report package version: {(status, stdout, stderr)!r}")
+    s.product_version("cat")

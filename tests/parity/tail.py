@@ -4,15 +4,39 @@ from __future__ import annotations
 
 import subprocess
 import time
+import os
+from pathlib import Path
 
 from support import ParityFailure, Suite
 
 
-def _follow(s: Suite, mode: str, *, pid_bound: bool = False) -> None:
-    path = s.fixture(f"tail-follow-{mode}", b"initial\n")
+def _follow(
+    s: Suite,
+    mode: str,
+    *,
+    pid_bound: bool = False,
+    rotation: bool = False,
+    initial_missing: bool = False,
+) -> None:
+    path = s.path(f"tail-follow-{mode}")
+    if not initial_missing:
+        s.fixture(f"tail-follow-{mode}", b"initial\n")
     zov_out = open(s.path(f"{mode}-zov.out"), "wb")
     gnu_out = open(s.path(f"{mode}-gnu.out"), "wb")
-    args = ["-f", "-s", "0.1"] if mode.startswith("descriptor") else ["--follow=name", "--sleep-interval=0.1"]
+    zov_err_file = open(s.path(f"{mode}-zov.err"), "wb")
+    gnu_err_file = open(s.path(f"{mode}-gnu.err"), "wb")
+    if mode == "descriptor" or mode.startswith("descriptor-"):
+        args = ["-f", "-s", "0.1"]
+    elif mode == "descriptor-long":
+        args = ["--follow=descriptor", "--sleep-interval=0.1"]
+    elif mode.startswith("F-"):
+        args = ["-F", "-s", "0.1"]
+    elif mode == "name-abbrev":
+        args = ["--fo=name", "--sleep-interval=0.1", "--max-unchanged-stats=1"]
+    else:
+        args = ["--follow=name", "--sleep-interval=0.1", "--max-unchanged-stats=1"]
+    if initial_missing:
+        args.append("--retry")
     child: subprocess.Popen[bytes] | None = None
     zov: subprocess.Popen[bytes] | None = None
     gnu: subprocess.Popen[bytes] | None = None
@@ -21,12 +45,36 @@ def _follow(s: Suite, mode: str, *, pid_bound: bool = False) -> None:
             child = subprocess.Popen(["python3", "-c", "import time; time.sleep(0.7)"])
             args.extend(["--pid", str(child.pid), "-s", "0.1"])
         zov = subprocess.Popen(
-            [str(s.zovutils), "tail", *args, path], stdout=zov_out, stderr=subprocess.PIPE, env=s.env
+            [str(s.zovutils), "tail", *args, path], stdout=zov_out, stderr=zov_err_file, env=s.env
         )
         gnu = subprocess.Popen(
-            [str(s.gnu_dir / "tail"), *args, path], stdout=gnu_out, stderr=subprocess.PIPE, env=s.env
+            [str(s.gnu_dir / "tail"), *args, path], stdout=gnu_out, stderr=gnu_err_file, env=s.env
         )
-        time.sleep(0.3)
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            zov_out.flush()
+            gnu_out.flush()
+            zov_err_file.flush()
+            gnu_err_file.flush()
+            if initial_missing:
+                ready = all(Path(s.path(f"{mode}-{who}.err")).read_bytes().startswith(b"tail: cannot open") for who in ("zov", "gnu"))
+            else:
+                ready = all(Path(s.path(f"{mode}-{who}.out")).read_bytes().startswith(b"initial\n") for who in ("zov", "gnu"))
+            if ready:
+                break
+            time.sleep(0.02)
+        else:
+            raise ParityFailure(f"tail {mode} follow did not reach its initial state")
+        if initial_missing:
+            with open(path, "wb") as fixture:
+                fixture.write(b"appeared\n")
+            time.sleep(0.3)
+        elif rotation:
+            replacement = path + ".replacement"
+            with open(replacement, "wb") as fixture:
+                fixture.write(b"invoked\n")
+            os.replace(replacement, path)
+            time.sleep(0.3)
         with open(path, "ab") as fixture:
             fixture.write(b"appended\n")
         if not pid_bound:
@@ -43,11 +91,17 @@ def _follow(s: Suite, mode: str, *, pid_bound: bool = False) -> None:
                 raise ParityFailure(f"tail {mode} follow did not stop within timeout")
         zov_out.flush()
         gnu_out.flush()
+        zov_err_file.flush()
+        gnu_err_file.flush()
         zov_data = open(s.path(f"{mode}-zov.out"), "rb").read()
         gnu_data = open(s.path(f"{mode}-gnu.out"), "rb").read()
+        zov_err = Path(s.path(f"{mode}-zov.err")).read_bytes()
+        gnu_err = Path(s.path(f"{mode}-gnu.err")).read_bytes()
         s.count += 1
-        if zov_data != gnu_data:
-            raise ParityFailure(f"tail {mode} follow stdout differs: zov={zov_data!r}, gnu={gnu_data!r}")
+        if zov_data != gnu_data or zov_err != gnu_err:
+            raise ParityFailure(
+                f"tail {mode} follow differs: zov={(zov_data, zov_err)!r}, gnu={(gnu_data, gnu_err)!r}"
+            )
     finally:
         for process in (zov, gnu, child):
             if process is not None and process.poll() is None:
@@ -55,9 +109,27 @@ def _follow(s: Suite, mode: str, *, pid_bound: bool = False) -> None:
                 process.wait()
         zov_out.close()
         gnu_out.close()
+        zov_err_file.close()
+        gnu_err_file.close()
+
+
+def _debug_report(s: Suite) -> None:
+    path = s.fixture("tail-debug", b"initial\n")
+    child = subprocess.Popen(["python3", "-c", "import time; time.sleep(0.3)"])
+    proc = subprocess.Popen(
+        [str(s.zovutils), "tail", "--debug", "-f", "-s", "0.05", "--pid", str(child.pid), path],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=s.env,
+    )
+    child.wait(timeout=3)
+    stdout, stderr = proc.communicate(timeout=3)
+    if proc.returncode != 0 or stdout != b"initial\n" or stderr != b"tail: using polling method\n":
+        raise ParityFailure(f"tail --debug polling report differs: {(proc.returncode, stdout, stderr)!r}")
 
 
 def run(s: Suite) -> None:
+    s.product_version("tail")
     empty = s.fixture("tail-empty", b"")
     lines = s.fixture("tail-lines", b"one\ntwo\nthree\nfour\n")
     no_final_newline = s.fixture("tail-no-final-newline", b"a\nb\nc")
@@ -85,21 +157,91 @@ def run(s: Suite) -> None:
         ["-v", "-n", "1"],
         ["-n", "100000"],
     )
-    fixtures = (lines, no_final_newline, binary, large)
+    fixtures = (empty, lines, no_final_newline, binary, large)
     for opts in options:
         for fixture in fixtures:
             s.case("tail", [*opts, fixture])
 
+    for value in ("0", "1", "2", "-1", "-2", "+0", "+1", "+2", "1K", "1b", "1Q"):
+        for flag in ("-n", "-c"):
+            for fixture in (empty, lines, no_final_newline, binary):
+                s.case("tail", [flag, value, fixture])
+        for flag in ("--lines=", "--bytes="):
+            s.case("tail", [flag + value, lines])
+
+    for option in ("--lines", "--bytes"):
+        for length in range(3, len(option) + 1):
+            s.case("tail", [option[:length] + "=2", lines])
+    for option, value in (("--sleep-interval", "0.001"), ("--max-unchanged-stats", "1")):
+        for length in range(3, len(option) + 1):
+            s.case("tail", [option[:length] + "=" + value, lines])
+    for option in ("--quiet", "--silent", "--verbose", "--zero-terminated", "--retry", "--debug"):
+        for length in range(3, len(option) + 1):
+            s.case("tail", [option[:length], "-n", "1", lines])
+
     for args in (
+        ["--help"],
+        ["--hel"],
         ["-n", "1", lines, binary],
         ["-q", "-n", "1", lines, binary],
         ["-v", "-n", "1", lines, binary],
+        ["-qn2", lines],
+        ["-qc3", binary],
+        ["-qvn", "2", lines],
+        ["-s0.001", lines],
+        ["-s"],
         ["-n", "1", lines, missing],
+        ["-n", "1", missing, lines],
+        ["-n", "9223372036854775808", lines],
+        ["-c", "9223372036854775808", binary],
+        ["-n", "18446744073709551616", lines],
+        ["-c", "1Q", binary],
+        ["-n", "invalid"],
+        ["-c", "invalid"],
+        ["--lines=invalid"],
+        ["--bytes=invalid"],
+        ["--bogus"],
+        ["-x"],
+        ["-n"],
+        ["-c"],
+        ["--lines"],
+        ["--bytes"],
+        ["--max-unchanged-stats=bad"],
+        ["--max-unchanged-stats=0"],
+        ["--max-unchanged-stats", "bad"],
+        ["--pid=bad"],
+        ["--pid"],
+        ["--sleep-interval=bad"],
+        ["--sleep-interval=NaN"],
+        ["--sleep-interval=-1"],
+        ["--sleep-interval=1 "],
+        ["--sleep-interval"],
+        ["--follow=bad"],
+        ["--follow="],
+        ["--retry=1"],
+        ["--disable-inotify"],
+        ["--v"],
+        ["--ver"],
+        ["--s"],
+        ["--pid=0"],
+        ["--sleep-interval=.1", lines],
+        ["--sleep-interval=1.", lines],
+        ["--sleep-interval=0.00000001", lines],
+        ["--sleep-interval=1e-3", lines],
+        ["--sleep-interval=inf", lines],
+        ["-f", missing],
+        ["--follow=name", missing],
         ["--", "-n"],
     ):
         s.case("tail", args)
     s.case("tail", ["-n", "2"], stdin=b"one\ntwo\nthree\n")
     s.case("tail", ["-c", "4"], stdin=b"a\0b\n\xff")
     _follow(s, "descriptor")
+    _follow(s, "descriptor-long")
     _follow(s, "name")
+    _follow(s, "name-abbrev")
+    _follow(s, "name-rotation", rotation=True)
+    _follow(s, "F-rotation", rotation=True)
+    _follow(s, "name-retry", initial_missing=True)
     _follow(s, "descriptor-pid", pid_bound=True)
+    _debug_report(s)

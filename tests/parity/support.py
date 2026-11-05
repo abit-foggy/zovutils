@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import difflib
 import os
+import re
 import subprocess
 import tempfile
 from pathlib import Path
@@ -86,6 +87,16 @@ class Suite:
             check=False,
         )
         return result.stdout.decode("utf-8", "replace").splitlines()[0]
+
+    def product_version(self, utility: str) -> None:
+        manifest = Path(__file__).resolve().parents[2] / "zov.toml"
+        match = re.search(r'^version = "([^"]+)"$', manifest.read_text(), re.MULTILINE)
+        if match is None:
+            raise ParityFailure("zov.toml does not declare a package version")
+        result = self._run([str(self.zovutils), utility, "--version"], b"")
+        expected = f"{utility} (zovutils) {match.group(1)}\n".encode()
+        if result != (0, expected, b""):
+            raise ParityFailure(f"{utility} --version does not report package version: {result!r}")
 
 
 def require_executables(suite: Suite) -> None:

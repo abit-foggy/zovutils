@@ -14,6 +14,10 @@ bytes, missing final newlines, multiple files, missing files, and large
 streamed inputs. Platform-dependent cases will run on the same host for both
 implementations.
 
+`tail --debug` reports the zovutils polling backend. GNU may report its native
+notification backend on systems where it is available, so this diagnostic is
+checked against zovutils' actual backend rather than byte-compared to GNU.
+
 The initial supported targets follow Zov: Linux and macOS on `x86_64` and
 `aarch64`. OS calls stay behind `src/shared/` helpers so support can expand
 when Zov's hosted runtime supports more platforms.

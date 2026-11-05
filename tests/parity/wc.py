@@ -4,6 +4,7 @@ from support import Suite
 
 
 def run(s: Suite) -> None:
+    s.product_version("wc")
     empty = s.fixture("wc-empty", b"")
     text = s.fixture("wc-text", b"alpha\nbeta\n\ngamma\n")
     no_final_newline = s.fixture("wc-no-final-newline", b"no-final-newline")

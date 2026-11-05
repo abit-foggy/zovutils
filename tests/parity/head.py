@@ -4,6 +4,7 @@ from support import Suite
 
 
 def run(s: Suite) -> None:
+    s.product_version("head")
     empty = s.fixture("head-empty", b"")
     lines = s.fixture("head-lines", b"one\ntwo\nthree\nfour\n")
     no_final_newline = s.fixture("head-no-final-newline", b"a\nb\nc")

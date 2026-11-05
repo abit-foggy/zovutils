@@ -1,4 +1,5 @@
 use <stdio.h> as c;
+use <sys/stat.h> as sysc;
 
 export type StreamError = !i32;
 
@@ -45,6 +46,18 @@ export fn errorprefix(name: str, path: str) void = {
 export fn erroropen(name: str, path: str) void = {
     c::fprintf(c::stderr, "%s: cannot open '%s' for reading: ", name, path);
     c::perror((0i64 as *i8));
+};
+
+export fn samefile(fp: *c::FILE, path: str) bool = {
+    let mut descriptor_info: [32]u64;
+    let mut path_info: [32]u64;
+    if (sysc::fstat(c::fileno(fp), ((&descriptor_info[0usize]) as *void)) != 0) { return false; };
+    if (sysc::stat(path, ((&path_info[0usize]) as *void)) != 0) { return false; };
+    // POSIX stat layouts on the supported 64-bit Linux and macOS targets put
+    // st_ino in the second machine word. st_dev occupies the first word; on
+    // macOS its defined width is 32 bits.
+    return descriptor_info[1usize] == path_info[1usize]
+        && (descriptor_info[0usize] & 4294967295u64) == (path_info[0usize] & 4294967295u64);
 };
 
 test "byte stream helpers preserve binary bytes" {
