@@ -17,6 +17,7 @@ def _follow(
     pid_bound: bool = False,
     rotation: bool = False,
     initial_missing: bool = False,
+    truncation: bool = False,
 ) -> None:
     path = s.path(f"tail-follow-{mode}")
     if not initial_missing:
@@ -77,8 +78,12 @@ def _follow(
                 fixture.write(b"invoked\n")
             os.replace(replacement, path)
             time.sleep(0.3)
-        with open(path, "ab") as fixture:
-            fixture.write(b"appended\n")
+        if truncation:
+            with open(path, "wb") as fixture:
+                fixture.write(b"after\n")
+        else:
+            with open(path, "ab") as fixture:
+                fixture.write(b"appended\n")
         if not pid_bound:
             time.sleep(1.2 if mode == "legacy-follow" else 0.4)
             zov.terminate()
@@ -340,6 +345,7 @@ def run(s: Suite) -> None:
     s.case("tail", [lines, "-", "-"], stdin=b"stdin is consumed once\n")
     s.case("tail", ["-c", "4"], stdin=b"a\0b\n\xff")
     _follow(s, "descriptor")
+    _follow(s, "descriptor-truncate", truncation=True)
     _follow(s, "legacy-follow")
     _follow(s, "descriptor-long")
     _follow(s, "name")

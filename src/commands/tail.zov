@@ -371,7 +371,7 @@ export fn run(start: usize, argc: usize) i32 = {
             };
             if (longmatch(key, "--version")) {
                 if (has_equal) { badargument("--version"); return 1; };
-                io::println("tail (zovutils) 0.1.26"); if (!stream::finishoutput("tail")) { return 1; }; return 0;
+                io::println("tail (zovutils) 0.1.27"); if (!stream::finishoutput("tail")) { return 1; }; return 0;
             };
             badlong(arg); return 1;
         };
@@ -606,6 +606,16 @@ export fn run(start: usize, argc: usize) i32 = {
                     } else if (retry) { }
                     else { };
                 } else {
+                    let position: i64 = c::ftell(fp);
+                    if (position >= 0i64 && c::fseek(fp, 0i64, c::SEEK_END) == 0) {
+                        let end: i64 = c::ftell(fp);
+                        if (end >= 0i64 && end < position) {
+                            c::fprintf(c::stderr, "tail: "); stream::printquoted(c::stderr, path, false);
+                            c::fprintf(c::stderr, ": file truncated\n");
+                            c::fseek(fp, 0i64, c::SEEK_SET);
+                        } else { c::fseek(fp, position, c::SEEK_SET); };
+                        c::clearerr(fp);
+                    };
                     let n: usize = stream::readbytes(fp, ((&buf[0usize]) as *u8), 65536usize);
                     if (n > 0usize) {
                         stream::writebytes(c::stdout, ((&buf[0usize]) as *u8), n);
