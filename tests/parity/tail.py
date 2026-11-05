@@ -209,10 +209,14 @@ def run(s: Suite) -> None:
         ["+0"],
         ["+2c"],
         ["+2b"],
+        ["+2kb"],
         ["+2l"],
         ["-2c"],
         ["-2b"],
+        ["-2kb"],
+        ["-2K"],
         ["-2l"],
+        ["+2K"],
     )
     fixtures = (empty, lines, no_final_newline, binary, large)
     for opts in options:

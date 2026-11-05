@@ -25,6 +25,10 @@ fn badargument(option: str) void = {
     c::fprintf(c::stderr, "head: option '%s' doesn't allow an argument\nTry 'head --help' for more information.\n", option);
 };
 
+fn badtrailing(opt: u8) void = {
+    c::fprintf(c::stderr, "head: invalid trailing option -- %c\nTry 'head --help' for more information.\n", opt as i32);
+};
+
 fn longmatch(arg: str, option: str) bool = {
     return arg.len > 2usize && arg.len <= option.len && arg == option[0usize..arg.len];
 };
@@ -208,7 +212,7 @@ export fn run(start: usize, argc: usize) i32 = {
             };
             if (longmatch(key, "--version")) {
                 if (has_equal) { badargument("--version"); return 1; };
-                io::println("head (zovutils) 0.1.13"); if (!stream::finishoutput("head")) { return 1; }; return 0;
+                io::println("head (zovutils) 0.1.14"); if (!stream::finishoutput("head")) { return 1; }; return 0;
             };
             badlong(arg); return 1;
         };
@@ -241,10 +245,32 @@ export fn run(start: usize, argc: usize) i32 = {
             bytes = true; i += 1usize; continue;
         };
         if (arg.len > 1usize && arg.data[0usize] == 45u8 && arg.data[1usize] >= 48u8 && arg.data[1usize] <= 57u8) {
-            let r = parsecount(arg[1usize..arg.len]);
-            let value: numparse::ByteCount = match (r) { case let n: numparse::ByteCount => n, case ParseError => { invalidnumber("lines", arg[1usize..arg.len]); return 1; } };
-            negative = value.negative; count = value.magnitude;
-            bytes = false; i += 1usize; continue;
+            let mut value_text: str = arg[1usize..arg.len];
+            bytes = false;
+            let mut blocks: bool = false;
+            let last: u8 = value_text.data[value_text.len - 1usize];
+            if (last == 99u8) { bytes = true; value_text = value_text[0usize..value_text.len - 1usize]; }
+            else if (last == 108u8) { value_text = value_text[0usize..value_text.len - 1usize]; }
+            else if (last == 98u8) {
+                bytes = true; blocks = true;
+                let mut digit_end: usize = 0usize;
+                while (digit_end < value_text.len && value_text.data[digit_end] >= 48u8 && value_text.data[digit_end] <= 57u8) { digit_end += 1usize; };
+                value_text = value_text[0usize..digit_end];
+            }
+            else {
+                let mut digit_end: usize = 0usize;
+                while (digit_end < value_text.len && value_text.data[digit_end] >= 48u8 && value_text.data[digit_end] <= 57u8) { digit_end += 1usize; };
+                if (digit_end < value_text.len) { badtrailing(value_text.data[digit_end]); return 1; };
+            };
+            let r = parsecount(value_text);
+            let value: numparse::ByteCount = match (r) { case let n: numparse::ByteCount => n, case ParseError => { if (bytes) { invalidnumber("bytes", value_text); } else { invalidnumber("lines", value_text); }; return 1; } };
+            let mut magnitude: usize = value.magnitude;
+            if (blocks) {
+                if (magnitude > 36028797018963967usize) { invalidnumber("bytes", value_text); return 1; };
+                magnitude *= 512usize;
+            };
+            negative = value.negative; count = magnitude;
+            i += 1usize; continue;
         };
         if (arg.len > 1usize && arg.data[0usize] == 45u8 && arg.data[1usize] != 45u8) {
             let mut j: usize = 1usize;
