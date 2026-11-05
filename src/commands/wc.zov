@@ -20,7 +20,8 @@ fn singlebyte_c_locale() bool = {
 
 fn consume(character: i32, out: &mut Counts, linebytes: &mut usize, inword: &mut bool) void = {
     out.chars += 1usize;
-    if (wctype::iswspace(character as u32) != 0 || character == 160i32) { *inword = false; }
+    if (wctype::iswspace(character as u32) != 0 || character == 160i32
+        || character == 8199i32 || character == 8239i32 || character == 8288i32) { *inword = false; }
     else if (!*inword) { out.words += 1usize; *inword = true; };
     if (character == 10i32) {
         out.lines += 1usize;
@@ -296,7 +297,7 @@ export fn run(start: usize, argc: usize) i32 = {
             else if (longmatch(key, "--max-line-length")) { maxline = true; }
             else if (longmatch(key, "--debug")) { }
             else if (longmatch(key, "--help")) { help(); if (!stream::finishoutputbrief("wc")) { return 1; }; return 0; }
-            else if (longmatch(key, "--version")) { io::println("wc (zovutils) 0.1.23"); if (!stream::finishoutputbrief("wc")) { return 1; }; return 0; };
+            else if (longmatch(key, "--version")) { io::println("wc (zovutils) 0.1.24"); if (!stream::finishoutputbrief("wc")) { return 1; }; return 0; };
             i += 1usize; continue;
         };
         if (arg.len >= 2usize && arg.data[1usize] != 45u8) {

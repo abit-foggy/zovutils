@@ -158,7 +158,7 @@ def run(s: Suite) -> None:
             s.fixture("wc-utf8-mixed", "é\u3000中\n".encode()),
             s.fixture("wc-utf8-combining", "e\u0301x\n".encode()),
             s.fixture("wc-utf8-wide", "界界\n".encode()),
-            s.fixture("wc-utf8-spaces", "alpha\u2003beta\u00a0gamma\n".encode()),
+            s.fixture("wc-utf8-spaces", "alpha\u2003beta\u00a0gamma\u2007delta\u202fepsilon\u2060zeta\n".encode()),
             s.fixture("wc-utf8-invalid", b"a\xffb\n"),
             s.fixture("wc-utf8-truncated", b"a\xe2\x82"),
             s.fixture("wc-utf8-tabs", "界\tx\n".encode()),
