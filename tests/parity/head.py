@@ -13,6 +13,7 @@ def run(s: Suite) -> None:
     missing = s.path("head-missing")
     unusual_name = s.fixture("head-line\nbreak", b"name with newline\n")
     missing_unusual = s.path("head-missing-line\nbreak")
+    missing_quote_control = s.path("head-missing-'line\nbreak")
     s.write_failure("head", [lines])
     s.write_failure("head", ["--help"])
     s.write_failure("head", ["--version"])
@@ -83,6 +84,7 @@ def run(s: Suite) -> None:
         ["-n", "1", lines, missing],
         [unusual_name, unusual_name],
         [missing_unusual],
+        [missing_quote_control],
         ["-n", "1", missing, lines],
         ["-n", "2", "-c", "3", lines],
         ["-c", "3", "-n", "2", lines],

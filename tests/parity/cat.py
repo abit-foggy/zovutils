@@ -18,6 +18,7 @@ def run(s: Suite) -> None:
     split_blank = s.fixture("split-blank", b"\nlast\n")
     unusual_name = s.fixture("cat-line\nbreak", b"name with newline\n")
     missing_unusual = s.path("cat-missing-line\nbreak")
+    missing_quote_control = s.path("cat-missing-'line\nbreak")
     directory = s.path("directory")
     s.root.joinpath("directory").mkdir()
 
@@ -106,6 +107,7 @@ def run(s: Suite) -> None:
         [directory],
         [s.path("missing")],
         [missing_unusual],
+        [missing_quote_control],
         [text, s.path("missing"), lines],
         [empty, text],
         ["-x"],

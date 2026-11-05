@@ -102,7 +102,7 @@ export fn printquoted(fp: *c::FILE, text: str, force: bool) void = {
         if (printable(text.data[i])) {
             let begin: usize = i;
             while (i < text.len && printable(text.data[i])) { i += 1usize; };
-            shellsegment(fp, text[begin..i]);
+            shellsingle(fp, text[begin..i]);
             continue;
         };
         c::fputs("$'", fp);
