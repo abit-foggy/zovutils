@@ -442,6 +442,20 @@ ssize_t read(int fd, void *buffer, size_t count) {
                 f"options={opts!r} offset={offset}: {outcomes!r}"
             )
 
+    # Random byte streams stress visible-byte conversion, blank-line state,
+    # and state carried across adjacent files and stdin.
+    byte_rng = random.Random(0xCA7)
+    for index in range(64):
+        payload = bytes(byte_rng.randrange(256) for _ in range(byte_rng.randrange(257)))
+        selected = byte_rng.sample(switch_flags, byte_rng.randrange(len(switch_flags) + 1))
+        opts = ["-" + "".join(selected)] if selected else []
+        s.case("cat", [*opts, "-"], stdin=payload)
+
+        split = byte_rng.randrange(len(payload) + 1)
+        first = s.fixture(f"cat-random-{index}-first", payload[:split])
+        second = s.fixture(f"cat-random-{index}-second", payload[split:])
+        s.case("cat", [*opts, first, second])
+
     # GNU's cat behavior through an installed command-name symlink.
     alias = s.root / "cat"
     alias.symlink_to(s.zovutils)
