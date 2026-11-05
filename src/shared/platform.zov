@@ -1,0 +1,10 @@
+use std::time as time;
+use <signal.h> as signal;
+
+export fn process_alive(pid: i32) bool = {
+    return signal::kill(pid, 0) == 0;
+};
+
+export fn sleep(seconds: f64) void = {
+    time::sleep(seconds);
+};

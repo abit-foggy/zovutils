@@ -1,14 +1,12 @@
 use std::env;
 use std::io;
 use std::vec as vec;
-use std::time as time;
 use <stdio.h> as c;
 use <stdlib.h> as libc;
 use <string.h> as strc;
-use <unistd.h> as u;
-use <signal.h> as sig;
 use shared::io as stream;
 use shared::numbers as numparse;
+use shared::platform as platform;
 
 fn spool(fp: *c::FILE, tmp: *c::FILE) bool = {
     let buf: [65536]u8;
@@ -397,7 +395,7 @@ export fn run(start: usize, argc: usize) i32 = {
             };
             if (longmatch(key, "--version")) {
                 if (has_equal) { badargument("--version"); return 1; };
-                io::println("tail (zovutils) 0.1.42"); if (!stream::finishoutput("tail")) { return 1; }; return 0;
+                io::println("tail (zovutils) 0.1.43"); if (!stream::finishoutput("tail")) { return 1; }; return 0;
             };
             badlong(arg); return 1;
         };
@@ -652,9 +650,9 @@ export fn run(start: usize, argc: usize) i32 = {
             };
             if (follow_write_failed) { break; };
             let mut alive: bool = pids.len() == 0usize;
-            for (let k in 0..pids.len()) { if (sig::kill(pids.get(k), 0) == 0) { alive = true; }; };
+            for (let k in 0..pids.len()) { if (platform::process_alive(pids.get(k))) { alive = true; }; };
             if (!alive) { break; };
-            time::sleep(interval_secs);
+            platform::sleep(interval_secs);
         };
         for (let k in 0..follow_fps.len()) {
             let fp: nullable *c::FILE = follow_fps.get(k);
