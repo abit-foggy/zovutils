@@ -28,6 +28,7 @@ def run(s: Suite) -> None:
     split_second = s.fixture("split-second", b"second\n\n")
     split_blank = s.fixture("split-blank", b"\nlast\n")
     unusual_name = s.fixture("cat-line\nbreak", b"name with newline\n")
+    invalid_byte_name = s.fixture("cat-invalid-\udcff", b"name with invalid byte\n")
     missing_unusual = s.path("cat-missing-line\nbreak")
     missing_quote_control = s.path("cat-missing-'line\nbreak")
     unreadable = s.fixture("cat-unreadable", b"unreadable\n")
@@ -108,6 +109,7 @@ def run(s: Suite) -> None:
         ["-s", boundary],
         [large],
         [unusual_name],
+        [invalid_byte_name],
         ["-A", "-e", all_bytes],
         ["-A", "-t", all_bytes],
         ["-e", "-t", all_bytes],

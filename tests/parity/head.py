@@ -16,6 +16,7 @@ def run(s: Suite) -> None:
     large = s.fixture("head-large", b"row\n" * 25000)
     missing = s.path("head-missing")
     unusual_name = s.fixture("head-line\nbreak", b"name with newline\n")
+    invalid_byte_name = s.fixture("head-invalid-\udcff", b"name with invalid byte\n")
     missing_unusual = s.path("head-missing-line\nbreak")
     missing_quote_control = s.path("head-missing-'line\nbreak")
     unreadable = s.fixture("head-unreadable", b"unreadable\n")
@@ -119,6 +120,7 @@ def run(s: Suite) -> None:
         ["--quiet", "--verbose", "-n", "1", lines, binary],
         ["-n", "1", lines, missing],
         [unusual_name, unusual_name],
+        [invalid_byte_name],
         [missing_unusual],
         [missing_quote_control],
         ["-n", "1", missing, lines],
