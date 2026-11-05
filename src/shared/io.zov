@@ -96,6 +96,42 @@ fn shellsegment(fp: *c::FILE, text: str) void = {
     } else { shellsingle(fp, text); };
 };
 
+fn shellmixed(fp: *c::FILE, text: str) void = {
+    let mut in_single: bool = false;
+    let mut i: usize = 0usize;
+    while (i < text.len) {
+        let b: u8 = text.data[i];
+        if (printable(b) && b != 39u8) {
+            if (!in_single) { c::fputc(39, fp); in_single = true; };
+            c::fputc(b as i32, fp);
+            i += 1usize;
+            continue;
+        };
+        if (b == 39u8) {
+            if (in_single) { c::fputs("'\\''", fp); }
+            else { c::fputs("\\''", fp); in_single = true; };
+            i += 1usize;
+            continue;
+        };
+        if (in_single) { c::fputc(39, fp); in_single = false; };
+        c::fputs("$'", fp);
+        while (i < text.len && !printable(text.data[i])) {
+            let byte: u8 = text.data[i];
+            if (byte == 7u8) { c::fputs("\\a", fp); }
+            else if (byte == 10u8) { c::fputs("\\n", fp); }
+            else if (byte == 9u8) { c::fputs("\\t", fp); }
+            else if (byte == 13u8) { c::fputs("\\r", fp); }
+            else if (byte == 8u8) { c::fputs("\\b", fp); }
+            else if (byte == 12u8) { c::fputs("\\f", fp); }
+            else if (byte == 11u8) { c::fputs("\\v", fp); }
+            else { c::fprintf(fp, "\\%03o", byte as i32); };
+            i += 1usize;
+        };
+        c::fputc(39, fp);
+    };
+    if (in_single) { c::fputc(39, fp); };
+};
+
 export fn printquoted(fp: *c::FILE, text: str, force: bool) void = {
     let mut nonprint: bool = false;
     let mut apostrophe: bool = false;
@@ -116,30 +152,7 @@ export fn printquoted(fp: *c::FILE, text: str, force: bool) void = {
         shellsegment(fp, text);
         return;
     };
-    let mut i: usize = 0usize;
-    while (i < text.len) {
-        if (printable(text.data[i])) {
-            let begin: usize = i;
-            while (i < text.len && printable(text.data[i])) { i += 1usize; };
-            shellsingle(fp, text[begin..i]);
-            continue;
-        };
-        c::fputs("$'", fp);
-        while (i < text.len && !printable(text.data[i])) {
-            let b: u8 = text.data[i];
-            if (b == 10u8) { c::fputs("\\n", fp); }
-            else if (b == 9u8) { c::fputs("\\t", fp); }
-            else if (b == 13u8) { c::fputs("\\r", fp); }
-            else if (b == 8u8) { c::fputs("\\b", fp); }
-            else if (b == 12u8) { c::fputs("\\f", fp); }
-            else if (b == 11u8) { c::fputs("\\v", fp); }
-            else {
-                c::fprintf(fp, "\\%03o", b as i32);
-            };
-            i += 1usize;
-        };
-        c::fputc(39, fp);
-    };
+    shellmixed(fp, text);
 };
 
 export fn outputfailed() bool = {

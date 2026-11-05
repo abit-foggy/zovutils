@@ -30,6 +30,7 @@ def run(s: Suite) -> None:
     unusual_name = s.fixture("cat-line\nbreak", b"name with newline\n")
     missing_unusual = s.path("cat-missing-line\nbreak")
     missing_quote_control = s.path("cat-missing-'line\nbreak")
+    missing_control_quote = s.path("cat-missing-\x07'control")
     missing_shell_meta = [
         s.path("cat-missing " + token)
         for token in ("space", "=", "!", ":", "[", "|")
@@ -125,6 +126,7 @@ def run(s: Suite) -> None:
         [s.path("missing")],
         [missing_unusual],
         [missing_quote_control],
+        [missing_control_quote],
         *[["--", path] for path in missing_shell_meta],
         [text, s.path("missing"), lines],
         [empty, text],
