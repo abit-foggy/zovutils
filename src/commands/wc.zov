@@ -13,6 +13,15 @@ use <zov_wcwidth.h> as display;
 use shared::io as stream;
 
 type Counts = struct { lines: usize, words: usize, chars: usize, bytes: usize, maxline: usize };
+type FileListError = struct { entry: usize, dash: bool };
+
+fn report_files0_error(from: str, item: FileListError) void = {
+    if (item.dash) { c::fprintf(c::stderr, "wc: when reading file names from standard input, no file name of '-' allowed\n"); }
+    else {
+        c::fprintf(c::stderr, "wc: "); stream::printquoted(c::stderr, from, false);
+        c::fprintf(c::stderr, ":%zu: invalid zero-length file name\n", item.entry);
+    };
+};
 fn singlebyte_c_locale() bool = {
     let current: nullable *i8 = lc::setlocale(0i32, 0i64 as *i8);
     if (current == null) { return false; };
@@ -247,8 +256,10 @@ export fn run(start: usize, argc: usize) i32 = {
     let posixly_correct: bool = platform_env::zov_posixly_correct() != 0i32;
     let mut files = vec::new[str]();
     defer files.free();
-    let mut files0_invalid_entries = vec::new[usize]();
-    defer files0_invalid_entries.free();
+    let mut files0_errors = vec::new[FileListError]();
+    defer files0_errors.free();
+    let mut files0_file_entries = vec::new[usize]();
+    defer files0_file_entries.free();
     let mut i: usize = start;
     while (i < argc) {
         let arg: str = env::argat(i);
@@ -321,7 +332,7 @@ export fn run(start: usize, argc: usize) i32 = {
             else if (longmatch(key, "--max-line-length")) { maxline = true; }
             else if (longmatch(key, "--debug")) { debug = true; }
             else if (longmatch(key, "--help")) { help(); if (!stream::finishoutputbrief("wc")) { return 1; }; return 0; }
-            else if (longmatch(key, "--version")) { io::println("wc (zovutils) 0.1.72"); if (!stream::finishoutputbrief("wc")) { return 1; }; return 0; };
+            else if (longmatch(key, "--version")) { io::println("wc (zovutils) 0.1.74"); if (!stream::finishoutputbrief("wc")) { return 1; }; return 0; };
             i += 1usize; continue;
         };
         if (arg.len >= 2usize && arg.data[1usize] != 45u8) {
@@ -366,20 +377,30 @@ export fn run(start: usize, argc: usize) i32 = {
                 list_entry += 1usize;
                 if (j == begin) {
                     files0_invalid = true;
-                    files0_invalid_entries.push(list_entry);
+                    files0_errors.push(FileListError{ entry = list_entry, dash = false });
                     begin = j + 1usize;
                     continue;
                 };
-                files.push(list_view[begin..j]);
+                let listed_path: str = list_view[begin..j];
+                if (files0_from == "-" && listed_path == "-") {
+                    files0_invalid = true;
+                    files0_errors.push(FileListError{ entry = list_entry, dash = true });
+                } else { files.push(listed_path); files0_file_entries.push(list_entry); };
                 begin = j + 1usize;
             };
         };
-        if (begin < list_view.len) { files.push(list_view[begin..list_view.len]); };
+        if (begin < list_view.len) {
+            let listed_path: str = list_view[begin..list_view.len];
+            if (files0_from == "-" && listed_path == "-") {
+                files0_invalid = true;
+                list_entry += 1usize;
+                files0_errors.push(FileListError{ entry = list_entry, dash = true });
+            } else { list_entry += 1usize; files.push(listed_path); files0_file_entries.push(list_entry); };
+        };
     };
     if (files0_given && files.len() == 0usize) {
-        for (let k in 0..files0_invalid_entries.len()) {
-            c::fprintf(c::stderr, "wc: "); stream::printquoted(c::stderr, files0_from, false);
-            c::fprintf(c::stderr, ":%zu: invalid zero-length file name\n", files0_invalid_entries.get(k));
+        for (let k in 0..files0_errors.len()) {
+            report_files0_error(files0_from, files0_errors.get(k));
         };
         let zero: Counts = Counts{ lines = 0usize, words = 0usize, chars = 0usize, bytes = 0usize, maxline = 0usize };
         if (total_mode == "always") { print_counts(zero, lines, words, chars, bytes, maxline, "total", true, 1usize); }
@@ -398,7 +419,7 @@ export fn run(start: usize, argc: usize) i32 = {
     defer names.free();
     let nfiles: usize = files.len();
     let mut total_operands: usize = nfiles;
-    if (files0_given) { total_operands += files0_invalid_entries.len(); };
+    if (files0_given) { total_operands += files0_errors.len(); };
     let mut stdin_operand: bool = false;
     for (let k in 0..nfiles) { if (files.get(k) == "-") { stdin_operand = true; }; };
     let mut stdin_seekable: bool = true;
@@ -434,7 +455,15 @@ export fn run(start: usize, argc: usize) i32 = {
         };
     } else {
         let mut first: usize = 0usize;
+        let mut list_error_index: usize = 0usize;
         while (first < files.len()) {
+            if (files0_given) {
+                let file_entry: usize = files0_file_entries.get(first);
+                while (list_error_index < files0_errors.len() && files0_errors.get(list_error_index).entry < file_entry) {
+                    report_files0_error(files0_from, files0_errors.get(list_error_index));
+                    list_error_index += 1usize;
+                };
+            };
             let path: str = files.get(first);
             let mut fp: *c::FILE = c::stdin;
             let mut owned: bool = false;
@@ -456,9 +485,9 @@ export fn run(start: usize, argc: usize) i32 = {
             if (owned && !stream::closefile(fp)) { stream::errorprefix("wc", path); status = 1; };
             first += 1usize;
         };
-        for (let k in 0..files0_invalid_entries.len()) {
-            c::fprintf(c::stderr, "wc: "); stream::printquoted(c::stderr, files0_from, false);
-            c::fprintf(c::stderr, ":%zu: invalid zero-length file name\n", files0_invalid_entries.get(k));
+        while (list_error_index < files0_errors.len()) {
+            report_files0_error(files0_from, files0_errors.get(list_error_index));
+            list_error_index += 1usize;
         };
         let mut width: usize = 1usize;
         for (let k in 0..counts.len()) {

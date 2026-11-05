@@ -1,6 +1,7 @@
 """Parity cases for wc."""
 
 import locale
+import os
 import random
 import subprocess
 
@@ -196,6 +197,7 @@ def run(s: Suite) -> None:
         ["--files0-from=" + files0],
         ["--files0-from", files0],
         ["--files0-from=-"],
+        ["--files0-from=-", "--total=always"],
         ["--files0-from=" + empty_files0],
         ["--files0-from=" + empty_files0, "--total=auto"],
         ["--files0-from=" + empty_files0, "--total=always"],
@@ -278,6 +280,32 @@ def run(s: Suite) -> None:
         (["--total=never"], b"one two\n"),
     ):
         s.case("wc", args, stdin=stdin)
+    s.case("wc", ["--files0-from=-"], stdin=(missing + "\0-\0" + missing + "\0").encode())
+    s.case("wc", ["--files0-from=-"], stdin=("-\0" + missing + "\0").encode())
+
+    # Vary NUL-list contents and source to cover duplicate names, stdin,
+    # malformed empty entries, missing paths, and non-UTF-8 filenames.
+    files0_rng = random.Random(0xF110)
+    files0_candidates = [text, binary, unusual_name, invalid_byte_name, missing, "-"]
+    for index in range(128):
+        selected = files0_rng.choices(files0_candidates, k=files0_rng.randrange(7))
+        list_data = b"\0".join(os.fsencode(path) for path in selected)
+        if selected and files0_rng.randrange(2):
+            list_data += b"\0"
+        if selected and files0_rng.randrange(5) == 0:
+            list_data += b"\0"
+        list_path = s.fixture(f"wc-files0-random-{index}", list_data)
+        from_stdin = files0_rng.randrange(2) == 0
+        list_option = "--files0-from=-" if from_stdin else "--files0-from=" + list_path
+        total_mode = files0_rng.choice(("auto", "always", "never", "only"))
+        flags = files0_rng.choice(("", "-l", "-w", "-c", "-m", "-L", "-lwc", "-wmL", "-lmwcL"))
+        args = ["--total=" + total_mode]
+        if flags:
+            args.append(flags)
+        args.append(list_option)
+        stdin = list_data if from_stdin else b""
+        extra_env = {"POSIXLY_CORRECT": ""} if files0_rng.randrange(2) else None
+        s.case("wc", args, stdin=stdin, extra_env=extra_env)
 
     # The full character, whitespace, and display-width paths depend on the
     # active LC_CTYPE locale. Run them where a UTF-8 locale is installed.
