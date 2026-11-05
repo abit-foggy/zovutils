@@ -28,10 +28,12 @@ def run(s: Suite) -> None:
     unusual_files0 = s.fixture("wc-files0-unusual", (unusual_name + "\0").encode())
     missing_unusual = s.path("wc-missing-line\nbreak")
     missing_quote_control = s.path("wc-missing-'line\nbreak")
+    unreadable = s.fixture("wc-unreadable", b"unreadable\n")
     s.write_failure("wc", [text])
     s.write_failure("wc", ["--help"])
     s.write_failure("wc", ["--version"])
     s.symlink_dispatch("wc", ["-l", text])
+    s.permission_denied_case("wc", ["-l", unreadable, text], unreadable)
 
     for mask in range(1 << 5):
         flags = "".join(flag for bit, flag in enumerate("lwmcL") if mask & (1 << bit))

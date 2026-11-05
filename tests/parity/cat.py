@@ -30,6 +30,7 @@ def run(s: Suite) -> None:
     unusual_name = s.fixture("cat-line\nbreak", b"name with newline\n")
     missing_unusual = s.path("cat-missing-line\nbreak")
     missing_quote_control = s.path("cat-missing-'line\nbreak")
+    unreadable = s.fixture("cat-unreadable", b"unreadable\n")
     missing_control_quote = s.path("cat-missing-\x07'control")
     missing_shell_meta = [
         s.path("cat-missing " + token)
@@ -165,6 +166,7 @@ def run(s: Suite) -> None:
         s.case("cat", args, stdin=b"from-stdin\n")
     s.case("cat", [], stdin=b"stdin\0bytes\n")
     s.case("cat", ["-", "-"], stdin=b"stdin is consumed once\n")
+    s.permission_denied_case("cat", [unreadable, text], unreadable)
 
     # cat must forward each available input chunk before stdin reaches EOF.
     # Captured stdout is fully buffered by stdio unless cat flushes it.

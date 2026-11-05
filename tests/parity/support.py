@@ -136,6 +136,15 @@ class Suite:
         if results[0] != results[1]:
             raise ParityFailure(f"{utility} output-write failure differs: {results!r}")
 
+    def permission_denied_case(self, utility: str, args: list[str], path: str) -> None:
+        """Compare an unreadable file and restore it for temporary-dir cleanup."""
+        os.chmod(path, 0)
+        try:
+            if not os.access(path, os.R_OK):
+                self.case(utility, args)
+        finally:
+            os.chmod(path, 0o600)
+
     def symlink_dispatch(self, utility: str, args: list[str]) -> None:
         alias = self.root / utility
         alias.symlink_to(self.zovutils)

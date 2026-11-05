@@ -18,6 +18,7 @@ def run(s: Suite) -> None:
     unusual_name = s.fixture("head-line\nbreak", b"name with newline\n")
     missing_unusual = s.path("head-missing-line\nbreak")
     missing_quote_control = s.path("head-missing-'line\nbreak")
+    unreadable = s.fixture("head-unreadable", b"unreadable\n")
     s.write_failure("head", [lines])
     s.write_failure("head", ["--help"])
     s.write_failure("head", ["--version"])
@@ -159,6 +160,7 @@ def run(s: Suite) -> None:
     s.case("head", ["-n", "-1"], stdin=b"one\ntwo\nthree\n")
     s.case("head", ["-c", "-2"], stdin=b"a\0b\n\xff")
     s.case("head", ["-n", "0"], stdin=b"")
+    s.permission_denied_case("head", ["-n", "1", unreadable, lines], unreadable)
 
     # Positive-count modes emit as soon as enough bytes arrive, before stdin
     # reaches EOF. Check newline, byte, and NUL-delimited reads against GNU.
