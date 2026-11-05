@@ -53,6 +53,16 @@ def run(s: Suite) -> None:
         for length in range(3, len(option) + 1):
             s.case("head", [option[:length], "-n", "1", lines])
 
+    for value in (
+        "1b", "1kB", "1K", "1KiB", "1MB", "1M", "1GB", "1G", "1TB", "1T",
+        "1PB", "1P", "1EB", "1E", "1ZB", "1Z", "1YB", "1Y", "1RB", "1R",
+        "1QB", "1Q",
+    ):
+        for flag in ("-n", "-c"):
+            s.case("head", [flag, value, lines])
+        s.case("head", ["--lines=" + value, lines])
+        s.case("head", ["--bytes=" + value, lines])
+
     for mask in range(1 << 3):
         flags = "".join(flag for bit, flag in enumerate("qvz") if mask & (1 << bit))
         args = (["-" + flags] if flags else []) + ["-n", "1", lines, binary]
