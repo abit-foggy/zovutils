@@ -1,5 +1,6 @@
 use std::env;
 use std::io;
+use <stdio.h> as c;
 
 use commands::cat;
 use commands::head;
@@ -43,8 +44,24 @@ export fn main() i32 = {
         return 0;
     };
     if (argc >= 2usize && (env::argat(1usize) == "--version" || env::argat(1usize) == "-V")) {
-        io::println("zovutils 0.1.47 (GNU Coreutils 9.11 compatibility target)");
+        io::println("zovutils 0.1.48 (GNU Coreutils 9.11 compatibility target)");
         return 0;
     };
     return dispatch(env::argat(1usize), 2usize, argc);
+};
+
+test "byte stream helpers preserve binary bytes" {
+    let raw: nullable *c::FILE = c::tmpfile();
+    assert(raw != null);
+    let fp: *c::FILE = raw!;
+    let input: [3]u8 = [0u8, 65u8, 255u8];
+    assert(shared::io::writebytes(fp, ((&input[0usize]) as *u8), 2usize));
+    assert(shared::io::putbyte(fp, input[2usize]));
+    assert(c::fseek(fp, 0i64, c::SEEK_SET) == 0);
+    let mut output: [3]u8;
+    assert(shared::io::readbytes(fp, ((&output[0usize]) as *u8), 3usize) == 3usize);
+    assert(output[0usize] == 0u8);
+    assert(output[1usize] == 65u8);
+    assert(output[2usize] == 255u8);
+    assert(shared::io::closefile(fp));
 };

@@ -1,4 +1,5 @@
 use <stdio.h> as c;
+use <platform_errno.h> as platform_errno;
 use <sys/stat.h> as sysc;
 use <unistd.h> as posix;
 
@@ -19,7 +20,12 @@ export fn readbytes(fp: *c::FILE, buf: *u8, cap: usize) usize = {
 // Use read(2) for commands that must forward a partial pipe read immediately.
 // fread may wait for the full requested capacity before returning on a pipe.
 export fn readchunk(fp: *c::FILE, buf: *u8, cap: usize) i64 = {
-    return posix::read(c::fileno(fp), buf as *void, cap) as i64;
+    while (true) {
+        let count: i64 = posix::read(c::fileno(fp), buf as *void, cap) as i64;
+        if (count < 0i64 && platform_errno::zov_errno_interrupted() != 0i32) { continue; };
+        return count;
+    };
+    return -1i64;
 };
 
 export fn readerror(fp: *c::FILE) bool = {
@@ -215,20 +221,4 @@ export fn sameopenfile(first: *c::FILE, second: *c::FILE) bool = {
     if (sysc::fstat(c::fileno(second), ((&second_info[0usize]) as *void)) != 0) { return false; };
     return first_info[1usize] == second_info[1usize]
         && (first_info[0usize] & 4294967295u64) == (second_info[0usize] & 4294967295u64);
-};
-
-test "byte stream helpers preserve binary bytes" {
-    let raw: nullable *c::FILE = c::tmpfile();
-    assert(raw != null);
-    let fp: *c::FILE = raw!;
-    let input: [3]u8 = [0u8, 65u8, 255u8];
-    assert(writebytes(fp, ((&input[0usize]) as *u8), 2usize));
-    assert(putbyte(fp, input[2usize]));
-    assert(c::fseek(fp, 0i64, c::SEEK_SET) == 0);
-    let mut output: [3]u8;
-    assert(readbytes(fp, ((&output[0usize]) as *u8), 3usize) == 3usize);
-    assert(output[0usize] == 0u8);
-    assert(output[1usize] == 65u8);
-    assert(output[2usize] == 255u8);
-    assert(closefile(fp));
 };

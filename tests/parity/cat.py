@@ -5,6 +5,7 @@ import resource
 import select
 import signal
 import subprocess
+import sys
 
 from support import Suite
 
@@ -169,6 +170,41 @@ def run(s: Suite) -> None:
     s.case("cat", [], stdin=b"stdin\0bytes\n")
     s.case("cat", ["-", "-"], stdin=b"stdin is consumed once\n")
     s.permission_denied_case("cat", [unreadable, text], unreadable)
+
+    # Force the first stdin read to return EINTR. GNU retries this transient
+    # error, so cat must resume reading and preserve the input bytes.
+    if sys.platform == "linux":
+        interposer = s.root / "interrupt-read.so"
+        interposer_source = s.root / "interrupt-read.c"
+        interposer_source.write_text(
+            """
+#define _GNU_SOURCE
+#include <dlfcn.h>
+#include <errno.h>
+#include <unistd.h>
+static ssize_t (*next_read)(int, void *, size_t);
+static int injected;
+ssize_t read(int fd, void *buffer, size_t count) {
+    if (!next_read) next_read = dlsym(RTLD_NEXT, "read");
+    if (fd == STDIN_FILENO && !injected++) {
+        errno = EINTR;
+        return -1;
+    }
+    return next_read(fd, buffer, count);
+}
+"""
+        )
+        subprocess.run(
+            ["cc", "-shared", "-fPIC", str(interposer_source), "-ldl", "-o", str(interposer)],
+            check=True,
+            timeout=15,
+        )
+        s.case(
+            "cat",
+            [],
+            stdin=b"resumed after interrupted read\n",
+            extra_env={"LD_PRELOAD": str(interposer)},
+        )
 
     # cat must forward each available input chunk before stdin reaches EOF.
     # Captured stdout is fully buffered by stdio unless cat flushes it.
