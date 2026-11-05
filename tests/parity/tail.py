@@ -128,6 +128,46 @@ def _debug_report(s: Suite) -> None:
         raise ParityFailure(f"tail --debug polling report differs: {(proc.returncode, stdout, stderr)!r}")
 
 
+def _follow_write_failure(s: Suite) -> None:
+    sink = Path("/dev/full")
+    if not sink.exists():
+        return
+    path = s.fixture("tail-follow-write-error", b"initial\n")
+    children: list[subprocess.Popen[bytes]] = []
+    processes: list[subprocess.Popen[bytes]] = []
+    sinks = []
+    try:
+        for command in (
+            [str(s.zovutils), "tail"],
+            [str(s.gnu_dir / "tail")],
+        ):
+            child = subprocess.Popen(["python3", "-c", "import time; time.sleep(0.3)"])
+            children.append(child)
+            command.extend(["--follow=descriptor", "--pid", str(child.pid), "-s", "0.05", path])
+            output = sink.open("wb")
+            sinks.append(output)
+            processes.append(
+                subprocess.Popen(command, stdout=output, stderr=subprocess.PIPE, env=s.env)
+            )
+        for child in children:
+            child.wait(timeout=3)
+        results = [proc.communicate(timeout=3) + (proc.returncode,) for proc in processes]
+        s.count += 1
+        if results[0] != results[1]:
+            raise ParityFailure(f"tail follow output-write failure differs: {results!r}")
+    finally:
+        for proc in processes:
+            if proc.poll() is None:
+                proc.kill()
+                proc.wait()
+        for child in children:
+            if child.poll() is None:
+                child.kill()
+                child.wait()
+        for output in sinks:
+            output.close()
+
+
 def run(s: Suite) -> None:
     s.product_version("tail")
     empty = s.fixture("tail-empty", b"")
@@ -257,4 +297,5 @@ def run(s: Suite) -> None:
     _follow(s, "F-rotation", rotation=True)
     _follow(s, "name-retry", initial_missing=True)
     _follow(s, "descriptor-pid", pid_bound=True)
+    _follow_write_failure(s)
     _debug_report(s)

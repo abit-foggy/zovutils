@@ -445,15 +445,16 @@ export fn run(start: usize, argc: usize) i32 = {
             follow_fps.push(follow_fp); follow_owned.push(owned); follow_paths.push(path);
         } else if (owned && !stream::closefile(fp)) { stream::errorprefix("tail", path); status = 1; };
     };
+    let mut follow_write_failed: bool = false;
     if (follow) {
         if (follow_fps.len() == 0usize) {
             c::fprintf(c::stderr, "tail: no files remaining\n");
             if (!stream::finishoutput("tail")) { status = 1; };
             return 1;
         };
-        c::fflush(c::stdout);
+        if (!stream::finishoutput("tail")) { status = 1; follow_write_failed = true; };
         let buf: [65536]u8;
-        while (true) {
+        while (!follow_write_failed) {
             for (let k in 0..follow_fps.len()) {
                 let path: str = follow_paths.get(k);
                 let rawfp: nullable *c::FILE = follow_fps.get(k);
@@ -465,9 +466,9 @@ export fn run(start: usize, argc: usize) i32 = {
                         while (true) {
                             let n: usize = stream::readbytes(next, ((&buf[0usize]) as *u8), 65536usize);
                             if (n == 0usize) { break; };
-                            stream::writebytes(c::stdout, ((&buf[0usize]) as *u8), n);
+                            if (!stream::writebytes(c::stdout, ((&buf[0usize]) as *u8), n)) { follow_write_failed = true; status = 1; break; };
                         };
-                        c::fflush(c::stdout);
+                        if (!follow_write_failed && !stream::finishoutput("tail")) { follow_write_failed = true; status = 1; };
                         let next_follow: nullable *c::FILE = next;
                         follow_fps.set(k, next_follow); follow_owned.set(k, true);
                     };
@@ -489,9 +490,9 @@ export fn run(start: usize, argc: usize) i32 = {
                             while (true) {
                                 let n: usize = stream::readbytes(next, ((&buf[0usize]) as *u8), 65536usize);
                                 if (n == 0usize) { break; };
-                                stream::writebytes(c::stdout, ((&buf[0usize]) as *u8), n);
+                                if (!stream::writebytes(c::stdout, ((&buf[0usize]) as *u8), n)) { follow_write_failed = true; status = 1; break; };
                             };
-                            c::fflush(c::stdout);
+                            if (!follow_write_failed && !stream::finishoutput("tail")) { follow_write_failed = true; status = 1; };
                         } else { c::fseek(next, end, c::SEEK_SET); };
                         if (follow_owned.get(k)) { stream::closefile(fp); };
                         let next_follow: nullable *c::FILE = next;
@@ -501,10 +502,14 @@ export fn run(start: usize, argc: usize) i32 = {
                     else { };
                 } else {
                     let n: usize = stream::readbytes(fp, ((&buf[0usize]) as *u8), 65536usize);
-                    if (n > 0usize) { stream::writebytes(c::stdout, ((&buf[0usize]) as *u8), n); c::fflush(c::stdout); }
+                    if (n > 0usize) {
+                        stream::writebytes(c::stdout, ((&buf[0usize]) as *u8), n);
+                        if (!stream::finishoutput("tail")) { follow_write_failed = true; status = 1; break; };
+                    }
                     else { c::clearerr(fp); };
                 };
             };
+            if (follow_write_failed) { break; };
             let mut alive: bool = pids.len() == 0usize;
             for (let k in 0..pids.len()) { if (sig::kill(pids.get(k), 0) == 0) { alive = true; }; };
             if (!alive) { break; };
@@ -515,6 +520,6 @@ export fn run(start: usize, argc: usize) i32 = {
             if (fp != null && follow_owned.get(k)) { stream::closefile(fp!); };
         };
     };
-    if (!stream::finishoutput("tail")) { status = 1; };
+    if (!follow || !follow_write_failed) { if (!stream::finishoutput("tail")) { status = 1; }; };
     return status;
 };
