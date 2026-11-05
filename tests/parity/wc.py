@@ -1,6 +1,7 @@
 """Parity cases for wc."""
 
 import locale
+import random
 
 from support import Suite
 
@@ -186,5 +187,21 @@ def run(s: Suite) -> None:
             stdin="é\u3000中\n界界".encode(),
             extra_env=utf8,
         )
+        rng = random.Random(0x911)
+        chunks = (
+            b" ", b"\t", b"\n", b"\r", b"\0", b"\xff", b"\xc0", b"\xe2",
+            b"\x82", b"\xf0", b"\x9f", b"\xe2\x80\x83", b"\xc3\xa9",
+            b"\xe7\x95\x8c", b"\xcc\x81", b"\xe2\x80\x8b", b"\xe2\x80\xa8",
+        )
+        for index in range(250):
+            data = bytearray()
+            for _ in range(rng.randrange(80)):
+                if rng.random() < 0.8:
+                    data.extend(rng.choice(chunks))
+                else:
+                    data.append(rng.randrange(256))
+            fixture = s.fixture(f"wc-utf8-random-{index}", bytes(data))
+            for flags in ("-m", "-w", "-L", "-wmL", "-lmwcL"):
+                s.case("wc", [flags, fixture], extra_env=utf8)
     else:
         raise AssertionError("no UTF-8 locale is available for wc parity coverage")
