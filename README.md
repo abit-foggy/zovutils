@@ -6,7 +6,7 @@ oracle; no GNU implementation source is copied, ported, or linked.
 
 ## Current status
 
-The project is alpha (`0.1.56`) and targets GNU Coreutils 9.11 behavior. The
+The project is alpha (`0.1.57`) and targets GNU Coreutils 9.11 behavior. The
 first command family is byte-stream processing: `cat`, `head`, `tail`, and
 `wc`. Compatibility is incomplete until the differential suite covers every
 supported command and behavior.
