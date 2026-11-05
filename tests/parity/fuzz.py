@@ -41,6 +41,21 @@ def run(s: Suite) -> None:
                     args = [*options, fixture]
                 s.case(utility, args)
 
+    # Randomize cat's file boundaries as well as its input bytes. This checks
+    # that line numbering and blank squeezing retain state across files and
+    # stdin, even when getopt-style options follow operands.
+    cat_flags = simple_flags["cat"]
+    for _ in range(300):
+        options = rng.sample(cat_flags, rng.randrange(len(cat_flags) // 2 + 1))
+        operands = rng.choices(fixtures, k=rng.randrange(2, 6))
+        if rng.randrange(3) == 0:
+            operands.insert(rng.randrange(len(operands) + 1), "-")
+        args = list(operands)
+        for option in options:
+            args.insert(rng.randrange(len(args) + 1), option)
+        stdin = bytes(rng.randrange(256) for _ in range(rng.randrange(100)))
+        s.case("cat", args, stdin=stdin)
+
     suffix_fixture = fixtures[0]
     for suffix in [*(chr(codepoint) for codepoint in range(1, 128)), "é"]:
         value = "1" + suffix
