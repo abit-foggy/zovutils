@@ -30,6 +30,7 @@ def run(s: Suite) -> None:
     unusual_name = s.fixture("cat-line\nbreak", b"name with newline\n")
     missing_unusual = s.path("cat-missing-line\nbreak")
     missing_quote_control = s.path("cat-missing-'line\nbreak")
+    missing_shell_meta = [s.path("cat-missing " + token) for token in ("space", "=", "!", ":", "[", "|")]
     directory = s.path("directory")
     s.root.joinpath("directory").mkdir()
 
@@ -115,10 +116,13 @@ def run(s: Suite) -> None:
         ["-n", split_first, split_second],
         [split_first, "-", split_second],
         ["--", "-n"],
+        ["--", "--"],
+        [text, "--", "--", text],
         [directory],
         [s.path("missing")],
         [missing_unusual],
         [missing_quote_control],
+        *[["--", path] for path in missing_shell_meta],
         [text, s.path("missing"), lines],
         [empty, text],
         ["-x"],

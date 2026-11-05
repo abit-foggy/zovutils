@@ -63,6 +63,14 @@ fn printable(b: u8) bool = {
     return b >= 32u8 && b < 127u8;
 };
 
+fn shellmeta(b: u8) bool = {
+    return b == 33u8 || b == 34u8 || b == 36u8 || b == 38u8
+        || b == 40u8 || b == 41u8 || b == 42u8 || b == 58u8
+        || b == 59u8 || b == 60u8 || b == 61u8 || b == 62u8
+        || b == 63u8 || b == 91u8 || b == 92u8 || b == 94u8
+        || b == 96u8 || b == 124u8;
+};
+
 fn shellsingle(fp: *c::FILE, text: str) void = {
     c::fputc(39, fp);
     for (let i in 0..text.len) {
@@ -90,13 +98,15 @@ export fn printquoted(fp: *c::FILE, text: str, force: bool) void = {
     let mut nonprint: bool = false;
     let mut apostrophe: bool = false;
     let mut backslash: bool = false;
+    let mut needs_shell_quote: bool = false;
     for (let i in 0..text.len) {
         let b: u8 = text.data[i];
         if (!printable(b)) { nonprint = true; };
         if (b == 39u8) { apostrophe = true; };
         if (b == 92u8) { backslash = true; };
+        if (b == 32u8 || shellmeta(b)) { needs_shell_quote = true; };
     };
-    if (!force && !nonprint && !apostrophe && !backslash) {
+    if (!force && !nonprint && !apostrophe && !backslash && !needs_shell_quote) {
         for (let i in 0..text.len) { c::fputc(text.data[i] as i32, fp); };
         return;
     };
