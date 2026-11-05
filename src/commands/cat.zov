@@ -19,28 +19,50 @@ fn badargument(option: str) void = {
 };
 
 fn longprefix(arg: str, option: str) bool = {
-    return arg.len > 2usize && arg.len < option.len && arg == option[0usize..arg.len];
+    return arg == option || (arg.len > 2usize && arg.len < option.len && arg == option[0usize..arg.len]);
 };
 
 fn longambiguity(arg: str) bool = {
+    let mut end: usize = arg.len;
+    for (let i in 0usize..arg.len) { if (arg.data[i] == 61u8) { end = i; break; }; };
+    let key: str = arg[0usize..end];
     let mut count: usize = 0usize;
-    if (longprefix(arg, "--number-nonblank")) { count += 1usize; };
-    if (longprefix(arg, "--number")) { count += 1usize; };
-    if (longprefix(arg, "--squeeze-blank")) { count += 1usize; };
-    if (longprefix(arg, "--show-nonprinting")) { count += 1usize; };
-    if (longprefix(arg, "--show-ends")) { count += 1usize; };
-    if (longprefix(arg, "--show-tabs")) { count += 1usize; };
-    if (longprefix(arg, "--show-all")) { count += 1usize; };
+    if (longprefix(key, "--number-nonblank")) { count += 1usize; };
+    if (longprefix(key, "--number")) { count += 1usize; };
+    if (longprefix(key, "--squeeze-blank")) { count += 1usize; };
+    if (longprefix(key, "--show-nonprinting")) { count += 1usize; };
+    if (longprefix(key, "--show-ends")) { count += 1usize; };
+    if (longprefix(key, "--show-tabs")) { count += 1usize; };
+    if (longprefix(key, "--show-all")) { count += 1usize; };
     if (count <= 1usize) { return false; };
     c::fprintf(c::stderr, "cat: option '%s' is ambiguous; possibilities:", arg);
-    if (longprefix(arg, "--number-nonblank")) { c::fprintf(c::stderr, " '%s'", "--number-nonblank"); };
-    if (longprefix(arg, "--number")) { c::fprintf(c::stderr, " '%s'", "--number"); };
-    if (longprefix(arg, "--squeeze-blank")) { c::fprintf(c::stderr, " '%s'", "--squeeze-blank"); };
-    if (longprefix(arg, "--show-nonprinting")) { c::fprintf(c::stderr, " '%s'", "--show-nonprinting"); };
-    if (longprefix(arg, "--show-ends")) { c::fprintf(c::stderr, " '%s'", "--show-ends"); };
-    if (longprefix(arg, "--show-tabs")) { c::fprintf(c::stderr, " '%s'", "--show-tabs"); };
-    if (longprefix(arg, "--show-all")) { c::fprintf(c::stderr, " '%s'", "--show-all"); };
+    if (longprefix(key, "--number-nonblank")) { c::fprintf(c::stderr, " '%s'", "--number-nonblank"); };
+    if (longprefix(key, "--number")) { c::fprintf(c::stderr, " '%s'", "--number"); };
+    if (longprefix(key, "--squeeze-blank")) { c::fprintf(c::stderr, " '%s'", "--squeeze-blank"); };
+    if (longprefix(key, "--show-nonprinting")) { c::fprintf(c::stderr, " '%s'", "--show-nonprinting"); };
+    if (longprefix(key, "--show-ends")) { c::fprintf(c::stderr, " '%s'", "--show-ends"); };
+    if (longprefix(key, "--show-tabs")) { c::fprintf(c::stderr, " '%s'", "--show-tabs"); };
+    if (longprefix(key, "--show-all")) { c::fprintf(c::stderr, " '%s'", "--show-all"); };
     c::fprintf(c::stderr, "\nTry 'cat --help' for more information.\n");
+    return true;
+};
+
+fn badlongargument(arg: str) bool = {
+    let mut end: usize = arg.len;
+    for (let i in 0usize..arg.len) { if (arg.data[i] == 61u8) { end = i; break; }; };
+    if (end == arg.len) { return false; };
+    let key: str = arg[0usize..end];
+    if (longambiguity(arg)) { return true; };
+    if (longprefix(key, "--number-nonblank")) { badargument("--number-nonblank"); return true; };
+    if (longprefix(key, "--number")) { badargument("--number"); return true; };
+    if (longprefix(key, "--squeeze-blank")) { badargument("--squeeze-blank"); return true; };
+    if (longprefix(key, "--show-nonprinting")) { badargument("--show-nonprinting"); return true; };
+    if (longprefix(key, "--show-ends")) { badargument("--show-ends"); return true; };
+    if (longprefix(key, "--show-tabs")) { badargument("--show-tabs"); return true; };
+    if (longprefix(key, "--show-all")) { badargument("--show-all"); return true; };
+    if (longprefix(key, "--help")) { badargument("--help"); return true; };
+    if (longprefix(key, "--version")) { badargument("--version"); return true; };
+    badlong(arg);
     return true;
 };
 
@@ -115,6 +137,10 @@ fn process(fp: *c::FILE, number_all: bool, number_nonblank: bool, squeeze: bool,
     while (true) {
         let n: usize = stream::readbytes(fp, ((&buf[0usize]) as *u8), 65536usize);
         if (n == 0usize) { break; };
+        if (!number_all && !number_nonblank && !squeeze && !show_tabs && !show_ends && !show_nonprinting) {
+            if (!stream::writebytes(c::stdout, ((&buf[0usize]) as *u8), n)) { return false; };
+            continue;
+        };
         for (let i in 0..n) {
             let b: u8 = buf[i];
             if (b == 10u8) {
@@ -198,6 +224,7 @@ export fn run(start: usize, argc: usize) i32 = {
         if (arg == "--help" || longprefix(arg, "--help")) { help(); return 0; };
         if (longprefix(arg, "--version")) { io::println("cat (zovutils) 0.1.0"); return 0; };
         if (arg == "--version") { io::println("cat (zovutils) 0.1.0"); return 0; };
+        if (arg.len >= 2usize && arg[0usize..2usize] == "--" && badlongargument(arg)) { return 1; };
         if (arg.len < 2usize || arg.data[1usize] != 45u8) {
             for (let j in 1usize..arg.len) {
                 let opt: u8 = arg.data[j];

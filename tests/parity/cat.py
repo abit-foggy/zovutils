@@ -12,6 +12,7 @@ def run(s: Suite) -> None:
     tabs = s.fixture("tabs", b"a\tb\n\t\n")
     all_bytes = s.fixture("all-bytes", bytes(range(256)))
     boundary = s.fixture("boundary", b"x" * 65535 + b"\n\n\nend")
+    large = s.fixture("large", (b"stream\0bytes\xff\n" * 131072) + b"tail")
     split_first = s.fixture("split-first", b"first")
     split_second = s.fixture("split-second", b"second\n\n")
     split_blank = s.fixture("split-blank", b"\nlast\n")
@@ -43,6 +44,8 @@ def run(s: Suite) -> None:
 
     for args in (
         ["--help"],
+        ["--h"],
+        ["--he"],
         ["--hel"],
         [],
         [text],
@@ -83,6 +86,14 @@ def run(s: Suite) -> None:
         ["-b", "-s", text],
         ["-n", boundary],
         ["-s", boundary],
+        [large],
+        ["-A", "-e", all_bytes],
+        ["-A", "-t", all_bytes],
+        ["-e", "-t", all_bytes],
+        ["-A", "-v", all_bytes],
+        ["-u", "-A", all_bytes],
+        ["-u", "-b", "-n", text],
+        ["-n", "-b", "-s", "-E", "-T", "-v", boundary],
         [text, "-n"],
         [text, lines],
         ["-s", split_second, split_blank],
@@ -103,6 +114,23 @@ def run(s: Suite) -> None:
         ["--show-ends="],
         ["--show-tabs="],
         ["--show-nonprinting="],
+        ["--help=x"],
+        ["--hel=x"],
+        ["--version=x"],
+        ["--ver=x"],
+        ["--num=x"],
+        ["--nu=x"],
+        ["--n=x"],
+        ["--s=x"],
+        ["--show=x"],
+        ["--show-a=x"],
+        ["--squeeze=x"],
+        ["--squeez=x"],
+        ["--number-n=x"],
+        ["--show-e=x"],
+        ["--show-t=x"],
+        ["--show-non=x"],
+        ["--bogus=x"],
     ):
         s.case("cat", args, stdin=b"from-stdin\n")
     s.case("cat", [], stdin=b"stdin\0bytes\n")
