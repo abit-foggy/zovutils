@@ -320,6 +320,49 @@ ssize_t read(int fd, void *buffer, size_t count) {
                     f"input={input_offset} output={output_offset} outcomes={outcomes!r}"
                 )
 
+    # Transforming modes must read same-inode input at equal offsets. Some
+    # modes expand output and GNU continues until the bounded destination
+    # fails; squeeze mode can instead shorten the stream.
+    transform_payload = b"a\n\n\t\xff\n"
+    for opts in (["-n"], ["-b"], ["-v"], ["-E"], ["-T"], ["-A"], ["-e"], ["-t"], ["-s"], ["-u"]):
+        for operand_mode in ("path", "stdin"):
+            outcomes = []
+            for command in (
+                [str(s.zovutils), "cat", *opts],
+                [str(s.gnu_dir / "cat"), *opts],
+            ):
+                with open(same_path, "wb") as fixture:
+                    fixture.write(transform_payload)
+                if operand_mode == "path":
+                    args = [*command, same_path]
+                    source_context = None
+                else:
+                    args = [*command, "-"]
+                    source_context = open(same_path, "rb")
+                try:
+                    with open(same_path, "r+b") as output:
+                        output.seek(0)
+                        proc = subprocess.run(
+                            args,
+                            stdin=source_context,
+                            stdout=output,
+                            stderr=subprocess.PIPE,
+                            env=s.env,
+                            timeout=5,
+                            check=False,
+                            preexec_fn=_limit_output_file,
+                        )
+                    outcomes.append((proc.returncode, proc.stderr, open(same_path, "rb").read()))
+                finally:
+                    if source_context is not None:
+                        source_context.close()
+            s.count += 1
+            if outcomes[0] != outcomes[1]:
+                raise AssertionError(
+                    f"cat transformed same-file handling differs: "
+                    f"options={opts!r} operand={operand_mode}: {outcomes!r}"
+                )
+
     # GNU's cat behavior through an installed command-name symlink.
     alias = s.root / "cat"
     alias.symlink_to(s.zovutils)
