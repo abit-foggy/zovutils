@@ -289,7 +289,9 @@ export fn run(start: usize, argc: usize) i32 = {
         let arg: str = env::argat(i);
         if (operands || arg == "-") { if (posixly_correct) { operands = true; }; files.push(arg); i += 1usize; continue; };
         if (arg == "--") { operands = true; i += 1usize; continue; };
-        if (i == start && (arg == "+" || (arg.len == 2usize && arg.data[0usize] == 43u8 && (arg.data[1usize] == 98u8 || arg.data[1usize] == 99u8 || arg.data[1usize] == 108u8)))) {
+        if (i == start && (arg == "+"
+            || (arg.len == 2usize && arg.data[0usize] == 43u8 && (arg.data[1usize] == 98u8 || arg.data[1usize] == 99u8 || arg.data[1usize] == 108u8 || arg.data[1usize] == 102u8))
+            || (arg.len == 3usize && arg.data[0usize] == 43u8 && arg.data[2usize] == 102u8 && (arg.data[1usize] == 98u8 || arg.data[1usize] == 99u8 || arg.data[1usize] == 108u8)))) {
             let mut legacy_ok: bool = true;
             let mut look: usize = i + 1usize;
             let mut ended_options: bool = false;
@@ -308,7 +310,12 @@ export fn run(start: usize, argc: usize) i32 = {
             if (legacy_ok) {
                 plus = true; count = 10usize;
                 if (arg.len == 2usize) {
-                    bytes = arg.data[1usize] != 108u8;
+                    bytes = arg.data[1usize] == 98u8 || arg.data[1usize] == 99u8;
+                    if (arg.data[1usize] == 98u8) { count = 5120usize; };
+                    if (arg.data[1usize] == 102u8) { follow = true; };
+                } else if (arg.len == 3usize) {
+                    follow = true;
+                    bytes = arg.data[1usize] == 98u8 || arg.data[1usize] == 99u8;
                     if (arg.data[1usize] == 98u8) { count = 5120usize; };
                 };
                 i += 1usize; continue;
@@ -335,16 +342,15 @@ export fn run(start: usize, argc: usize) i32 = {
             let mut digit_end: usize = 0usize;
             while (digit_end < raw_value.len && raw_value.data[digit_end] >= 48u8 && raw_value.data[digit_end] <= 57u8) { digit_end += 1usize; };
             let suffix: str = raw_value[digit_end..raw_value.len];
-            if (suffix.len > 1usize) { legacy_ok = false; }
-            else if (suffix == "c") { bytes = true; }
-            else if (suffix == "b") { bytes = true; }
-            else if (suffix == "f") { follow = true; }
+            if (suffix == "c" || suffix == "cf") { bytes = true; }
+            else if (suffix == "b" || suffix == "bf") { bytes = true; }
+            else if (suffix == "f" || suffix == "lf") { follow = true; }
             else if (suffix == "l") { }
             else if (suffix.len > 0usize) { legacy_ok = false; };
+            if (suffix == "cf" || suffix == "bf") { follow = true; };
             if (legacy_ok) {
             let value_text: str = raw_value[0usize..digit_end];
-            let mut blocks: bool = false;
-            if (suffix == "b") { blocks = true; };
+            let mut blocks: bool = suffix == "b" || suffix == "bf";
             if (suffix == "c" || suffix == "l") { bytes = suffix == "c"; };
             let r = parsevalue(value_text);
             let value: numparse::ByteCount = match (r) { case let n: numparse::ByteCount => n, case ParseError => { if (bytes) { invalidnumber("bytes", value_text); } else { invalidnumber("lines", value_text); }; return 1; } };
@@ -466,7 +472,7 @@ export fn run(start: usize, argc: usize) i32 = {
             };
             if (longmatch(key, "--version")) {
                 if (has_equal) { badargument("--version"); return 1; };
-                io::println("tail (zovutils) 0.1.75"); if (!stream::finishoutput("tail")) { return 1; }; return 0;
+                io::println("tail (zovutils) 0.1.76"); if (!stream::finishoutput("tail")) { return 1; }; return 0;
             };
             badlong(arg); return 1;
         };
@@ -522,7 +528,7 @@ export fn run(start: usize, argc: usize) i32 = {
             else if (suffix == "l") { }
             else if (suffix == "f") { follow = true; }
             else if (suffix.len > 0usize) { invalidcontext(arg.data[1usize]); return 1; };
-            let mut blocks: bool = suffix == "b";
+            let mut blocks: bool = suffix == "b" || suffix == "bf";
             value_text = value_text[0usize..digit_end];
             let r = parsevalue(value_text);
             let value: numparse::ByteCount = match (r) { case let n: numparse::ByteCount => n, case ParseError => { if (bytes) { invalidnumber("bytes", value_text); } else { invalidnumber("lines", value_text); }; return 1; } };
@@ -641,6 +647,13 @@ export fn run(start: usize, argc: usize) i32 = {
             break;
         };
         if (follow) {
+            if (plus && bytes && stream::regularfile(fp)) {
+                let position: i64 = c::ftell(fp);
+                if (position >= 0i64 && count > 0usize && count <= 9223372036854775807usize
+                    && count - 1usize > position as usize) {
+                    c::fseek(fp, (count - 1usize) as i64, c::SEEK_SET);
+                };
+            };
             let follow_fp: nullable *c::FILE = fp;
             follow_fps.push(follow_fp); follow_owned.push(owned); follow_paths.push(path);
         } else if (owned && !stream::closefile(fp)) { stream::errorprefix("tail", path); status = 1; };

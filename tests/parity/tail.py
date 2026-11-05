@@ -231,6 +231,54 @@ def run(s: Suite) -> None:
     s.interrupted_read_case("tail", [])
     s.symlink_dispatch("tail", ["-n", "1", lines])
 
+    plus_follow_file = s.fixture(
+        "tail-plus-follow",
+        b"".join(f"line {index}\n".encode() for index in range(1, 21)),
+    )
+    for option in ("+f", "+2f", "+cf", "+2cf", "+bf", "+2bf", "+lf", "+2lf"):
+        outcomes = []
+        for command in (
+            [str(s.zovutils), "tail", option, plus_follow_file],
+            [str(s.gnu_dir / "tail"), option, plus_follow_file],
+        ):
+            proc = subprocess.Popen(
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                env=s.env,
+            )
+            try:
+                proc.wait(timeout=0.1)
+            except subprocess.TimeoutExpired:
+                proc.terminate()
+            stdout, stderr = proc.communicate(timeout=3)
+            outcomes.append((stdout, stderr, proc.returncode))
+        s.count += 1
+        if outcomes[0] != outcomes[1]:
+            raise AssertionError(f"tail legacy plus-follow differs for {option}: {outcomes!r}")
+    plus_follow_large = s.fixture("tail-plus-follow-large", b"x\n" * 6000)
+    for option in ("+bf", "+2bf"):
+        outcomes = []
+        for command in (
+            [str(s.zovutils), "tail", option, plus_follow_large],
+            [str(s.gnu_dir / "tail"), option, plus_follow_large],
+        ):
+            proc = subprocess.Popen(
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                env=s.env,
+            )
+            try:
+                proc.wait(timeout=0.1)
+            except subprocess.TimeoutExpired:
+                proc.terminate()
+            stdout, stderr = proc.communicate(timeout=3)
+            outcomes.append((stdout, stderr, proc.returncode))
+        s.count += 1
+        if outcomes[0] != outcomes[1]:
+            raise AssertionError(f"tail legacy block-follow differs for {option}: {outcomes!r}")
+
     options = (
         [],
         ["-n", "2"],
