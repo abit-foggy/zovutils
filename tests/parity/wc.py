@@ -2,6 +2,7 @@
 
 import locale
 import random
+import subprocess
 
 from support import Suite
 
@@ -42,6 +43,68 @@ def run(s: Suite) -> None:
     s.broken_pipe_case("wc", ["--files0-from=" + many_files0])
     s.symlink_dispatch("wc", ["-l", text])
     s.permission_denied_case("wc", ["-l", unreadable, text], unreadable)
+
+    same_path = s.path("wc-same-file")
+    same_file_options = (
+        [], ["-l"], ["-w"], ["-c"], ["-m"], ["-L"], ["-lwcL"],
+        ["--total=always", "-c"],
+    )
+    for opts in same_file_options:
+        for offset in (0, 2, 6):
+            outcomes = []
+            for command in (
+                [str(s.zovutils), "wc", *opts, "-"],
+                [str(s.gnu_dir / "wc"), *opts, "-"],
+            ):
+                with open(same_path, "wb") as fixture:
+                    fixture.write(b"a\nb\nc\n")
+                with open(same_path, "r+b") as stream:
+                    stream.seek(offset)
+                    proc = subprocess.run(
+                        command,
+                        stdin=stream,
+                        stdout=stream,
+                        stderr=subprocess.PIPE,
+                        env=s.env,
+                        timeout=5,
+                        check=False,
+                    )
+                outcomes.append((proc.returncode, proc.stderr, open(same_path, "rb").read()))
+            s.count += 1
+            if outcomes[0] != outcomes[1]:
+                raise AssertionError(
+                    f"wc shared-descriptor behavior differs: "
+                    f"options={opts!r} offset={offset}: {outcomes!r}"
+                )
+
+        for input_offset in (0, 2, 6):
+            for output_offset in (0, 2, 6):
+                outcomes = []
+                for command in (
+                    [str(s.zovutils), "wc", *opts, "-"],
+                    [str(s.gnu_dir / "wc"), *opts, "-"],
+                ):
+                    with open(same_path, "wb") as fixture:
+                        fixture.write(b"a\nb\nc\n")
+                    with open(same_path, "rb") as source, open(same_path, "r+b") as output:
+                        source.seek(input_offset)
+                        output.seek(output_offset)
+                        proc = subprocess.run(
+                            command,
+                            stdin=source,
+                            stdout=output,
+                            stderr=subprocess.PIPE,
+                            env=s.env,
+                            timeout=5,
+                            check=False,
+                        )
+                    outcomes.append((proc.returncode, proc.stderr, open(same_path, "rb").read()))
+                s.count += 1
+                if outcomes[0] != outcomes[1]:
+                    raise AssertionError(
+                        f"wc same-file input/output offsets differ: "
+                        f"options={opts!r} input={input_offset} output={output_offset}: {outcomes!r}"
+                    )
 
     for mask in range(1 << 5):
         flags = "".join(flag for bit, flag in enumerate("lwmcL") if mask & (1 << bit))
