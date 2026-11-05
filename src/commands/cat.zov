@@ -283,8 +283,8 @@ export fn run(start: usize, argc: usize) i32 = {
         if (longprefix(arg, "--show-tabs")) { show_tabs = true; i += 1usize; continue; };
         if (longprefix(arg, "--show-nonprinting")) { show_nonprinting = true; i += 1usize; continue; };
         if (arg == "--help" || longprefix(arg, "--help")) { help(); if (!stream::finishoutput("cat")) { return 1; }; return 0; };
-        if (longprefix(arg, "--version")) { io::println("cat (zovutils) 0.1.86"); if (!stream::finishoutput("cat")) { return 1; }; return 0; };
-        if (arg == "--version") { io::println("cat (zovutils) 0.1.86"); if (!stream::finishoutput("cat")) { return 1; }; return 0; };
+        if (longprefix(arg, "--version")) { io::println("cat (zovutils) 0.1.87"); if (!stream::finishoutput("cat")) { return 1; }; return 0; };
+        if (arg == "--version") { io::println("cat (zovutils) 0.1.87"); if (!stream::finishoutput("cat")) { return 1; }; return 0; };
         if (arg.len >= 2usize && arg[0usize..2usize] == "--" && badlongargument(arg)) { return 1; };
         if (arg.len < 2usize || arg.data[1usize] != 45u8) {
             for (let j in 1usize..arg.len) {
@@ -312,7 +312,16 @@ export fn run(start: usize, argc: usize) i32 = {
     let mut status: i32 = 0;
     let mut index: usize = 0usize;
     if (files.len() == 0usize) {
-        if (!process(c::stdin, number_all, number_nonblank, squeeze, show_tabs, show_ends, show_nonprinting, &mut state)) {
+        let mut safe_to_read: bool = true;
+        if (stream::sameopenfile(c::stdin, c::stdout)) {
+            let action: i32 = samefileaction(c::stdin, c::stdout);
+            if (action < 0i32) {
+                c::fprintf(c::stderr, "cat: -: input file is output file\n");
+                status = 1;
+                safe_to_read = false;
+            };
+        };
+        if (safe_to_read && !process(c::stdin, number_all, number_nonblank, squeeze, show_tabs, show_ends, show_nonprinting, &mut state)) {
             if (!stream::outputfailed()) { stream::errorprefix("cat", "-"); };
             status = 1;
         };

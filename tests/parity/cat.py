@@ -353,6 +353,29 @@ ssize_t read(int fd, void *buffer, size_t count) {
     if append_results[0] != append_results[1]:
         raise AssertionError(f"cat append-mode same-file handling differs: {append_results!r}")
 
+    stdin_append_results = []
+    for command in (
+        [str(s.zovutils), "cat"],
+        [str(s.gnu_dir / "cat")],
+    ):
+        with open(same_path, "wb") as fixture:
+            fixture.write(b"stdin-append-self\n")
+        with open(same_path, "rb") as source, open(same_path, "ab") as output:
+            proc = subprocess.run(
+                command,
+                stdin=source,
+                stdout=output,
+                stderr=subprocess.PIPE,
+                env=s.env,
+                timeout=5,
+                check=False,
+                preexec_fn=_limit_output_file,
+            )
+        stdin_append_results.append((proc.returncode, proc.stderr, open(same_path, "rb").read()))
+    s.count += 1
+    if stdin_append_results[0] != stdin_append_results[1]:
+        raise AssertionError(f"cat stdin append-mode same-file handling differs: {stdin_append_results!r}")
+
     append_eof_results = []
     for command in (
         [str(s.zovutils), "cat", "-"],
