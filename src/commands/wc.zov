@@ -303,7 +303,7 @@ export fn run(start: usize, argc: usize) i32 = {
             else if (longmatch(key, "--max-line-length")) { maxline = true; }
             else if (longmatch(key, "--debug")) { }
             else if (longmatch(key, "--help")) { help(); if (!stream::finishoutputbrief("wc")) { return 1; }; return 0; }
-            else if (longmatch(key, "--version")) { io::println("wc (zovutils) 0.1.57"); if (!stream::finishoutputbrief("wc")) { return 1; }; return 0; };
+            else if (longmatch(key, "--version")) { io::println("wc (zovutils) 0.1.58"); if (!stream::finishoutputbrief("wc")) { return 1; }; return 0; };
             i += 1usize; continue;
         };
         if (arg.len >= 2usize && arg.data[1usize] != 45u8) {
@@ -365,12 +365,10 @@ export fn run(start: usize, argc: usize) i32 = {
     for (let k in 0..nfiles) { if (files.get(k) == "-") { stdin_operand = true; }; };
     let mut stdin_seekable: bool = true;
     if (stdin_operand) {
-        stdin_seekable = c::fseek(c::stdin, 0i64, c::SEEK_CUR) == 0;
-        if (!stdin_seekable) { c::clearerr(c::stdin); };
+        stdin_seekable = stream::regularfile(c::stdin);
     };
     if (nfiles == 0usize) {
-        let seekable: bool = c::fseek(c::stdin, 0i64, c::SEEK_CUR) == 0;
-        if (!seekable) { c::clearerr(c::stdin); };
+        let seekable: bool = stream::regularfile(c::stdin);
         let mut v: Counts = Counts{ lines = 0usize, words = 0usize, chars = 0usize, bytes = 0usize, maxline = 0usize };
         if (!scan(c::stdin, &mut v, singlebyte_c)) { stream::errorprefix("wc", "standard input"); status = 1; };
         let mut width: usize = 1usize;

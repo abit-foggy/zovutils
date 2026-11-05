@@ -45,6 +45,27 @@ def run(s: Suite) -> None:
     s.symlink_dispatch("wc", ["-l", text])
     s.permission_denied_case("wc", ["-l", unreadable, text], unreadable)
 
+    for source in ("/dev/null", empty):
+        stdin_results = []
+        for command in (
+            [str(s.zovutils), "wc", "--total=never"],
+            [str(s.gnu_dir / "wc"), "--total=never"],
+        ):
+            with open(source, "rb") as input_stream:
+                result = subprocess.run(
+                    command,
+                    stdin=input_stream,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    env=s.env,
+                    timeout=5,
+                    check=False,
+                )
+            stdin_results.append((result.returncode, result.stdout, result.stderr))
+        s.count += 1
+        if stdin_results[0] != stdin_results[1]:
+            raise AssertionError(f"wc stdin file-type behavior differs: {source}: {stdin_results!r}")
+
     same_path = s.path("wc-same-file")
     same_file_options = (
         [], ["-l"], ["-w"], ["-c"], ["-m"], ["-L"], ["-lwcL"],

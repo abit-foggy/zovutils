@@ -2,6 +2,7 @@ use <stdio.h> as c;
 use <platform_errno.h> as platform_errno;
 use <sys/stat.h> as sysc;
 use <unistd.h> as posix;
+use <platform_stat.h> as platform_stat;
 
 export type StreamError = !i32;
 
@@ -21,6 +22,10 @@ export fn readbytes(fp: *c::FILE, buf: *u8, cap: usize) usize = {
 // whose GNU implementations report an interrupted input read as an error.
 export fn readonce(fp: *c::FILE, buf: *u8, cap: usize) i64 = {
     return posix::read(c::fileno(fp), buf as *void, cap) as i64;
+};
+
+export fn regularfile(fp: *c::FILE) bool = {
+    return platform_stat::zov_file_is_regular(c::fileno(fp)) != 0;
 };
 
 // Use read(2) for commands that must forward a partial pipe read immediately.
