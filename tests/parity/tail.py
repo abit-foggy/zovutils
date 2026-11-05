@@ -25,7 +25,9 @@ def _follow(
     gnu_out = open(s.path(f"{mode}-gnu.out"), "wb")
     zov_err_file = open(s.path(f"{mode}-zov.err"), "wb")
     gnu_err_file = open(s.path(f"{mode}-gnu.err"), "wb")
-    if mode == "descriptor" or mode.startswith("descriptor-"):
+    if mode == "legacy-follow":
+        args = ["-2f"]
+    elif mode == "descriptor" or mode.startswith("descriptor-"):
         args = ["-f", "-s", "0.1"]
     elif mode == "descriptor-long":
         args = ["--follow=descriptor", "--sleep-interval=0.1"]
@@ -78,7 +80,7 @@ def _follow(
         with open(path, "ab") as fixture:
             fixture.write(b"appended\n")
         if not pid_bound:
-            time.sleep(0.4)
+            time.sleep(1.2 if mode == "legacy-follow" else 0.4)
             zov.terminate()
             gnu.terminate()
         elif child is not None:
@@ -203,6 +205,14 @@ def run(s: Suite) -> None:
         ["-q", "-n", "1"],
         ["-v", "-n", "1"],
         ["-n", "100000"],
+        ["+2"],
+        ["+0"],
+        ["+2c"],
+        ["+2b"],
+        ["+2l"],
+        ["-2c"],
+        ["-2b"],
+        ["-2l"],
     )
     fixtures = (empty, lines, no_final_newline, binary, large)
     for opts in options:
@@ -306,6 +316,7 @@ def run(s: Suite) -> None:
     s.case("tail", [lines, "-", "-"], stdin=b"stdin is consumed once\n")
     s.case("tail", ["-c", "4"], stdin=b"a\0b\n\xff")
     _follow(s, "descriptor")
+    _follow(s, "legacy-follow")
     _follow(s, "descriptor-long")
     _follow(s, "name")
     _follow(s, "name-abbrev")

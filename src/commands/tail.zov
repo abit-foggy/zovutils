@@ -232,6 +232,18 @@ export fn run(start: usize, argc: usize) i32 = {
         let arg: str = env::argat(i);
         if (operands || arg == "-") { files.push(arg); i += 1usize; continue; };
         if (arg == "--") { operands = true; i += 1usize; continue; };
+        if (arg.len > 1usize && arg.data[0usize] == 43u8 && arg.data[1usize] >= 48u8 && arg.data[1usize] <= 57u8) {
+            let mut value_text: str = arg[1usize..arg.len];
+            bytes = false;
+            let last: u8 = value_text.data[value_text.len - 1usize];
+            if (last == 99u8) { bytes = true; value_text = value_text[0usize..value_text.len - 1usize]; }
+            else if (last == 108u8) { value_text = value_text[0usize..value_text.len - 1usize]; }
+            else if (last == 102u8) { follow = true; value_text = value_text[0usize..value_text.len - 1usize]; }
+            else if (last == 98u8) { bytes = true; };
+            let r = parsevalue(value_text);
+            let value: numparse::ByteCount = match (r) { case let n: numparse::ByteCount => n, case ParseError => { if (bytes) { invalidnumber("bytes", value_text); } else { invalidnumber("lines", value_text); }; return 1; } };
+            plus = true; count = value.magnitude; i += 1usize; continue;
+        };
         if (arg == "-q" || arg == "--quiet" || arg == "--silent") { quiet = true; verbose = false; i += 1usize; continue; };
         if (arg == "-v" || arg == "--verbose") { verbose = true; quiet = false; i += 1usize; continue; };
         if (arg == "-z" || arg == "--zero-terminated") { delim = 0u8; i += 1usize; continue; };
@@ -327,7 +339,7 @@ export fn run(start: usize, argc: usize) i32 = {
             };
             if (longmatch(key, "--version")) {
                 if (has_equal) { badargument("--version"); return 1; };
-                io::println("tail (zovutils) 0.1.10"); if (!stream::finishoutput("tail")) { return 1; }; return 0;
+                io::println("tail (zovutils) 0.1.11"); if (!stream::finishoutput("tail")) { return 1; }; return 0;
             };
             badlong(arg); return 1;
         };
@@ -361,9 +373,16 @@ export fn run(start: usize, argc: usize) i32 = {
             plus = startsplus(arg[2usize..arg.len]); count = value.magnitude; bytes = true; i += 1usize; continue;
         };
         if (arg.len > 1usize && arg.data[0usize] == 45u8 && arg.data[1usize] >= 48u8 && arg.data[1usize] <= 57u8) {
-            let r = parsevalue(arg[1usize..arg.len]);
-            let value: numparse::ByteCount = match (r) { case let n: numparse::ByteCount => n, case ParseError => { invalidnumber("lines", arg[1usize..arg.len]); return 1; } };
-            plus = startsplus(arg[1usize..arg.len]); count = value.magnitude; bytes = false; i += 1usize; continue;
+            let mut value_text: str = arg[1usize..arg.len];
+            bytes = false;
+            let last: u8 = value_text.data[value_text.len - 1usize];
+            if (last == 99u8) { bytes = true; value_text = value_text[0usize..value_text.len - 1usize]; }
+            else if (last == 108u8) { bytes = false; value_text = value_text[0usize..value_text.len - 1usize]; }
+            else if (last == 102u8) { follow = true; value_text = value_text[0usize..value_text.len - 1usize]; };
+            if (value_text.len > 0usize && value_text.data[value_text.len - 1usize] == 98u8) { bytes = true; };
+            let r = parsevalue(value_text);
+            let value: numparse::ByteCount = match (r) { case let n: numparse::ByteCount => n, case ParseError => { if (bytes) { invalidnumber("bytes", value_text); } else { invalidnumber("lines", value_text); }; return 1; } };
+            plus = false; count = value.magnitude; i += 1usize; continue;
         };
         if (arg.len > 1usize && arg.data[0usize] == 45u8 && arg.data[1usize] != 45u8) {
             let mut j: usize = 1usize;
