@@ -1,6 +1,7 @@
 use std::env;
 use std::io;
 use std::vec as vec;
+use std::mem as mem;
 use <stdio.h> as c;
 use <ctype.h> as ct;
 use shared::io as stream;
@@ -31,6 +32,26 @@ fn scan(fp: *c::FILE, out: &mut Counts) bool = {
     return !stream::readerror(fp);
 };
 
+fn readlist(fp: *c::FILE, out: &mut String) bool = {
+    let mut cap: usize = 1024usize;
+    let mut len: usize = 0usize;
+    let mut buf: *u8 = mem::alloc[u8](cap);
+    while (true) {
+        let byte: i32 = c::fgetc(fp);
+        if (byte == -1) { break; };
+        if (len == cap) {
+            if (cap > 1073741824usize) { mem::freeptr[u8](buf); return false; };
+            cap = cap * 2usize;
+            buf = mem::reallocbuf[u8](buf, cap);
+        };
+        buf[len] = byte as u8;
+        len += 1usize;
+    };
+    if (stream::readerror(fp)) { mem::freeptr[u8](buf); return false; };
+    *out = String::fromowned(buf, len, cap);
+    return true;
+};
+
 fn digits(n: usize) usize = {
     let mut value: usize = n;
     let mut width: usize = 1usize;
@@ -56,6 +77,8 @@ export fn run(start: usize, argc: usize) i32 = {
     let mut bytes: bool = false;
     let mut maxline: bool = false;
     let mut total_mode: str = "auto";
+    let mut files0_from: str = "";
+    let mut files0_given: bool = false;
     let mut operands: bool = false;
     let mut files = vec::new[str]();
     defer files.free();
@@ -74,6 +97,13 @@ export fn run(start: usize, argc: usize) i32 = {
                 c::fprintf(c::stderr, "wc: invalid argument %s for %s\n", total_mode, "--total"); return 1;
             };
             i += 1usize; continue;
+        };
+        if (arg.len > 14usize && arg[0usize..14usize] == "--files0-from=") {
+            files0_from = arg[14usize..arg.len]; files0_given = true; i += 1usize; continue;
+        };
+        if (arg == "--files0-from") {
+            if (i + 1usize >= argc) { c::fprintf(c::stderr, "wc: option '%s' requires an argument\n", arg); return 1; };
+            files0_from = env::argat(i + 1usize); files0_given = true; i += 2usize; continue;
         };
         if (arg == "--lines") { lines = true; }
         else if (arg == "--words") { words = true; }
@@ -94,6 +124,29 @@ export fn run(start: usize, argc: usize) i32 = {
         i += 1usize;
     };
     if (!lines && !words && !chars && !bytes && !maxline) { lines = true; words = true; bytes = true; };
+    let mut file_list: String = String::new();
+    if (files0_given) {
+        if (files.len() > 0usize) { c::fprintf(c::stderr, "wc: cannot specify files with --files0-from\n"); return 1; };
+        let mut listfp: *c::FILE = c::stdin;
+        let mut list_owned: bool = false;
+        if (files0_from != "-") {
+            let raw: nullable *c::FILE = stream::openread(files0_from);
+            if (raw == null) { stream::errorprefix("wc", files0_from); return 1; };
+            listfp = raw!; list_owned = true;
+        };
+        if (!readlist(listfp, &mut file_list)) { stream::errorprefix("wc", files0_from); if (list_owned) { stream::closefile(listfp); }; return 1; };
+        if (list_owned) { stream::closefile(listfp); };
+        let list_view: str = file_list.view();
+        let mut begin: usize = 0usize;
+        for (let j in 0..list_view.len) {
+            if (list_view.data[j] == 0u8) {
+                if (j == begin) { c::fprintf(c::stderr, "wc: %s:%zu: invalid zero-length file name\n", files0_from, files.len() + 1usize); return 1; };
+                files.push(list_view[begin..j]);
+                begin = j + 1usize;
+            };
+        };
+        if (begin < list_view.len) { files.push(list_view[begin..list_view.len]); };
+    };
 
     let mut total: Counts = Counts{ lines = 0usize, words = 0usize, bytes = 0usize, maxline = 0usize };
     let mut status: i32 = 0;

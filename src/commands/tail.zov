@@ -1,8 +1,10 @@
 use std::env;
 use std::io;
 use std::vec as vec;
+use std::time as time;
 use <stdio.h> as c;
 use <unistd.h> as u;
+use <signal.h> as sig;
 use shared::io as stream;
 use shared::numbers as numparse;
 
@@ -92,6 +94,31 @@ fn startsplus(text: str) bool = {
     return text.len > 0usize && text.data[0usize] == 43u8;
 };
 
+fn interval(text: str) (i64 | ParseError) = {
+    let mut dot: usize = text.len;
+    for (let i in 0..text.len) { if (text.data[i] == 46u8) { dot = i; break; }; };
+    let whole_text: str = text[0usize..dot];
+    let whole: usize = match (numparse::number(whole_text)) { case let n: usize => n, case ParseError => return ParseError, };
+    if (whole > 9223372036854usize) { return ParseError; };
+    let mut fraction: usize = 0usize;
+    if (dot < text.len) {
+        let frac_text: str = text[dot + 1usize..text.len];
+        if (frac_text.len == 0usize || frac_text.len > 6usize) { return ParseError; };
+        fraction = match (numparse::number(frac_text)) { case let n: usize => n, case ParseError => return ParseError, };
+        let mut scale: usize = frac_text.len;
+        while (scale < 6usize) { fraction *= 10usize; scale += 1usize; };
+    };
+    return (whole * 1000000usize + fraction) as i64;
+};
+
+fn filemark(fp: *c::FILE) i32 = {
+    let pos: i64 = c::ftell(fp);
+    if (pos < 0i64 || c::fseek(fp, 0i64, c::SEEK_SET) != 0) { return -2; };
+    let first: i32 = c::fgetc(fp);
+    c::fseek(fp, pos, c::SEEK_SET);
+    return first;
+};
+
 fn magnitude(value: i64) usize = {
     if (value < 0i64) { return (-value) as usize; };
     return value as usize;
@@ -105,8 +132,19 @@ export fn run(start: usize, argc: usize) i32 = {
     let mut quiet: bool = false;
     let mut verbose: bool = false;
     let mut follow: bool = false;
+    let mut follow_name: bool = false;
+    let mut retry: bool = false;
+    let mut interval_us: i64 = 1000000i64;
     let mut files = vec::new[str]();
     defer files.free();
+    let mut follow_fps = vec::new[*c::FILE]();
+    defer follow_fps.free();
+    let mut follow_owned = vec::new[bool]();
+    defer follow_owned.free();
+    let mut follow_paths = vec::new[str]();
+    defer follow_paths.free();
+    let mut pids = vec::new[i32]();
+    defer pids.free();
     let mut operands: bool = false;
     let mut i: usize = start;
     while (i < argc) {
@@ -118,8 +156,38 @@ export fn run(start: usize, argc: usize) i32 = {
         if (arg == "-q" || arg == "--quiet" || arg == "--silent") { quiet = true; i += 1usize; continue; };
         if (arg == "-v" || arg == "--verbose") { verbose = true; i += 1usize; continue; };
         if (arg == "-z" || arg == "--zero-terminated") { delim = 0u8; i += 1usize; continue; };
-        if (arg == "-f" || arg == "--follow" || arg == "-F") { follow = true; i += 1usize; continue; };
-        if (arg == "--retry") { i += 1usize; continue; };
+        if (arg == "-f" || arg == "--follow") { follow = true; i += 1usize; continue; };
+        if (arg == "-F") { follow = true; follow_name = true; retry = true; i += 1usize; continue; };
+        if (arg.len > 9usize && arg[0usize..9usize] == "--follow=") {
+            let mode: str = arg[9usize..arg.len];
+            if (mode == "name") { follow = true; follow_name = true; }
+            else if (mode == "descriptor") { follow = true; follow_name = false; }
+            else { c::fprintf(c::stderr, "tail: invalid argument %s for %s\n", mode, "--follow"); return 1; };
+            i += 1usize; continue;
+        };
+        if (arg == "--retry") { retry = true; i += 1usize; continue; };
+        if (arg == "--disable-inotify" || arg == "--debug") { i += 1usize; continue; };
+        if (arg.len > 6usize && arg[0usize..6usize] == "--pid=") {
+            let n: i64 = match (numparse::signednumber(arg[6usize..arg.len])) { case let v: i64 => v, case ParseError => { c::fprintf(c::stderr, "tail: invalid PID: '%s'\n", arg[6usize..arg.len]); return 1; } };
+            if (n <= 0i64 || n > 2147483647i64) { c::fprintf(c::stderr, "tail: invalid PID: '%s'\n", arg[6usize..arg.len]); return 1; };
+            pids.push(n as i32); i += 1usize; continue;
+        };
+        if (arg == "--pid") {
+            if (i + 1usize >= argc) { c::fprintf(c::stderr, "tail: option requires an argument -- '%s'\n", arg); return 1; };
+            let n: i64 = match (numparse::signednumber(env::argat(i + 1usize))) { case let v: i64 => v, case ParseError => { c::fprintf(c::stderr, "tail: invalid PID: '%s'\n", env::argat(i + 1usize)); return 1; } };
+            if (n <= 0i64 || n > 2147483647i64) { c::fprintf(c::stderr, "tail: invalid PID: '%s'\n", env::argat(i + 1usize)); return 1; };
+            pids.push(n as i32); i += 2usize; continue;
+        };
+        if (arg.len > 22usize && arg[0usize..22usize] == "--max-unchanged-stats=") { i += 1usize; continue; };
+        if (arg == "-s" || arg == "--sleep-interval") {
+            if (i + 1usize >= argc) { c::fprintf(c::stderr, "tail: option requires an argument -- '%s'\n", arg); return 1; };
+            interval_us = match (interval(env::argat(i + 1usize))) { case let v: i64 => v, case ParseError => { c::fprintf(c::stderr, "tail: invalid number of seconds: '%s'\n", env::argat(i + 1usize)); return 1; } };
+            i += 2usize; continue;
+        };
+        if (arg.len > 17usize && arg[0usize..17usize] == "--sleep-interval=") {
+            interval_us = match (interval(arg[17usize..arg.len])) { case let v: i64 => v, case ParseError => { c::fprintf(c::stderr, "tail: invalid number of seconds: '%s'\n", arg[17usize..arg.len]); return 1; } };
+            i += 1usize; continue;
+        };
         if (arg.len > 8usize && (arg[0usize..8usize] == "--bytes=" || arg[0usize..8usize] == "--lines=")) {
             bytes = arg[2usize..7usize] == "bytes";
             let value_text: str = arg[8usize..arg.len];
@@ -158,7 +226,7 @@ export fn run(start: usize, argc: usize) i32 = {
                 if (ch == 113u8) { quiet = true; }
                 else if (ch == 118u8) { verbose = true; }
                 else if (ch == 122u8) { delim = 0u8; }
-                else if (ch == 102u8 || ch == 70u8) { follow = true; }
+                else if (ch == 102u8) { follow = true; }
                 else { c::fprintf(c::stderr, "tail: invalid option -- '%c'\n", ch as i32); return 1; };
             };
             i += 1usize; continue;
@@ -190,14 +258,50 @@ export fn run(start: usize, argc: usize) i32 = {
         else { ok = tailfrom(fp, count, bytes, delim); };
         if (!ok) { stream::errorprefix("tail", path); status = 1; };
         if (follow) {
-            let buf: [65536]u8;
-            while (true) {
-                let n: usize = stream::readbytes(fp, ((&buf[0usize]) as *u8), 65536usize);
-                if (n > 0usize) { stream::writebytes(c::stdout, ((&buf[0usize]) as *u8), n); }
-                else { c::clearerr(fp); u::sleep(1u32); };
+            follow_fps.push(fp); follow_owned.push(owned); follow_paths.push(path);
+        } else if (owned && !stream::closefile(fp)) { stream::errorprefix("tail", path); status = 1; };
+    };
+    if (follow) {
+        c::fflush(c::stdout);
+        let buf: [65536]u8;
+        while (true) {
+            for (let k in 0..follow_fps.len()) {
+                let mut fp: *c::FILE = follow_fps.get(k);
+                let path: str = follow_paths.get(k);
+                if (follow_name && path != "-") {
+                    let pos: i64 = c::ftell(fp);
+                    let raw: nullable *c::FILE = stream::openread(path);
+                    if (raw != null) {
+                        let next: *c::FILE = raw!;
+                        c::fseek(next, 0i64, c::SEEK_END);
+                        let end: i64 = c::ftell(next);
+                        let mut begin: i64 = pos;
+                        if (end < begin || filemark(fp) != filemark(next)) { begin = 0i64; };
+                        if (end > begin && c::fseek(next, begin, c::SEEK_SET) == 0) {
+                            while (true) {
+                                let n: usize = stream::readbytes(next, ((&buf[0usize]) as *u8), 65536usize);
+                                if (n == 0usize) { break; };
+                                stream::writebytes(c::stdout, ((&buf[0usize]) as *u8), n);
+                            };
+                            c::fflush(c::stdout);
+                        } else { c::fseek(next, end, c::SEEK_SET); };
+                        if (follow_owned.get(k)) { stream::closefile(fp); };
+                        follow_fps.set(k, next);
+                        follow_owned.set(k, true);
+                    } else if (retry) { }
+                    else { };
+                } else {
+                    let n: usize = stream::readbytes(fp, ((&buf[0usize]) as *u8), 65536usize);
+                    if (n > 0usize) { stream::writebytes(c::stdout, ((&buf[0usize]) as *u8), n); c::fflush(c::stdout); }
+                    else { c::clearerr(fp); };
+                };
             };
+            let mut alive: bool = pids.len() == 0usize;
+            for (let k in 0..pids.len()) { if (sig::kill(pids.get(k), 0) == 0) { alive = true; }; };
+            if (!alive) { break; };
+            time::sleep((interval_us as f64) / 1000000.0f64);
         };
-        if (owned && !stream::closefile(fp)) { stream::errorprefix("tail", path); status = 1; };
+        for (let k in 0..follow_fps.len()) { if (follow_owned.get(k)) { stream::closefile(follow_fps.get(k)); }; };
     };
     return status;
 };
