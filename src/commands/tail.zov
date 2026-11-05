@@ -102,6 +102,12 @@ fn invalidnumber(unit: str, text: str) void = {
     c::fputc(10, c::stderr);
 };
 
+fn invalidvalue(prefix: str, value: str) void = {
+    c::fprintf(c::stderr, "%s", prefix);
+    stream::printquotedargument(c::stderr, value);
+    c::fputc(10, c::stderr);
+};
+
 fn badshort(opt: u8) void = {
     c::fprintf(c::stderr, "tail: invalid option -- '%c'\nTry 'tail --help' for more information.\n", opt as i32);
 };
@@ -314,7 +320,12 @@ export fn run(start: usize, argc: usize) i32 = {
                     if (mode == "name") { follow_name = true; }
                     else if (mode == "descriptor") { follow_name = false; }
                     else if (mode.len == 0usize) { c::fprintf(c::stderr, "tail: ambiguous argument '' for '--follow'\nValid arguments are:\n  - 'descriptor'\n  - 'name'\nTry 'tail --help' for more information.\n"); return 1; }
-                    else { c::fprintf(c::stderr, "tail: invalid argument '%s' for '--follow'\nValid arguments are:\n  - 'descriptor'\n  - 'name'\nTry 'tail --help' for more information.\n", mode); return 1; };
+                    else {
+                        c::fprintf(c::stderr, "tail: invalid argument ");
+                        stream::printquotedargument(c::stderr, mode);
+                        c::fprintf(c::stderr, " for '--follow'\nValid arguments are:\n  - 'descriptor'\n  - 'name'\nTry 'tail --help' for more information.\n");
+                        return 1;
+                    };
                 };
                 i += 1usize; continue;
             };
@@ -323,8 +334,8 @@ export fn run(start: usize, argc: usize) i32 = {
                 if (has_equal) { value_text = arg[eqpos + 1usize..arg.len]; }
                 else if (i + 1usize < argc) { value_text = env::argat(i + 1usize); }
                 else { c::fprintf(c::stderr, "tail: option '--pid' requires an argument\nTry 'tail --help' for more information.\n"); return 1; };
-                let n: i64 = match (numparse::signednumber(value_text)) { case let v: i64 => v, case ParseError => { c::fprintf(c::stderr, "tail: invalid PID: '%s'\n", value_text); return 1; } };
-                if (n < 0i64 || n > 2147483647i64) { c::fprintf(c::stderr, "tail: invalid PID: '%s'\n", value_text); return 1; };
+                let n: i64 = match (numparse::signednumber(value_text)) { case let v: i64 => v, case ParseError => { invalidvalue("tail: invalid PID: ", value_text); return 1; } };
+                if (n < 0i64 || n > 2147483647i64) { invalidvalue("tail: invalid PID: ", value_text); return 1; };
                 if (n > 0i64) { pids.push(n as i32); } else { pid_ignored = true; };
                 if (!has_equal) { i += 1usize; };
                 i += 1usize; continue;
@@ -334,7 +345,7 @@ export fn run(start: usize, argc: usize) i32 = {
                 if (has_equal) { value_text = arg[eqpos + 1usize..arg.len]; }
                 else if (i + 1usize < argc) { value_text = env::argat(i + 1usize); }
                 else { c::fprintf(c::stderr, "tail: option '--sleep-interval' requires an argument\nTry 'tail --help' for more information.\n"); return 1; };
-                interval_secs = match (interval(value_text)) { case let v: f64 => v, case ParseError => { c::fprintf(c::stderr, "tail: invalid number of seconds: '%s'\n", value_text); return 1; } };
+                interval_secs = match (interval(value_text)) { case let v: f64 => v, case ParseError => { invalidvalue("tail: invalid number of seconds: ", value_text); return 1; } };
                 if (!has_equal) { i += 1usize; };
                 i += 1usize; continue;
             };
@@ -342,8 +353,8 @@ export fn run(start: usize, argc: usize) i32 = {
                 let mut value_text: str = "";
                 if (has_equal) { value_text = arg[eqpos + 1usize..arg.len]; }
                 else if (i + 1usize < argc) { value_text = env::argat(i + 1usize); }
-                else { c::fprintf(c::stderr, "tail: invalid maximum number of unchanged stats between opens: ''\n"); return 1; };
-                let _value = match (numparse::number(value_text)) { case let v: usize => v, case ParseError => { c::fprintf(c::stderr, "tail: invalid maximum number of unchanged stats between opens: '%s'\n", value_text); return 1; } };
+                else { invalidvalue("tail: invalid maximum number of unchanged stats between opens: ", value_text); return 1; };
+                let _value = match (numparse::number(value_text)) { case let v: usize => v, case ParseError => { invalidvalue("tail: invalid maximum number of unchanged stats between opens: ", value_text); return 1; } };
                 if (!has_equal) { i += 1usize; };
                 i += 1usize; continue;
             };
@@ -373,13 +384,13 @@ export fn run(start: usize, argc: usize) i32 = {
             };
             if (longmatch(key, "--version")) {
                 if (has_equal) { badargument("--version"); return 1; };
-                io::println("tail (zovutils) 0.1.38"); if (!stream::finishoutput("tail")) { return 1; }; return 0;
+                io::println("tail (zovutils) 0.1.39"); if (!stream::finishoutput("tail")) { return 1; }; return 0;
             };
             badlong(arg); return 1;
         };
         if (arg == "-s") {
             if (i + 1usize >= argc) { c::fprintf(c::stderr, "tail: option requires an argument -- 's'\nTry 'tail --help' for more information.\n"); return 1; };
-            interval_secs = match (interval(env::argat(i + 1usize))) { case let v: f64 => v, case ParseError => { c::fprintf(c::stderr, "tail: invalid number of seconds: '%s'\n", env::argat(i + 1usize)); return 1; } };
+                interval_secs = match (interval(env::argat(i + 1usize))) { case let v: f64 => v, case ParseError => { invalidvalue("tail: invalid number of seconds: ", env::argat(i + 1usize)); return 1; } };
             i += 2usize; continue;
         };
         if (arg == "-n" || arg == "--lines" || arg == "-c" || arg == "--bytes") {
@@ -468,7 +479,7 @@ export fn run(start: usize, argc: usize) i32 = {
                     if (j + 1usize < arg.len) { value_text = arg[j + 1usize..arg.len]; }
                     else if (i + 1usize < argc) { value_text = env::argat(i + 1usize); advance = 2usize; }
                     else { c::fprintf(c::stderr, "tail: option requires an argument -- 's'\nTry 'tail --help' for more information.\n"); return 1; };
-                    interval_secs = match (interval(value_text)) { case let v: f64 => v, case ParseError => { c::fprintf(c::stderr, "tail: invalid number of seconds: '%s'\n", value_text); return 1; } };
+                    interval_secs = match (interval(value_text)) { case let v: f64 => v, case ParseError => { invalidvalue("tail: invalid number of seconds: ", value_text); return 1; } };
                     j = arg.len;
                 } else { badshort(ch); return 1; };
                 if (j < arg.len) { j += 1usize; };

@@ -169,7 +169,9 @@ fn badshort(opt: u8) void = {
 };
 
 fn badtotal(value: str) void = {
-    c::fprintf(c::stderr, "wc: invalid argument '%s' for '--total'\nValid arguments are:\n  - 'auto'\n  - 'always'\n  - 'only'\n  - 'never'\nTry 'wc --help' for more information.\n", value);
+    c::fprintf(c::stderr, "wc: invalid argument ");
+    stream::printquotedargument(c::stderr, value);
+    c::fprintf(c::stderr, " for '--total'\nValid arguments are:\n  - 'auto'\n  - 'always'\n  - 'only'\n  - 'never'\nTry 'wc --help' for more information.\n");
 };
 
 fn missingargument(option: str) void = {
@@ -177,7 +179,9 @@ fn missingargument(option: str) void = {
 };
 
 fn ambiguous_total(value: str) void = {
-    c::fprintf(c::stderr, "wc: ambiguous argument '%s' for '--total'\nValid arguments are:\n  - 'auto'\n  - 'always'\n  - 'only'\n  - 'never'\nTry 'wc --help' for more information.\n", value);
+    c::fprintf(c::stderr, "wc: ambiguous argument ");
+    stream::printquotedargument(c::stderr, value);
+    c::fprintf(c::stderr, " for '--total'\nValid arguments are:\n  - 'auto'\n  - 'always'\n  - 'only'\n  - 'never'\nTry 'wc --help' for more information.\n");
 };
 
 fn help() void = {
@@ -297,7 +301,7 @@ export fn run(start: usize, argc: usize) i32 = {
             else if (longmatch(key, "--max-line-length")) { maxline = true; }
             else if (longmatch(key, "--debug")) { }
             else if (longmatch(key, "--help")) { help(); if (!stream::finishoutputbrief("wc")) { return 1; }; return 0; }
-            else if (longmatch(key, "--version")) { io::println("wc (zovutils) 0.1.38"); if (!stream::finishoutputbrief("wc")) { return 1; }; return 0; };
+            else if (longmatch(key, "--version")) { io::println("wc (zovutils) 0.1.39"); if (!stream::finishoutputbrief("wc")) { return 1; }; return 0; };
             i += 1usize; continue;
         };
         if (arg.len >= 2usize && arg.data[1usize] != 45u8) {

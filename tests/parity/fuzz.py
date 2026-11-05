@@ -54,3 +54,11 @@ def run(s: Suite) -> None:
             if utility == "tail" and suffix == "f":
                 continue
             s.case(utility, [prefix + suffix, suffix_fixture])
+
+    for codepoint in (*range(1, 128), ord("é")):
+        value = "x" + chr(codepoint)
+        s.case("tail", ["--pid=" + value])
+        s.case("tail", ["--sleep-interval=" + value])
+        s.case("tail", ["--max-unchanged-stats=" + value])
+        s.case("tail", ["--follow=" + value])
+        s.case("wc", ["--total=" + value])
