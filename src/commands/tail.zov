@@ -462,7 +462,8 @@ export fn run(start: usize, argc: usize) i32 = {
                     let raw: nullable *c::FILE = stream::openread(path);
                     if (raw != null) {
                         let next: *c::FILE = raw!;
-                        c::fprintf(c::stderr, "tail: '%s' has appeared;  following new file\n", path);
+                        c::fprintf(c::stderr, "tail: "); stream::printquoted(c::stderr, path, true);
+                        c::fprintf(c::stderr, " has appeared;  following new file\n");
                         while (true) {
                             let n: usize = stream::readbytes(next, ((&buf[0usize]) as *u8), 65536usize);
                             if (n == 0usize) { break; };
@@ -485,7 +486,10 @@ export fn run(start: usize, argc: usize) i32 = {
                         let mut begin: i64 = pos;
                         let replaced: bool = !stream::samefile(fp, path);
                         if (end < begin || replaced) { begin = 0i64; };
-                        if (replaced) { c::fprintf(c::stderr, "tail: '%s' has been replaced;  following new file\n", path); };
+                        if (replaced) {
+                            c::fprintf(c::stderr, "tail: "); stream::printquoted(c::stderr, path, true);
+                            c::fprintf(c::stderr, " has been replaced;  following new file\n");
+                        };
                         if (end > begin && c::fseek(next, begin, c::SEEK_SET) == 0) {
                             while (true) {
                                 let n: usize = stream::readbytes(next, ((&buf[0usize]) as *u8), 65536usize);

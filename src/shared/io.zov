@@ -39,13 +39,88 @@ export fn putstr(fp: *c::FILE, s: str) bool = {
 };
 
 export fn errorprefix(name: str, path: str) void = {
-    c::fprintf(c::stderr, "%s: %s: ", name, path);
+    c::fprintf(c::stderr, "%s: ", name);
+    printquoted(c::stderr, path, false);
+    c::fprintf(c::stderr, ": ");
     c::perror((0i64 as *i8));
 };
 
 export fn erroropen(name: str, path: str) void = {
-    c::fprintf(c::stderr, "%s: cannot open '%s' for reading: ", name, path);
+    c::fprintf(c::stderr, "%s: cannot open ", name);
+    printquoted(c::stderr, path, true);
+    c::fprintf(c::stderr, " for reading: ");
     c::perror((0i64 as *i8));
+};
+
+fn printable(b: u8) bool = {
+    return b >= 32u8 && b < 127u8;
+};
+
+fn shellsingle(fp: *c::FILE, text: str) void = {
+    c::fputc(39, fp);
+    for (let i in 0..text.len) {
+        if (text.data[i] == 39u8) { c::fputs("'\\''", fp); }
+        else { c::fputc(text.data[i] as i32, fp); };
+    };
+    c::fputc(39, fp);
+};
+
+fn shellsegment(fp: *c::FILE, text: str) void = {
+    let mut apostrophe: bool = false;
+    let mut backslash: bool = false;
+    for (let i in 0..text.len) {
+        if (text.data[i] == 39u8) { apostrophe = true; };
+        if (text.data[i] == 92u8) { backslash = true; };
+    };
+    if (apostrophe && !backslash) {
+        c::fputc(34, fp);
+        for (let i in 0..text.len) { c::fputc(text.data[i] as i32, fp); };
+        c::fputc(34, fp);
+    } else { shellsingle(fp, text); };
+};
+
+export fn printquoted(fp: *c::FILE, text: str, force: bool) void = {
+    let mut nonprint: bool = false;
+    let mut apostrophe: bool = false;
+    let mut backslash: bool = false;
+    for (let i in 0..text.len) {
+        let b: u8 = text.data[i];
+        if (!printable(b)) { nonprint = true; };
+        if (b == 39u8) { apostrophe = true; };
+        if (b == 92u8) { backslash = true; };
+    };
+    if (!force && !nonprint && !apostrophe && !backslash) {
+        for (let i in 0..text.len) { c::fputc(text.data[i] as i32, fp); };
+        return;
+    };
+    if (!nonprint) {
+        shellsegment(fp, text);
+        return;
+    };
+    let mut i: usize = 0usize;
+    while (i < text.len) {
+        if (printable(text.data[i])) {
+            let begin: usize = i;
+            while (i < text.len && printable(text.data[i])) { i += 1usize; };
+            shellsegment(fp, text[begin..i]);
+            continue;
+        };
+        c::fputs("$'", fp);
+        while (i < text.len && !printable(text.data[i])) {
+            let b: u8 = text.data[i];
+            if (b == 10u8) { c::fputs("\\n", fp); }
+            else if (b == 9u8) { c::fputs("\\t", fp); }
+            else if (b == 13u8) { c::fputs("\\r", fp); }
+            else if (b == 8u8) { c::fputs("\\b", fp); }
+            else if (b == 12u8) { c::fputs("\\f", fp); }
+            else if (b == 11u8) { c::fputs("\\v", fp); }
+            else {
+                c::fprintf(fp, "\\%03o", b as i32);
+            };
+            i += 1usize;
+        };
+        c::fputc(39, fp);
+    };
 };
 
 export fn outputfailed() bool = {

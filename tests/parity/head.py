@@ -11,6 +11,8 @@ def run(s: Suite) -> None:
     binary = s.fixture("head-binary", b"a\0b\n\xffz")
     large = s.fixture("head-large", b"row\n" * 25000)
     missing = s.path("head-missing")
+    unusual_name = s.fixture("head-line\nbreak", b"name with newline\n")
+    missing_unusual = s.path("head-missing-line\nbreak")
     s.write_failure("head", [lines])
     s.write_failure("head", ["--help"])
     s.write_failure("head", ["--version"])
@@ -78,6 +80,8 @@ def run(s: Suite) -> None:
         ["-q", "-n", "1", lines, binary],
         ["-v", "-n", "1", lines, binary],
         ["-n", "1", lines, missing],
+        [unusual_name, unusual_name],
+        [missing_unusual],
         ["-n", "1", missing, lines],
         ["-n", "2", "-c", "3", lines],
         ["-c", "3", "-n", "2", lines],

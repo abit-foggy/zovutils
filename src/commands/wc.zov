@@ -82,7 +82,13 @@ fn print_counts(v: Counts, lines: bool, words: bool, chars: bool, bytes: bool, m
     if (chars) { if (!first) { c::putchar(32); }; c::fprintf(c::stdout, "%*zu", width as i32, v.bytes); first = false; };
     if (bytes) { if (!first) { c::putchar(32); }; c::fprintf(c::stdout, "%*zu", width as i32, v.bytes); first = false; };
     if (maxline) { if (!first) { c::putchar(32); }; c::fprintf(c::stdout, "%*zu", width as i32, v.maxline); first = false; };
-    if (hasname) { c::fprintf(c::stdout, " %s", name); };
+    if (hasname) {
+        c::putchar(32);
+        let mut newline: bool = false;
+        for (let i in 0..name.len) { if (name.data[i] == 10u8) { newline = true; }; };
+        if (newline) { stream::printquoted(c::stdout, name, false); }
+        else { for (let i in 0..name.len) { c::fputc(name.data[i] as i32, c::stdout); }; };
+    };
     c::putchar(10);
 };
 

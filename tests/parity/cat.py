@@ -16,6 +16,8 @@ def run(s: Suite) -> None:
     split_first = s.fixture("split-first", b"first")
     split_second = s.fixture("split-second", b"second\n\n")
     split_blank = s.fixture("split-blank", b"\nlast\n")
+    unusual_name = s.fixture("cat-line\nbreak", b"name with newline\n")
+    missing_unusual = s.path("cat-missing-line\nbreak")
     directory = s.path("directory")
     s.root.joinpath("directory").mkdir()
 
@@ -87,6 +89,7 @@ def run(s: Suite) -> None:
         ["-n", boundary],
         ["-s", boundary],
         [large],
+        [unusual_name],
         ["-A", "-e", all_bytes],
         ["-A", "-t", all_bytes],
         ["-e", "-t", all_bytes],
@@ -102,6 +105,7 @@ def run(s: Suite) -> None:
         ["--", "-n"],
         [directory],
         [s.path("missing")],
+        [missing_unusual],
         [text, s.path("missing"), lines],
         [empty, text],
         ["-x"],
