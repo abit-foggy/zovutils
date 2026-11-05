@@ -275,6 +275,24 @@ export fn run(start: usize, argc: usize) i32 = {
         let arg: str = env::argat(i);
         if (operands || arg == "-") { files.push(arg); i += 1usize; continue; };
         if (arg == "--") { operands = true; i += 1usize; continue; };
+        if (arg == "+" && i == start) {
+            let mut legacy_ok: bool = true;
+            let mut look: usize = i + 1usize;
+            let mut ended_options: bool = false;
+            let mut operands_after_legacy: usize = 0usize;
+            while (look < argc) {
+                let next: str = env::argat(look);
+                if (!ended_options && next == "--") {
+                    if (operands_after_legacy > 0usize) { legacy_ok = false; break; };
+                    ended_options = true; look += 1usize; continue;
+                };
+                if (!ended_options && next.len > 1usize && next.data[0usize] == 45u8) { legacy_ok = false; break; };
+                operands_after_legacy += 1usize;
+                if (operands_after_legacy > 1usize) { legacy_ok = false; break; };
+                look += 1usize;
+            };
+            if (legacy_ok) { plus = true; count = 10usize; i += 1usize; continue; };
+        };
         if (arg.len > 1usize && arg.data[0usize] == 43u8 && arg.data[1usize] >= 48u8 && arg.data[1usize] <= 57u8) {
             let mut legacy_ok: bool = i == start;
             let mut look: usize = i + 1usize;
@@ -282,7 +300,10 @@ export fn run(start: usize, argc: usize) i32 = {
             let mut operands_after_legacy: usize = 0usize;
             while (look < argc) {
                 let next: str = env::argat(look);
-                if (!ended_options && next == "--") { ended_options = true; look += 1usize; continue; };
+                if (!ended_options && next == "--") {
+                    if (operands_after_legacy > 0usize) { legacy_ok = false; break; };
+                    ended_options = true; look += 1usize; continue;
+                };
                 if (!ended_options && next.len > 1usize && next.data[0usize] == 45u8) { legacy_ok = false; break; };
                 operands_after_legacy += 1usize;
                 if (operands_after_legacy > 1usize) { legacy_ok = false; break; };
@@ -415,7 +436,7 @@ export fn run(start: usize, argc: usize) i32 = {
             };
             if (longmatch(key, "--version")) {
                 if (has_equal) { badargument("--version"); return 1; };
-                io::println("tail (zovutils) 0.1.61"); if (!stream::finishoutput("tail")) { return 1; }; return 0;
+                io::println("tail (zovutils) 0.1.63"); if (!stream::finishoutput("tail")) { return 1; }; return 0;
             };
             badlong(arg); return 1;
         };
