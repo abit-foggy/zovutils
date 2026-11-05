@@ -6,6 +6,7 @@ import difflib
 import os
 import re
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -171,6 +172,42 @@ class Suite:
         self.count += 1
         if results[0] != results[1]:
             raise ParityFailure(f"{utility} broken-pipe behavior differs: {results!r}")
+
+    def interrupted_read_case(self, utility: str, args: list[str]) -> None:
+        """Compare how the utility reports EINTR from its first stdin read."""
+        if sys.platform != "linux":
+            return
+        source = self.root / "interrupt-read.c"
+        library = self.root / "interrupt-read.so"
+        source.write_text(
+            """
+#define _GNU_SOURCE
+#include <dlfcn.h>
+#include <errno.h>
+#include <unistd.h>
+static ssize_t (*next_read)(int, void *, size_t);
+static int injected;
+ssize_t read(int fd, void *buffer, size_t count) {
+    if (!next_read) next_read = dlsym(RTLD_NEXT, "read");
+    if (fd == STDIN_FILENO && !injected++) { errno = EINTR; return -1; }
+    return next_read(fd, buffer, count);
+}
+"""
+        )
+        subprocess.run(
+            ["cc", "-shared", "-fPIC", str(source), "-ldl", "-o", str(library)],
+            check=True,
+            timeout=15,
+        )
+        env = self.env.copy()
+        env["LD_PRELOAD"] = str(library)
+        results = [
+            self._run([str(self.zovutils), utility, *args], b"interrupted input\n", env=env),
+            self._run([str(self.gnu_dir / utility), *args], b"interrupted input\n", env=env),
+        ]
+        self.count += 1
+        if results[0] != results[1]:
+            raise ParityFailure(f"{utility} interrupted-read behavior differs: {results!r}")
 
     def symlink_dispatch(self, utility: str, args: list[str]) -> None:
         alias = self.root / utility
