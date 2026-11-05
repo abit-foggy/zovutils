@@ -16,6 +16,7 @@ def run(s: Suite) -> None:
     invalid_multibyte = s.fixture("wc-invalid-multibyte", b"\xff\n")
     all_bytes = s.fixture("wc-all-bytes", bytes(range(256)))
     large = s.fixture("wc-large", b"streaming-row\n" * 25000)
+    wide_bytes_narrow_line = s.fixture("wc-wide-bytes-narrow-line", (b"x" * 50 + b"\n") * 3)
     missing = s.path("wc-missing")
     files0 = s.fixture("wc-files0", (text + "\0" + binary + "\0").encode())
     zero_name = s.fixture("wc-zero-name", b"\0")
@@ -50,6 +51,10 @@ def run(s: Suite) -> None:
     for args in (
         [text],
         ["-l", text],
+        ["-L", wide_bytes_narrow_line, wide_bytes_narrow_line],
+        ["-l", wide_bytes_narrow_line, wide_bytes_narrow_line],
+        ["-w", wide_bytes_narrow_line, wide_bytes_narrow_line],
+        ["--total=always", "-L", wide_bytes_narrow_line],
         ["-w", text],
         ["-c", binary],
         ["-m", binary],
