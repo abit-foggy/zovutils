@@ -297,7 +297,7 @@ export fn run(start: usize, argc: usize) i32 = {
                 };
                 let r = parsevalue(value_text);
                 let value: numparse::ByteCount = match (r) { case let n: numparse::ByteCount => n, case ParseError => { if (bytes) { invalidnumber("bytes", value_text); } else { invalidnumber("lines", value_text); }; return 1; } };
-                plus = startsplus(value_text); count = value.magnitude;
+                plus = plus || startsplus(value_text); count = value.magnitude;
                 if (!has_equal) { i += 1usize; };
                 i += 1usize; continue;
             };
@@ -367,7 +367,7 @@ export fn run(start: usize, argc: usize) i32 = {
             };
             if (longmatch(key, "--version")) {
                 if (has_equal) { badargument("--version"); return 1; };
-                io::println("tail (zovutils) 0.1.14"); if (!stream::finishoutput("tail")) { return 1; }; return 0;
+                io::println("tail (zovutils) 0.1.15"); if (!stream::finishoutput("tail")) { return 1; }; return 0;
             };
             badlong(arg); return 1;
         };
@@ -386,19 +386,19 @@ export fn run(start: usize, argc: usize) i32 = {
             bytes = (arg == "-c" || arg == "--bytes");
             let r = parsevalue(env::argat(i + 1usize));
             let value: numparse::ByteCount = match (r) { case let n: numparse::ByteCount => n, case ParseError => { if (bytes) { invalidnumber("bytes", env::argat(i + 1usize)); } else { invalidnumber("lines", env::argat(i + 1usize)); }; return 1; } };
-            plus = startsplus(env::argat(i + 1usize));
+            plus = plus || startsplus(env::argat(i + 1usize));
             count = value.magnitude;
             i += 2usize; continue;
         };
         if (arg.len > 2usize && arg.data[0usize] == 45u8 && arg.data[1usize] == 110u8) {
             let r = parsevalue(arg[2usize..arg.len]);
             let value: numparse::ByteCount = match (r) { case let n: numparse::ByteCount => n, case ParseError => { invalidnumber("lines", arg[2usize..arg.len]); return 1; } };
-            plus = startsplus(arg[2usize..arg.len]); count = value.magnitude; bytes = false; i += 1usize; continue;
+            plus = plus || startsplus(arg[2usize..arg.len]); count = value.magnitude; bytes = false; i += 1usize; continue;
         };
         if (arg.len > 2usize && arg.data[0usize] == 45u8 && arg.data[1usize] == 99u8) {
             let r = parsevalue(arg[2usize..arg.len]);
             let value: numparse::ByteCount = match (r) { case let n: numparse::ByteCount => n, case ParseError => { invalidnumber("bytes", arg[2usize..arg.len]); return 1; } };
-            plus = startsplus(arg[2usize..arg.len]); count = value.magnitude; bytes = true; i += 1usize; continue;
+            plus = plus || startsplus(arg[2usize..arg.len]); count = value.magnitude; bytes = true; i += 1usize; continue;
         };
         if (arg.len > 1usize && arg.data[0usize] == 45u8 && arg.data[1usize] >= 48u8 && arg.data[1usize] <= 57u8) {
             if (i != start) { invalidcontext(arg.data[1usize]); return 1; };
@@ -452,7 +452,7 @@ export fn run(start: usize, argc: usize) i32 = {
                     };
                     let r = parsevalue(value_text);
                     let value: numparse::ByteCount = match (r) { case let n: numparse::ByteCount => n, case ParseError => { if (bytes) { invalidnumber("bytes", value_text); } else { invalidnumber("lines", value_text); }; return 1; } };
-                    plus = startsplus(value_text); count = value.magnitude; j = arg.len;
+                    plus = plus || startsplus(value_text); count = value.magnitude; j = arg.len;
                 } else if (ch == 115u8) {
                     let mut value_text: str = "";
                     if (j + 1usize < arg.len) { value_text = arg[j + 1usize..arg.len]; }
