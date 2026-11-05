@@ -16,6 +16,7 @@ def run(s: Suite) -> None:
     invalid_multibyte = s.fixture("wc-invalid-multibyte", b"\xff\n")
     all_bytes = s.fixture("wc-all-bytes", bytes(range(256)))
     large = s.fixture("wc-large", b"streaming-row\n" * 25000)
+    large_count = s.fixture("wc-large-count", b"x" * 10000000)
     wide_bytes_narrow_line = s.fixture("wc-wide-bytes-narrow-line", (b"x" * 50 + b"\n") * 3)
     missing = s.path("wc-missing")
     files0 = s.fixture("wc-files0", (text + "\0" + binary + "\0").encode())
@@ -72,6 +73,8 @@ def run(s: Suite) -> None:
         ["--total=only", text],
         ["--total=never", text],
         ["-lcw", large],
+        ["-c", large_count],
+        ["-lcwL", large_count, text],
         ["--files0-from=" + files0],
         ["--files0-from", files0],
         ["--files0-from=-"],
