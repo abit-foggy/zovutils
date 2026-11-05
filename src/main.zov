@@ -1,0 +1,10 @@
+use std::io;
+
+export fn main() i32 = {
+    io::println("hello from zovutils");
+    return 0;
+};
+
+test "sanity" {
+    assert(1 + 1 == 2);
+};
