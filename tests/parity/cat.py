@@ -145,3 +145,6 @@ def run(s: Suite) -> None:
         raise AssertionError("cat argv[0] symlink dispatch differs from GNU")
 
     s.product_version("cat")
+    s.write_failure("cat", [text])
+    s.write_failure("cat", ["--help"])
+    s.write_failure("cat", ["--version"])

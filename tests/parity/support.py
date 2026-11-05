@@ -98,6 +98,32 @@ class Suite:
         if result != (0, expected, b""):
             raise ParityFailure(f"{utility} --version does not report package version: {result!r}")
 
+    def write_failure(self, utility: str, args: list[str]) -> None:
+        """Compare output error handling where Linux provides /dev/full."""
+        sink = Path("/dev/full")
+        if not sink.exists():
+            return
+        gnu_env = self.env.copy()
+        gnu_env["PATH"] = str(self.gnu_dir) + os.pathsep + gnu_env.get("PATH", "")
+        results = []
+        for command, env in (
+            ([str(self.zovutils), utility, *args], self.env),
+            ([utility, *args], gnu_env),
+        ):
+            with sink.open("wb") as stdout:
+                proc = subprocess.run(
+                    command,
+                    stdout=stdout,
+                    stderr=subprocess.PIPE,
+                    env=env,
+                    timeout=15,
+                    check=False,
+                )
+            results.append((proc.returncode, proc.stderr))
+        self.count += 1
+        if results[0] != results[1]:
+            raise ParityFailure(f"{utility} output-write failure differs: {results!r}")
+
 
 def require_executables(suite: Suite) -> None:
     if not suite.zovutils.is_file() or not os.access(suite.zovutils, os.X_OK):

@@ -48,6 +48,27 @@ export fn erroropen(name: str, path: str) void = {
     c::perror((0i64 as *i8));
 };
 
+export fn outputfailed() bool = {
+    return c::ferror(c::stdout) != 0;
+};
+
+export fn finishoutput(name: str) bool = {
+    if (c::fflush(c::stdout) != 0 || c::ferror(c::stdout) != 0) {
+        c::fprintf(c::stderr, "%s: write error: ", name);
+        c::perror((0i64 as *i8));
+        return false;
+    };
+    return true;
+};
+
+export fn finishoutputbrief(name: str) bool = {
+    if (c::fflush(c::stdout) != 0 || c::ferror(c::stdout) != 0) {
+        c::fprintf(c::stderr, "%s: write error\n", name);
+        return false;
+    };
+    return true;
+};
+
 export fn samefile(fp: *c::FILE, path: str) bool = {
     let mut descriptor_info: [32]u64;
     let mut path_info: [32]u64;

@@ -323,11 +323,11 @@ export fn run(start: usize, argc: usize) i32 = {
             };
             if (longmatch(key, "--help")) {
                 if (has_equal) { badargument("--help"); return 1; };
-                help(); return 0;
+                help(); if (!stream::finishoutput("tail")) { return 1; }; return 0;
             };
             if (longmatch(key, "--version")) {
                 if (has_equal) { badargument("--version"); return 1; };
-                io::println("tail (zovutils) 0.1.1"); return 0;
+                io::println("tail (zovutils) 0.1.1"); if (!stream::finishoutput("tail")) { return 1; }; return 0;
             };
             badlong(arg); return 1;
         };
@@ -432,7 +432,14 @@ export fn run(start: usize, argc: usize) i32 = {
         let mut ok: bool = false;
         if (plus) { ok = tailplus(fp, count, bytes, delim); }
         else { ok = tailfrom(fp, count, bytes, delim); };
-        if (!ok) { stream::errorprefix("tail", path); status = 1; };
+        if (!ok) {
+            if (!stream::outputfailed()) { stream::errorprefix("tail", path); };
+            status = 1;
+        };
+        if (stream::outputfailed()) {
+            if (owned) { stream::closefile(fp); };
+            break;
+        };
         if (follow) {
             let follow_fp: nullable *c::FILE = fp;
             follow_fps.push(follow_fp); follow_owned.push(owned); follow_paths.push(path);
@@ -441,6 +448,7 @@ export fn run(start: usize, argc: usize) i32 = {
     if (follow) {
         if (follow_fps.len() == 0usize) {
             c::fprintf(c::stderr, "tail: no files remaining\n");
+            if (!stream::finishoutput("tail")) { status = 1; };
             return 1;
         };
         c::fflush(c::stdout);
@@ -507,5 +515,6 @@ export fn run(start: usize, argc: usize) i32 = {
             if (fp != null && follow_owned.get(k)) { stream::closefile(fp!); };
         };
     };
+    if (!stream::finishoutput("tail")) { status = 1; };
     return status;
 };

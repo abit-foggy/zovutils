@@ -19,6 +19,9 @@ def run(s: Suite) -> None:
     zero_name = s.fixture("wc-zero-name", b"\0")
     empty_files0 = s.fixture("wc-files0-empty", b"")
     unterminated_files0 = s.fixture("wc-files0-unterminated", (text + "\0" + binary).encode())
+    s.write_failure("wc", [text])
+    s.write_failure("wc", ["--help"])
+    s.write_failure("wc", ["--version"])
 
     for mask in range(1 << 5):
         flags = "".join(flag for bit, flag in enumerate("lwmcL") if mask & (1 << bit))

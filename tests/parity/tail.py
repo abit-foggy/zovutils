@@ -136,6 +136,9 @@ def run(s: Suite) -> None:
     binary = s.fixture("tail-binary", b"a\0b\n\xffz")
     large = s.fixture("tail-large", b"row\n" * 25000)
     missing = s.path("tail-missing")
+    s.write_failure("tail", [lines])
+    s.write_failure("tail", ["--help"])
+    s.write_failure("tail", ["--version"])
 
     options = (
         [],

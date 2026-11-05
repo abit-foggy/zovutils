@@ -11,6 +11,9 @@ def run(s: Suite) -> None:
     binary = s.fixture("head-binary", b"a\0b\n\xffz")
     large = s.fixture("head-large", b"row\n" * 25000)
     missing = s.path("head-missing")
+    s.write_failure("head", [lines])
+    s.write_failure("head", ["--help"])
+    s.write_failure("head", ["--version"])
 
     options = (
         [],
