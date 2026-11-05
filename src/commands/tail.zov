@@ -472,7 +472,7 @@ export fn run(start: usize, argc: usize) i32 = {
             };
             if (longmatch(key, "--version")) {
                 if (has_equal) { badargument("--version"); return 1; };
-                io::println("tail (zovutils) 0.1.77"); if (!stream::finishoutput("tail")) { return 1; }; return 0;
+                io::println("tail (zovutils) 0.1.78"); if (!stream::finishoutput("tail")) { return 1; }; return 0;
             };
             badlong(arg); return 1;
         };
@@ -480,6 +480,13 @@ export fn run(start: usize, argc: usize) i32 = {
             if (i + 1usize >= argc) { c::fprintf(c::stderr, "tail: option requires an argument -- 's'\nTry 'tail --help' for more information.\n"); return 1; };
                 interval_secs = match (interval(env::argat(i + 1usize))) { case let v: f64 => v, case ParseError => { invalidvalue("tail: invalid number of seconds: ", env::argat(i + 1usize)); return 1; } };
             i += 2usize; continue;
+        };
+        if (i == start && (arg == "-b" || arg == "-l" || arg == "-bf" || arg == "-cf" || arg == "-lf")) {
+            bytes = arg == "-b" || arg == "-bf" || arg == "-cf";
+            count = 10usize;
+            if (arg == "-b" || arg == "-bf") { count = 5120usize; };
+            if (arg == "-bf" || arg == "-cf" || arg == "-lf") { follow = true; };
+            i += 1usize; continue;
         };
         if (arg == "-n" || arg == "--lines" || arg == "-c" || arg == "--bytes") {
             if (i + 1usize >= argc) {
@@ -523,11 +530,12 @@ export fn run(start: usize, argc: usize) i32 = {
             let mut digit_end: usize = 0usize;
             while (digit_end < value_text.len && value_text.data[digit_end] >= 48u8 && value_text.data[digit_end] <= 57u8) { digit_end += 1usize; };
             let suffix: str = value_text[digit_end..value_text.len];
-            if (suffix == "c") { bytes = true; }
-            else if (suffix == "b") { bytes = true; }
+            if (suffix == "c" || suffix == "cf") { bytes = true; }
+            else if (suffix == "b" || suffix == "bf") { bytes = true; }
             else if (suffix == "l") { }
-            else if (suffix == "f") { follow = true; }
+            else if (suffix == "f" || suffix == "lf") { follow = true; }
             else if (suffix.len > 0usize) { invalidcontext(arg.data[1usize]); return 1; };
+            if (suffix == "cf" || suffix == "bf") { follow = true; };
             let mut blocks: bool = suffix == "b" || suffix == "bf";
             value_text = value_text[0usize..digit_end];
             let r = parsevalue(value_text);

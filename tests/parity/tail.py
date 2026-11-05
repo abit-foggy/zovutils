@@ -279,8 +279,32 @@ def run(s: Suite) -> None:
         if outcomes[0] != outcomes[1]:
             raise AssertionError(f"tail legacy block-follow differs for {option}: {outcomes!r}")
 
+    for option in ("-bf", "-cf", "-lf", "-2bf", "-2cf", "-2lf"):
+        outcomes = []
+        for command in (
+            [str(s.zovutils), "tail", option, plus_follow_file],
+            [str(s.gnu_dir / "tail"), option, plus_follow_file],
+        ):
+            proc = subprocess.Popen(
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                env=s.env,
+            )
+            try:
+                proc.wait(timeout=0.1)
+            except subprocess.TimeoutExpired:
+                proc.terminate()
+            stdout, stderr = proc.communicate(timeout=3)
+            outcomes.append((stdout, stderr, proc.returncode))
+        s.count += 1
+        if outcomes[0] != outcomes[1]:
+            raise AssertionError(f"tail legacy minus-follow differs for {option}: {outcomes!r}")
+
     options = (
         [],
+        ["-b"],
+        ["-l"],
         ["-n", "2"],
         ["-n2"],
         ["-n", "-2"],
