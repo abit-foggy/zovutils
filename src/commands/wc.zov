@@ -246,7 +246,9 @@ export fn run(start: usize, argc: usize) i32 = {
     let mut file_list: String = String::new();
     if (files0_given) {
         if (files.len() > 0usize) {
-            c::fprintf(c::stderr, "wc: extra operand '%s'\nfile operands cannot be combined with --files0-from\nTry 'wc --help' for more information.\n", files.get(0));
+            c::fprintf(c::stderr, "wc: extra operand ");
+            stream::printquoted(c::stderr, files.get(0), true);
+            c::fprintf(c::stderr, "\nfile operands cannot be combined with --files0-from\nTry 'wc --help' for more information.\n");
             return 1;
         };
         let mut listfp: *c::FILE = c::stdin;
@@ -262,7 +264,11 @@ export fn run(start: usize, argc: usize) i32 = {
         let mut begin: usize = 0usize;
         for (let j in 0..list_view.len) {
             if (list_view.data[j] == 0u8) {
-                if (j == begin) { c::fprintf(c::stderr, "wc: %s:%zu: invalid zero-length file name\n", files0_from, files.len() + 1usize); return 1; };
+                if (j == begin) {
+                    c::fprintf(c::stderr, "wc: "); stream::printquoted(c::stderr, files0_from, false);
+                    c::fprintf(c::stderr, ":%zu: invalid zero-length file name\n", files.len() + 1usize);
+                    return 1;
+                };
                 files.push(list_view[begin..j]);
                 begin = j + 1usize;
             };
