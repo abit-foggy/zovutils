@@ -186,3 +186,5 @@ def run(s: Suite) -> None:
             stdin="é\u3000中\n界界".encode(),
             extra_env=utf8,
         )
+    else:
+        raise AssertionError("no UTF-8 locale is available for wc parity coverage")
