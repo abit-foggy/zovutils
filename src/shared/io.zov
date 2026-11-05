@@ -41,3 +41,19 @@ export fn errorprefix(name: str, path: str) void = {
     c::fprintf(c::stderr, "%s: %s: ", name, path);
     c::perror((0i64 as *i8));
 };
+
+test "byte stream helpers preserve binary bytes" {
+    let raw: nullable *c::FILE = c::tmpfile();
+    assert(raw != null);
+    let fp: *c::FILE = raw!;
+    let input: [3]u8 = [0u8, 65u8, 255u8];
+    assert(writebytes(fp, ((&input[0usize]) as *u8), 2usize));
+    assert(putbyte(fp, input[2usize]));
+    assert(c::fseek(fp, 0i64, c::SEEK_SET) == 0);
+    let mut output: [3]u8;
+    assert(readbytes(fp, ((&output[0usize]) as *u8), 3usize) == 3usize);
+    assert(output[0usize] == 0u8);
+    assert(output[1usize] == 65u8);
+    assert(output[2usize] == 255u8);
+    assert(closefile(fp));
+};
