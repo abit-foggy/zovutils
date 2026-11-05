@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 
 import cat
+import fuzz
 import head
 import tail
 import wc
@@ -27,7 +28,7 @@ def main() -> int:
     suite = Suite(args.zovutils.resolve(), args.gnu_dir.resolve())
     try:
         require_executables(suite)
-        for module in (cat, head, tail, wc):
+        for module in (cat, head, tail, wc, fuzz):
             start = suite.count
             module.run(suite)
             print(f"[PASS] {module.__name__}: {suite.count - start} parity cases")
