@@ -89,3 +89,25 @@ def run(s: Suite) -> None:
         option = "--bad-" + raw
         for utility in ("cat", "head", "tail", "wc"):
             s.case(utility, [option])
+
+    # Multi-file head/tail parsing permutes options around operands and
+    # carries delimiters and header state between independently generated
+    # binary files.
+    ht_count_values = ("0", "1", "2", "-0", "-1", "-2", "+0", "+1", "+2", "1k", "bad")
+    for utility in ("head", "tail"):
+        for _ in range(300):
+            operands = rng.choices(fixtures, k=rng.randrange(2, 5))
+            if rng.randrange(3) == 0:
+                operands.insert(rng.randrange(len(operands) + 1), "-")
+            options: list[str] = []
+            for _ in range(rng.randrange(1, 4)):
+                flag = rng.choice(("-n", "-c", "-q", "-v", "-z"))
+                if flag in ("-n", "-c"):
+                    options.extend((flag, rng.choice(ht_count_values)))
+                else:
+                    options.append(flag)
+            args = list(operands)
+            for option in options:
+                args.insert(rng.randrange(len(args) + 1), option)
+            stdin = bytes(rng.randrange(256) for _ in range(rng.randrange(100)))
+            s.case(utility, args, stdin=stdin)
