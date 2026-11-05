@@ -189,11 +189,11 @@ export fn run(start: usize, argc: usize) i32 = {
             };
             if (longmatch(key, "--quiet") || longmatch(key, "--silent")) {
                 if (has_equal) { badargument("--quiet"); return 1; };
-                quiet = true; i += 1usize; continue;
+                quiet = true; verbose = false; i += 1usize; continue;
             };
             if (longmatch(key, "--verbose")) {
                 if (has_equal) { badargument("--verbose"); return 1; };
-                verbose = true; i += 1usize; continue;
+                verbose = true; quiet = false; i += 1usize; continue;
             };
             if (longmatch(key, "--zero-terminated")) {
                 if (has_equal) { badargument("--zero-terminated"); return 1; };
@@ -209,8 +209,8 @@ export fn run(start: usize, argc: usize) i32 = {
             };
             badlong(arg); return 1;
         };
-        if (arg == "-q" || arg == "--quiet" || arg == "--silent") { quiet = true; i += 1usize; continue; };
-        if (arg == "-v" || arg == "--verbose") { verbose = true; i += 1usize; continue; };
+        if (arg == "-q" || arg == "--quiet" || arg == "--silent") { quiet = true; verbose = false; i += 1usize; continue; };
+        if (arg == "-v" || arg == "--verbose") { verbose = true; quiet = false; i += 1usize; continue; };
         if (arg == "-z" || arg == "--zero-terminated") { delim = 0u8; i += 1usize; continue; };
         if (arg == "-c" || arg == "--bytes" || arg == "-n" || arg == "--lines") {
             if (i + 1usize >= argc) {
@@ -248,8 +248,8 @@ export fn run(start: usize, argc: usize) i32 = {
             let mut advance: usize = 1usize;
             while (j < arg.len) {
                 let ch: u8 = arg.data[j];
-                if (ch == 113u8) { quiet = true; }
-                else if (ch == 118u8) { verbose = true; }
+                if (ch == 113u8) { quiet = true; verbose = false; }
+                else if (ch == 118u8) { verbose = true; quiet = false; }
                 else if (ch == 122u8) { delim = 0u8; }
                 else if (ch == 110u8 || ch == 99u8) {
                     bytes = ch == 99u8;
