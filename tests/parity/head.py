@@ -1,5 +1,9 @@
 """Parity cases for head."""
 
+import os
+import select
+import subprocess
+
 from support import Suite
 
 
@@ -129,3 +133,36 @@ def run(s: Suite) -> None:
     s.case("head", ["-n", "-1"], stdin=b"one\ntwo\nthree\n")
     s.case("head", ["-c", "-2"], stdin=b"a\0b\n\xff")
     s.case("head", ["-n", "0"], stdin=b"")
+
+    # Positive-count modes emit as soon as enough bytes arrive, before stdin
+    # reaches EOF. Check newline, byte, and NUL-delimited reads against GNU.
+    for opts, payload in (
+        (["-n", "1"], b"abc\n"),
+        (["-c", "4"], b"abc\n"),
+        (["-z", "-n", "1"], b"abc\0"),
+    ):
+        outcomes = []
+        for command in (
+            [str(s.zovutils), "head", *opts],
+            [str(s.gnu_dir / "head"), *opts],
+        ):
+            proc = subprocess.Popen(
+                command,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                env=s.env,
+            )
+            assert proc.stdin is not None and proc.stdout is not None
+            proc.stdin.write(payload)
+            proc.stdin.flush()
+            ready, _, _ = select.select([proc.stdout], [], [], 2)
+            early = os.read(proc.stdout.fileno(), 64) if ready else b""
+            proc.stdin.close()
+            remainder = proc.stdout.read()
+            stderr = proc.stderr.read() if proc.stderr is not None else b""
+            status = proc.wait(timeout=5)
+            outcomes.append((bool(ready), early, remainder, status, stderr))
+        s.count += 1
+        if outcomes[0] != outcomes[1]:
+            raise AssertionError(f"head streaming behavior differs: {opts!r}: {outcomes!r}")
