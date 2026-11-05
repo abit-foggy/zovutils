@@ -137,6 +137,26 @@ def run(s: Suite) -> None:
         for fixture in (text, binary, tabs, controls, invalid_multibyte, all_bytes):
             s.case("wc", [*args[:-1], fixture])
 
+    # GNU's field widths depend on both selected columns and whether stdin is
+    # a pipe. Keep this matrix around the total modes and operand arrangements
+    # that exercise those width decisions.
+    layout_scenarios = (
+        ([], b"one two\n"),
+        (["-"], b"one two\n"),
+        ([text], b""),
+        ([empty, text], b""),
+        (["-", text], b"one two\n"),
+        ([text, "-"], b"one two\n"),
+        (["-", "-"], b"one two\n"),
+    )
+    for mask in range(1 << 5):
+        flags = "".join(flag for bit, flag in enumerate("lwmcL") if mask & (1 << bit))
+        options = (["-" + flags] if flags else [])
+        for total_mode in (None, "always", "never", "only"):
+            total = ["--total=" + total_mode] if total_mode else []
+            for operands, stdin in layout_scenarios:
+                s.case("wc", [*total, *options, *operands], stdin=stdin)
+
     for option in ("--lines", "--words", "--chars", "--bytes", "--max-line-length", "--total", "--files0-from"):
         for length in range(3, len(option) + 1):
             if option == "--total":
