@@ -168,6 +168,9 @@ def run(s: Suite) -> None:
         ["--bogus=x"],
     ):
         s.case("cat", args, stdin=b"from-stdin\n")
+    # GNU getopt stops at the first operand when POSIXLY_CORRECT is present.
+    s.case("cat", [text, "-n"], extra_env={"POSIXLY_CORRECT": "1"})
+    s.case("cat", [text, "--show-ends", lines], extra_env={"POSIXLY_CORRECT": ""})
     s.case("cat", [], stdin=b"stdin\0bytes\n")
     s.case("cat", ["-", "-"], stdin=b"stdin is consumed once\n")
     s.permission_denied_case("cat", [unreadable, text], unreadable)
