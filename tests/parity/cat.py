@@ -363,6 +363,37 @@ ssize_t read(int fd, void *buffer, size_t count) {
                     f"options={opts!r} operand={operand_mode}: {outcomes!r}"
                 )
 
+    # stdin and stdout can be dup()s of the same open file description. Reads
+    # and writes then share one cursor, so even plain cat appends each chunk.
+    for opts in ([], ["-n"]):
+        for offset in (0, 2, 6):
+            outcomes = []
+            for command in (
+                [str(s.zovutils), "cat", *opts, "-"],
+                [str(s.gnu_dir / "cat"), *opts, "-"],
+            ):
+                with open(same_path, "wb") as fixture:
+                    fixture.write(transform_payload)
+                with open(same_path, "r+b") as stream:
+                    stream.seek(offset)
+                    proc = subprocess.run(
+                        command,
+                        stdin=stream,
+                        stdout=stream,
+                        stderr=subprocess.PIPE,
+                        env=s.env,
+                        timeout=5,
+                        check=False,
+                        preexec_fn=_limit_output_file,
+                    )
+                outcomes.append((proc.returncode, proc.stderr, open(same_path, "rb").read()))
+            s.count += 1
+            if outcomes[0] != outcomes[1]:
+                raise AssertionError(
+                    f"cat shared-descriptor behavior differs: "
+                    f"options={opts!r} offset={offset}: {outcomes!r}"
+                )
+
     # GNU's cat behavior through an installed command-name symlink.
     alias = s.root / "cat"
     alias.symlink_to(s.zovutils)
