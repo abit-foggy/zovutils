@@ -1,6 +1,7 @@
 """Parity cases for cat."""
 
 import os
+import random
 import resource
 import select
 import signal
@@ -393,6 +394,40 @@ ssize_t read(int fd, void *buffer, size_t count) {
                     f"cat shared-descriptor behavior differs: "
                     f"options={opts!r} offset={offset}: {outcomes!r}"
                 )
+
+    rng = random.Random(0x511)
+    switch_flags = "nbsETvAetu"
+    shared_payload = b"a\n\n\t\xff\x01\0b\n\nlast"
+    for _ in range(100):
+        selected = rng.sample(switch_flags, rng.randrange(len(switch_flags) + 1))
+        opts = ["-" + "".join(selected)] if selected else []
+        offset = rng.choice((0, 2, 6))
+        outcomes = []
+        for command in (
+            [str(s.zovutils), "cat", *opts, "-"],
+            [str(s.gnu_dir / "cat"), *opts, "-"],
+        ):
+            with open(same_path, "wb") as fixture:
+                fixture.write(shared_payload)
+            with open(same_path, "r+b") as stream:
+                stream.seek(offset)
+                proc = subprocess.run(
+                    command,
+                    stdin=stream,
+                    stdout=stream,
+                    stderr=subprocess.PIPE,
+                    env=s.env,
+                    timeout=5,
+                    check=False,
+                    preexec_fn=_limit_output_file,
+                )
+            outcomes.append((proc.returncode, proc.stderr, open(same_path, "rb").read()))
+        s.count += 1
+        if outcomes[0] != outcomes[1]:
+            raise AssertionError(
+                f"cat randomized shared-descriptor behavior differs: "
+                f"options={opts!r} offset={offset}: {outcomes!r}"
+            )
 
     # GNU's cat behavior through an installed command-name symlink.
     alias = s.root / "cat"
