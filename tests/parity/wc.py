@@ -10,7 +10,7 @@ def run(s: Suite) -> None:
     no_final_newline = s.fixture("wc-no-final-newline", b"no-final-newline")
     binary = s.fixture("wc-binary", b"a\0b\n\xffz")
     tabs = s.fixture("wc-tabs", b"a\tb\n")
-    controls = s.fixture("wc-controls", b"a\rb\v\f\x7f\n")
+    controls = s.fixture("wc-controls", b"a\rb\v\f\x7f\nlong-prefix\fX\n")
     invalid_multibyte = s.fixture("wc-invalid-multibyte", b"\xff\n")
     all_bytes = s.fixture("wc-all-bytes", bytes(range(256)))
     large = s.fixture("wc-large", b"streaming-row\n" * 25000)
