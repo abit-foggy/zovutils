@@ -8,6 +8,9 @@ from support import Suite
 
 
 def run(s: Suite) -> None:
+    posixly_file = s.fixture("wc-posixly", b"one\ntwo\n")
+    s.case("wc", ["-l", posixly_file], extra_env={"POSIXLY_CORRECT": "1"})
+    s.case("wc", [posixly_file, "-l"], extra_env={"POSIXLY_CORRECT": ""})
     s.product_version("wc")
     empty = s.fixture("wc-empty", b"")
     text = s.fixture("wc-text", b"alpha\nbeta\n\ngamma\n")

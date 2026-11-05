@@ -210,6 +210,8 @@ def _follow_write_failure(s: Suite) -> None:
 
 
 def run(s: Suite) -> None:
+    s.case("tail", ["-n", "1", s.fixture("tail-posixly", b"one\ntwo\n")], extra_env={"POSIXLY_CORRECT": "1"})
+    s.case("tail", [s.fixture("tail-posixly-late", b"one\ntwo\n"), "-n", "1"], extra_env={"POSIXLY_CORRECT": ""})
     s.product_version("tail")
     empty = s.fixture("tail-empty", b"")
     lines = s.fixture("tail-lines", b"one\ntwo\nthree\nfour\n")
