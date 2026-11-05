@@ -83,11 +83,13 @@ fn shellsingle(fp: *c::FILE, text: str) void = {
 fn shellsegment(fp: *c::FILE, text: str) void = {
     let mut apostrophe: bool = false;
     let mut backslash: bool = false;
+    let mut shell_special: bool = false;
     for (let i in 0..text.len) {
         if (text.data[i] == 39u8) { apostrophe = true; };
         if (text.data[i] == 92u8) { backslash = true; };
+        if (shellmeta(text.data[i]) && text.data[i] != 39u8 && text.data[i] != 58u8) { shell_special = true; };
     };
-    if (apostrophe && !backslash) {
+    if (apostrophe && !backslash && !shell_special) {
         c::fputc(34, fp);
         for (let i in 0..text.len) { c::fputc(text.data[i] as i32, fp); };
         c::fputc(34, fp);
