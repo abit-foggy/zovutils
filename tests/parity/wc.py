@@ -20,6 +20,7 @@ def run(s: Suite) -> None:
     empty_files0 = s.fixture("wc-files0-empty", b"")
     unterminated_files0 = s.fixture("wc-files0-unterminated", (text + "\0" + binary).encode())
     unusual_name = s.fixture("wc-line\nbreak", b"name with newline\n")
+    unusual_files0 = s.fixture("wc-files0-unusual", (unusual_name + "\0").encode())
     missing_unusual = s.path("wc-missing-line\nbreak")
     s.write_failure("wc", [text])
     s.write_failure("wc", ["--help"])
@@ -59,6 +60,7 @@ def run(s: Suite) -> None:
         ["--files0-from", files0],
         ["--files0-from=-"],
         ["--files0-from=" + empty_files0],
+        ["--files0-from=" + unusual_files0],
         ["--files0-from=" + unterminated_files0],
         ["--files0-from=" + zero_name],
         [missing],
