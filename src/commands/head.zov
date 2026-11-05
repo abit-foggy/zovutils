@@ -225,7 +225,7 @@ export fn run(start: usize, argc: usize) i32 = {
             };
             if (longmatch(key, "--version")) {
                 if (has_equal) { badargument("--version"); return 1; };
-                io::println("head (zovutils) 0.1.24"); if (!stream::finishoutput("head")) { return 1; }; return 0;
+                io::println("head (zovutils) 0.1.25"); if (!stream::finishoutput("head")) { return 1; }; return 0;
             };
             badlong(arg); return 1;
         };
@@ -258,30 +258,28 @@ export fn run(start: usize, argc: usize) i32 = {
             bytes = true; i += 1usize; continue;
         };
         if (arg.len > 1usize && arg.data[0usize] == 45u8 && arg.data[1usize] >= 48u8 && arg.data[1usize] <= 57u8) {
-            let mut value_text: str = arg[1usize..arg.len];
+            let mut digit_end: usize = 0usize;
+            while (digit_end + 1usize < arg.len && arg.data[digit_end + 1usize] >= 48u8 && arg.data[digit_end + 1usize] <= 57u8) { digit_end += 1usize; };
+            let mut value_text: str = arg[1usize..digit_end + 1usize];
             bytes = false;
-            let mut blocks: bool = false;
-            let last: u8 = value_text.data[value_text.len - 1usize];
-            if (last == 99u8) { bytes = true; value_text = value_text[0usize..value_text.len - 1usize]; }
-            else if (last == 108u8) { value_text = value_text[0usize..value_text.len - 1usize]; }
-            else if (last == 98u8) {
-                bytes = true; blocks = true;
-                let mut digit_end: usize = 0usize;
-                while (digit_end < value_text.len && value_text.data[digit_end] >= 48u8 && value_text.data[digit_end] <= 57u8) { digit_end += 1usize; };
-                value_text = value_text[0usize..digit_end];
-            }
-            else {
-                let mut digit_end: usize = 0usize;
-                while (digit_end < value_text.len && value_text.data[digit_end] >= 48u8 && value_text.data[digit_end] <= 57u8) { digit_end += 1usize; };
-                if (digit_end < value_text.len) { badtrailing(value_text.data[digit_end]); return 1; };
+            let mut legacy_scale: usize = 1usize;
+            for (let j in digit_end + 1usize..arg.len) {
+                let ch: u8 = arg.data[j];
+                if (ch == 99u8) { bytes = true; legacy_scale = 1usize; }
+                else if (ch == 98u8) { bytes = true; legacy_scale = 512usize; }
+                else if (ch == 108u8) { bytes = false; legacy_scale = 1usize; }
+                else if (ch == 107u8) { bytes = true; legacy_scale = 1024usize; }
+                else if (ch == 109u8) { bytes = true; legacy_scale = 1048576usize; }
+                else if (ch == 113u8) { quiet = true; verbose = false; }
+                else if (ch == 118u8) { verbose = true; quiet = false; }
+                else if (ch == 122u8) { delim = 0u8; }
+                else { badtrailing(ch); return 1; };
             };
             let r = parsecount(value_text);
             let value: numparse::ByteCount = match (r) { case let n: numparse::ByteCount => n, case ParseError => { if (bytes) { invalidnumber("bytes", value_text); } else { invalidnumber("lines", value_text); }; return 1; } };
             let mut magnitude: usize = value.magnitude;
-            if (blocks) {
-                if (magnitude > 36028797018963967usize) { invalidnumber("bytes", value_text); return 1; };
-                magnitude *= 512usize;
-            };
+            if (magnitude > (~0usize / legacy_scale)) { magnitude = ~0usize; }
+            else { magnitude *= legacy_scale; };
             negative = value.negative; count = magnitude;
             i += 1usize; continue;
         };

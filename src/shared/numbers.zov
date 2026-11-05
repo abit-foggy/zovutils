@@ -58,14 +58,14 @@ fn power_saturating(base: usize, exponent: usize) usize = {
 fn suffixexponent(unit: u8) usize = {
     if (unit == 107u8 || unit == 75u8) { return 1usize; };
     if (unit == 109u8 || unit == 77u8) { return 2usize; };
-    if (unit == 103u8 || unit == 71u8) { return 3usize; };
-    if (unit == 116u8 || unit == 84u8) { return 4usize; };
-    if (unit == 112u8 || unit == 80u8) { return 5usize; };
-    if (unit == 101u8 || unit == 69u8) { return 6usize; };
-    if (unit == 122u8 || unit == 90u8) { return 7usize; };
-    if (unit == 121u8 || unit == 89u8) { return 8usize; };
-    if (unit == 114u8 || unit == 82u8) { return 9usize; };
-    if (unit == 113u8 || unit == 81u8) { return 10usize; };
+    if (unit == 71u8) { return 3usize; };
+    if (unit == 84u8) { return 4usize; };
+    if (unit == 80u8) { return 5usize; };
+    if (unit == 69u8) { return 6usize; };
+    if (unit == 90u8) { return 7usize; };
+    if (unit == 89u8) { return 8usize; };
+    if (unit == 82u8) { return 9usize; };
+    if (unit == 81u8) { return 10usize; };
     return 0usize;
 };
 

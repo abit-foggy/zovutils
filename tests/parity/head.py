@@ -31,7 +31,11 @@ def run(s: Suite) -> None:
         ["-2c"],
         ["-2b"],
         ["-2l"],
+        ["-2k"],
+        ["-2m"],
         ["-2kb"],
+        ["-2bc"],
+        ["-2cb"],
         ["-n", "-1"],
         ["-n", "-0"],
         ["-n", "+2"],
@@ -77,6 +81,15 @@ def run(s: Suite) -> None:
             s.case("head", [flag, value, lines])
         s.case("head", ["--lines=" + value, lines])
         s.case("head", ["--bytes=" + value, lines])
+
+    # GNU accepts lowercase k/m multipliers, but only uppercase multipliers
+    # from giga upward. Binary iB suffixes follow the same rule.
+    for value in ("1kB", "1mB", "1kiB", "1miB", "1K", "1M", "1G", "1GiB", "1Q"):
+        for flag in ("-n", "-c"):
+            s.case("head", [flag, value, lines])
+    for value in ("1g", "1z", "1q", "1gB", "1zB", "1qB", "1gib"):
+        for flag in ("-n", "-c"):
+            s.case("head", [flag, value, lines])
 
     for mask in range(1 << 3):
         flags = "".join(flag for bit, flag in enumerate("qvz") if mask & (1 << bit))
