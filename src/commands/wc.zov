@@ -27,7 +27,7 @@ fn scan(fp: *c::FILE, out: &mut Counts) bool = {
                 linebytes = 0usize;
             } else if (b == 9u8) { linebytes += 8usize - (linebytes % 8usize); }
             else if (b >= 32u8 && b < 128u8 && b != 127u8) { linebytes += 1usize; };
-            if (ct::isspace(b as i32) != 0) { inword = false; }
+            if (ct::isspace(b as i32) != 0 || b == 160u8) { inword = false; }
             else if (!inword) { out.words += 1usize; inword = true; };
         };
     };
