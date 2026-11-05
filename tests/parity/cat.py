@@ -41,7 +41,7 @@ def run(s: Suite) -> None:
 
     # Exercise every combination of cat's independent display/numbering flags
     # against text, binary, and chunk-boundary inputs.
-    switches = "nbsETv"
+    switches = "nbsETvAetu"
     for mask in range(1 << len(switches)):
         selected = "".join(flag for bit, flag in enumerate(switches) if mask & (1 << bit))
         opts = ["-" + selected] if selected else []
