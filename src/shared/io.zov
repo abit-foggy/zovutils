@@ -1,5 +1,6 @@
 use <stdio.h> as c;
 use <sys/stat.h> as sysc;
+use <unistd.h> as posix;
 
 export type StreamError = !i32;
 
@@ -13,6 +14,12 @@ export fn closefile(fp: *c::FILE) bool = {
 
 export fn readbytes(fp: *c::FILE, buf: *u8, cap: usize) usize = {
     return c::fread(buf as *void, 1usize, cap, fp);
+};
+
+// Use read(2) for commands that must forward a partial pipe read immediately.
+// fread may wait for the full requested capacity before returning on a pipe.
+export fn readchunk(fp: *c::FILE, buf: *u8, cap: usize) i64 = {
+    return posix::read(c::fileno(fp), buf as *void, cap) as i64;
 };
 
 export fn readerror(fp: *c::FILE) bool = {

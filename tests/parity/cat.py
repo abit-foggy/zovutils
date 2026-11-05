@@ -1,5 +1,9 @@
 """Parity cases for cat."""
 
+import os
+import select
+import subprocess
+
 from support import Suite
 
 
@@ -141,6 +145,35 @@ def run(s: Suite) -> None:
         s.case("cat", args, stdin=b"from-stdin\n")
     s.case("cat", [], stdin=b"stdin\0bytes\n")
     s.case("cat", ["-", "-"], stdin=b"stdin is consumed once\n")
+
+    # cat must forward each available input chunk before stdin reaches EOF.
+    # Captured stdout is fully buffered by stdio unless cat flushes it.
+    for opts in ([], ["-n"], ["-v"], ["-u"]):
+        outcomes = []
+        for command in (
+            [str(s.zovutils), "cat", *opts],
+            [str(s.gnu_dir / "cat"), *opts],
+        ):
+            proc = subprocess.Popen(
+                command,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                env=s.env,
+            )
+            assert proc.stdin is not None and proc.stdout is not None
+            proc.stdin.write(b"stream")
+            proc.stdin.flush()
+            ready, _, _ = select.select([proc.stdout], [], [], 2)
+            early = os.read(proc.stdout.fileno(), 64) if ready else b""
+            proc.stdin.close()
+            remainder = proc.stdout.read()
+            stderr = proc.stderr.read() if proc.stderr is not None else b""
+            status = proc.wait(timeout=5)
+            outcomes.append((bool(ready), early, remainder, status, stderr))
+        s.count += 1
+        if outcomes[0] != outcomes[1]:
+            raise AssertionError(f"cat streaming behavior differs: {opts!r}: {outcomes!r}")
 
     # GNU's cat behavior through an installed command-name symlink.
     alias = s.root / "cat"
