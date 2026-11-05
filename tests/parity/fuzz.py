@@ -77,3 +77,15 @@ def run(s: Suite) -> None:
         s.case("tail", ["--max-unchanged-stats=" + value])
         s.case("tail", ["--follow=" + value])
         s.case("wc", ["--total=" + value])
+
+    # Exercise raw non-UTF-8 argv bytes as well as valid Unicode text. POSIX
+    # Python's surrogateescape round-trips each byte through execve unchanged.
+    for byte in range(128, 256):
+        raw = bytes((byte,)).decode("utf-8", "surrogateescape")
+        value = "1" + raw
+        for utility in ("head", "tail"):
+            for flag in ("-n", "-c"):
+                s.case(utility, [flag, value, suffix_fixture])
+        option = "--bad-" + raw
+        for utility in ("cat", "head", "tail", "wc"):
+            s.case(utility, [option])
