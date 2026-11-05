@@ -172,3 +172,49 @@ def run(s: Suite) -> None:
         s.count += 1
         if outcomes[0] != outcomes[1]:
             raise AssertionError(f"head streaming behavior differs: {opts!r}: {outcomes!r}")
+
+    # Reading and writing the same regular file must stop at its original EOF.
+    same_path = s.path("head-same-output")
+    same_results = []
+    for command in (
+        [str(s.zovutils), "head", same_path],
+        [str(s.gnu_dir / "head"), same_path],
+    ):
+        with open(same_path, "wb") as fixture:
+            fixture.write(b"abcdefghij\n")
+        with open(same_path, "r+b") as output:
+            output.seek(3)
+            proc = subprocess.run(
+                command,
+                stdout=output,
+                stderr=subprocess.PIPE,
+                env=s.env,
+                timeout=5,
+                check=False,
+            )
+        same_results.append((proc.returncode, proc.stderr, open(same_path, "rb").read()))
+    s.count += 1
+    if same_results[0] != same_results[1]:
+        raise AssertionError(f"head same-file output handling differs: {same_results!r}")
+
+    duplicate_results = []
+    for command in (
+        [str(s.zovutils), "head", "-n", "10", same_path, same_path],
+        [str(s.gnu_dir / "head"), "-n", "10", same_path, same_path],
+    ):
+        with open(same_path, "wb") as fixture:
+            fixture.write(b"a\nb\nc\n")
+        with open(same_path, "r+b") as output:
+            output.seek(2)
+            proc = subprocess.run(
+                command,
+                stdout=output,
+                stderr=subprocess.PIPE,
+                env=s.env,
+                timeout=5,
+                check=False,
+            )
+        duplicate_results.append((proc.returncode, proc.stderr, open(same_path, "rb").read()))
+    s.count += 1
+    if duplicate_results[0] != duplicate_results[1]:
+        raise AssertionError(f"head duplicate same-file output differs: {duplicate_results!r}")
