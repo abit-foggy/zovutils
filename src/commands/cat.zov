@@ -53,6 +53,35 @@ fn numberline(line: usize) void = {
     io::print("\t");
 };
 
+fn help() void = {
+    io::print("Usage: cat [OPTION]... [FILE]...\n");
+    io::print("Concatenate FILE(s) to standard output.\n\n");
+    io::print("With no FILE, or when FILE is -, read standard input.\n");
+    io::print("  -A, --show-all           equivalent to -vET\n");
+    io::print("  -b, --number-nonblank    number nonempty output lines, overrides -n\n");
+    io::print("  -e                       equivalent to -vE\n");
+    io::print("  -E, --show-ends          display $ or ^M$ at end of each line\n");
+    io::print("  -n, --number             number all output lines\n");
+    io::print("  -s, --squeeze-blank      suppress repeated empty output lines\n");
+    io::print("  -t                       equivalent to -vT\n");
+    io::print("  -T, --show-tabs          display TAB characters as ^I\n");
+    io::print("  -u                       (ignored)\n");
+    io::print("  -v, --show-nonprinting   use ^ and M- notation, except for LFD and TAB\n");
+    io::print("      --help\n");
+    io::print("         display this help and exit\n");
+    io::print("      --version\n");
+    io::print("         output version information and exit\n\n");
+    io::print("Examples:\n");
+    io::print("  cat f - g  Output f's contents, then standard input, then g's contents.\n");
+    io::print("  cat        Copy standard input to standard output.\n\n");
+    io::print("Report bugs to: bug-coreutils@gnu.org\n");
+    io::print("GNU coreutils home page: <https://www.gnu.org/software/coreutils/>\n");
+    io::print("General help using GNU software: <https://www.gnu.org/gethelp/>\n");
+    io::print("Report any translation bugs to <https://translationproject.org/team/>\n");
+    io::print("Full documentation <https://www.gnu.org/software/coreutils/cat>\n");
+    io::print("or available locally via: info '(coreutils) cat invocation'\n");
+};
+
 fn emit_visible(fp: *c::FILE, b: u8, show_tabs: bool, show_ends: bool, show_nonprinting: bool) bool = {
     if (b == 10u8) {
         if (show_ends && !stream::putbyte(fp, 36u8)) { return false; };
@@ -166,13 +195,8 @@ export fn run(start: usize, argc: usize) i32 = {
         if (longprefix(arg, "--show-ends")) { show_ends = true; i += 1usize; continue; };
         if (longprefix(arg, "--show-tabs")) { show_tabs = true; i += 1usize; continue; };
         if (longprefix(arg, "--show-nonprinting")) { show_nonprinting = true; i += 1usize; continue; };
-        if (longprefix(arg, "--help")) { io::println("Usage: cat [OPTION]... [FILE]..."); return 0; };
+        if (arg == "--help" || longprefix(arg, "--help")) { help(); return 0; };
         if (longprefix(arg, "--version")) { io::println("cat (zovutils) 0.1.0"); return 0; };
-        if (arg == "--help") {
-            io::println("Usage: cat [OPTION]... [FILE]...");
-            io::println("Concatenate FILE(s) to standard output.");
-            return 0;
-        };
         if (arg == "--version") { io::println("cat (zovutils) 0.1.0"); return 0; };
         if (arg.len < 2usize || arg.data[1usize] != 45u8) {
             for (let j in 1usize..arg.len) {

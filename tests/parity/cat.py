@@ -1,6 +1,8 @@
 """Parity cases for cat."""
 
 from support import Suite
+from pathlib import Path
+import re
 
 
 def run(s: Suite) -> None:
@@ -27,7 +29,23 @@ def run(s: Suite) -> None:
         for fixture in (text, binary, boundary):
             s.case("cat", [*opts, fixture])
 
+    # GNU accepts every unambiguous abbreviation of a long option and reports
+    # the full candidate list for ambiguous prefixes.
+    for option in (
+        "--number",
+        "--number-nonblank",
+        "--squeeze-blank",
+        "--show-all",
+        "--show-ends",
+        "--show-tabs",
+        "--show-nonprinting",
+    ):
+        for length in range(3, len(option) + 1):
+            s.case("cat", [option[:length], text])
+
     for args in (
+        ["--help"],
+        ["--hel"],
         [],
         [text],
         ["-n", text],
@@ -69,7 +87,6 @@ def run(s: Suite) -> None:
         ["-s", boundary],
         [text, "-n"],
         [text, lines],
-        ["-n", split_first, split_second],
         ["-s", split_second, split_blank],
         ["-n", split_first, split_second],
         [split_first, "-", split_second],
@@ -100,3 +117,12 @@ def run(s: Suite) -> None:
     s.count += 1
     if zov != gnu:
         raise AssertionError("cat argv[0] symlink dispatch differs from GNU")
+
+    package = Path(__file__).resolve().parents[2] / "zov.toml"
+    package_version = re.search(r'^version = "([^"]+)"$', package.read_text(), re.MULTILINE)
+    if package_version is None:
+        raise AssertionError("zov.toml does not declare a package version")
+    status, stdout, stderr = s._run([str(s.zovutils), "cat", "--version"], b"")
+    expected = f"cat (zovutils) {package_version.group(1)}\n".encode()
+    if (status, stdout, stderr) != (0, expected, b""):
+        raise AssertionError(f"cat --version does not report package version: {(status, stdout, stderr)!r}")

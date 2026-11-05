@@ -20,7 +20,7 @@ class Suite:
         self.tmp = tempfile.TemporaryDirectory(prefix="zovutils-parity-")
         self.root = Path(self.tmp.name)
         self.env = os.environ.copy()
-        self.env.update({"LC_ALL": "C", "LANG": "C", "TZ": "UTC0"})
+        self.env.update({"LC_ALL": "C", "LANG": "C", "TZ": "UTC0", "TERM": "dumb"})
         self.count = 0
 
     def close(self) -> None:
