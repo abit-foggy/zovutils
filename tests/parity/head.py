@@ -1,10 +1,17 @@
 """Parity cases for head."""
 
 import os
+import resource
 import select
+import signal
 import subprocess
 
 from support import Suite
+
+
+def _limit_output_file() -> None:
+    resource.setrlimit(resource.RLIMIT_FSIZE, (65536, 65536))
+    signal.signal(signal.SIGXFSZ, signal.SIG_IGN)
 
 
 def run(s: Suite) -> None:
@@ -271,4 +278,36 @@ def run(s: Suite) -> None:
                 raise AssertionError(
                     f"head same-file stdin/output offsets differ: "
                     f"input={input_offset} output={output_offset} outcomes={outcomes!r}"
+                )
+
+    # Duplicated stdin and stdout descriptors share one cursor. Positive head
+    # modes must rewind buffered read-ahead before writing; negative modes
+    # write at the retained prefix boundary after spooling the input.
+    for opts in ([], ["-c", "2"], ["-c", "-2"], ["-n", "1"], ["-n", "-1"], ["-z", "-n", "1"]):
+        for offset in (0, 2, 6):
+            outcomes = []
+            for command in (
+                [str(s.zovutils), "head", *opts, "-"],
+                [str(s.gnu_dir / "head"), *opts, "-"],
+            ):
+                with open(same_path, "wb") as fixture:
+                    fixture.write(b"a\nb\nc\n")
+                with open(same_path, "r+b") as stream:
+                    stream.seek(offset)
+                    proc = subprocess.run(
+                        command,
+                        stdin=stream,
+                        stdout=stream,
+                        stderr=subprocess.PIPE,
+                        env=s.env,
+                        timeout=5,
+                        check=False,
+                        preexec_fn=_limit_output_file,
+                    )
+                outcomes.append((proc.returncode, proc.stderr, open(same_path, "rb").read()))
+            s.count += 1
+            if outcomes[0] != outcomes[1]:
+                raise AssertionError(
+                    f"head shared-descriptor behavior differs: "
+                    f"options={opts!r} offset={offset}: {outcomes!r}"
                 )
