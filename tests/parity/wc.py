@@ -1,5 +1,7 @@
 """Parity cases for wc."""
 
+import locale
+
 from support import Suite
 
 
@@ -128,3 +130,42 @@ def run(s: Suite) -> None:
         (["--total=never"], b"one two\n"),
     ):
         s.case("wc", args, stdin=stdin)
+
+    # The full character, whitespace, and display-width paths depend on the
+    # active LC_CTYPE locale. Run them where a UTF-8 locale is installed.
+    utf8_locale = None
+    for candidate in ("C.UTF-8", "C.utf8", "en_US.UTF-8"):
+        try:
+            locale.setlocale(locale.LC_CTYPE, candidate)
+            utf8_locale = candidate
+            locale.setlocale(locale.LC_CTYPE, "C")
+            break
+        except locale.Error:
+            continue
+    if utf8_locale is not None:
+        utf8 = {
+            "LC_ALL": utf8_locale,
+            "LANG": utf8_locale,
+        }
+        utf8_fixtures = (
+            s.fixture("wc-utf8-mixed", "é\u3000中\n".encode()),
+            s.fixture("wc-utf8-combining", "e\u0301x\n".encode()),
+            s.fixture("wc-utf8-wide", "界界\n".encode()),
+            s.fixture("wc-utf8-spaces", "alpha\u2003beta\u00a0gamma\n".encode()),
+            s.fixture("wc-utf8-invalid", b"a\xffb\n"),
+            s.fixture("wc-utf8-truncated", b"a\xe2\x82"),
+            s.fixture("wc-utf8-tabs", "界\tx\n".encode()),
+            s.fixture("wc-utf8-boundary", b"a" * 65535 + "é\n".encode()),
+            s.fixture("wc-utf8-invalid-boundary", b"a" * 65535 + b"\xe2\x82\n"),
+            all_bytes,
+        )
+        for fixture in utf8_fixtures:
+            for flags in ("-m", "-w", "-L", "-wmL"):
+                s.case("wc", [flags, fixture], extra_env=utf8)
+        s.case("wc", ["-wmL", utf8_fixtures[0], utf8_fixtures[2]], extra_env=utf8)
+        s.case(
+            "wc",
+            ["-wmL"],
+            stdin="é\u3000中\n界界".encode(),
+            extra_env=utf8,
+        )

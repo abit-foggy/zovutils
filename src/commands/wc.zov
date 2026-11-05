@@ -4,36 +4,91 @@ use std::vec as vec;
 use std::mem as mem;
 use <stdio.h> as c;
 use <ctype.h> as ct;
+use <locale.h> as lc;
+use <wchar.h> as wide;
+use <wctype.h> as wctype;
+use <string.h> as strc;
+use <zov_wcwidth.h> as display;
 use shared::io as stream;
 
-type Counts = struct { lines: usize, words: usize, bytes: usize, maxline: usize };
-fn scan(fp: *c::FILE, out: &mut Counts) bool = {
-    out.lines = 0usize; out.words = 0usize; out.bytes = 0usize; out.maxline = 0usize;
+type Counts = struct { lines: usize, words: usize, chars: usize, bytes: usize, maxline: usize };
+fn singlebyte_c_locale() bool = {
+    let current: nullable *i8 = lc::setlocale(0i32, 0i64 as *i8);
+    if (current == null) { return false; };
+    return strc::strcmp(current!, "C") == 0 || strc::strcmp(current!, "POSIX") == 0;
+};
+
+fn consume(character: i32, out: &mut Counts, linebytes: &mut usize, inword: &mut bool) void = {
+    out.chars += 1usize;
+    if (wctype::iswspace(character as u32) != 0 || character == 160i32) { *inword = false; }
+    else if (!*inword) { out.words += 1usize; *inword = true; };
+    if (character == 10i32) {
+        out.lines += 1usize;
+        if (*linebytes > out.maxline) { out.maxline = *linebytes; };
+        *linebytes = 0usize;
+    } else if (character == 13i32 || character == 12i32) {
+        if (*linebytes > out.maxline) { out.maxline = *linebytes; };
+        *linebytes = 0usize;
+    } else if (character == 9i32) { *linebytes += 8usize - (*linebytes % 8usize); }
+    else {
+        let width: i32 = display::wcwidth(character);
+        if (width > 0i32) { *linebytes += width as usize; };
+    };
+};
+
+fn scan(fp: *c::FILE, out: &mut Counts, singlebyte_c: bool) bool = {
+    out.lines = 0usize; out.words = 0usize; out.chars = 0usize; out.bytes = 0usize; out.maxline = 0usize;
     let mut linebytes: usize = 0usize;
     let mut inword: bool = false;
+    let mut pending: usize = 0usize;
+    let mut state: [32]u64;
+    strc::memset((&mut state[0usize]) as *void, 0, 256usize);
     let buf: [65536]u8;
     while (true) {
         let n: usize = stream::readbytes(fp, ((&buf[0usize]) as *u8), 65536usize);
         if (n == 0usize) { break; };
         out.bytes += n;
-        for (let i in 0..n) {
-            let b: u8 = buf[i];
-            if (b == 10u8) {
-                out.lines += 1usize;
-                if (linebytes > out.maxline) { out.maxline = linebytes; };
-                linebytes = 0usize;
-            } else if (b == 13u8) {
-                if (linebytes > out.maxline) { out.maxline = linebytes; };
-                linebytes = 0usize;
-            } else if (b == 12u8) {
-                if (linebytes > out.maxline) { out.maxline = linebytes; };
-                linebytes = 0usize;
-            } else if (b == 9u8) { linebytes += 8usize - (linebytes % 8usize); }
-            else if (b >= 32u8 && b < 128u8 && b != 127u8) { linebytes += 1usize; };
-            if (ct::isspace(b as i32) != 0 || b == 160u8) { inword = false; }
-            else if (!inword) { out.words += 1usize; inword = true; };
+        if (singlebyte_c) {
+            for (let i in 0..n) {
+                let b: u8 = buf[i];
+                out.chars += 1usize;
+                if (b == 10u8) {
+                    out.lines += 1usize;
+                    if (linebytes > out.maxline) { out.maxline = linebytes; };
+                    linebytes = 0usize;
+                } else if (b == 13u8 || b == 12u8) {
+                    if (linebytes > out.maxline) { out.maxline = linebytes; };
+                    linebytes = 0usize;
+                } else if (b == 9u8) { linebytes += 8usize - (linebytes % 8usize); }
+                else if (b >= 32u8 && b < 128u8 && b != 127u8) { linebytes += 1usize; };
+                if (ct::isspace(b as i32) != 0 || b == 160u8) { inword = false; }
+                else if (!inword) { out.words += 1usize; inword = true; };
+            };
+            continue;
+        };
+        let mut i: usize = 0usize;
+        while (i < n) {
+            let mut character: i32 = 0i32;
+            let decoded: usize = wide::mbrtowc((&mut character) as *void, ((&buf[i]) as *i8), 1usize, ((&mut state[0usize]) as *void));
+            if (decoded == 18446744073709551614usize) { pending += 1usize; i += 1usize; continue; };
+            if (decoded == 18446744073709551615usize) {
+                if (pending > 0usize) {
+                    if (!inword) { out.words += 1usize; inword = true; };
+                    pending = 0usize;
+                    strc::memset((&mut state[0usize]) as *void, 0, 256usize);
+                    continue;
+                };
+                if (!inword) { out.words += 1usize; inword = true; };
+                strc::memset((&mut state[0usize]) as *void, 0, 256usize);
+                i += 1usize;
+                continue;
+            };
+            pending = 0usize;
+            consume(character, out, &mut linebytes, &mut inword);
+            i += 1usize;
         };
     };
+    if (pending > 0usize && !inword) { out.words += 1usize; };
     if (linebytes > out.maxline) { out.maxline = linebytes; };
     return !stream::readerror(fp);
 };
@@ -79,7 +134,7 @@ fn print_counts(v: Counts, lines: bool, words: bool, chars: bool, bytes: bool, m
     let mut first: bool = true;
     if (lines) { c::fprintf(c::stdout, "%*zu", width as i32, v.lines); first = false; };
     if (words) { if (!first) { c::putchar(32); }; c::fprintf(c::stdout, "%*zu", width as i32, v.words); first = false; };
-    if (chars) { if (!first) { c::putchar(32); }; c::fprintf(c::stdout, "%*zu", width as i32, v.bytes); first = false; };
+    if (chars) { if (!first) { c::putchar(32); }; c::fprintf(c::stdout, "%*zu", width as i32, v.chars); first = false; };
     if (bytes) { if (!first) { c::putchar(32); }; c::fprintf(c::stdout, "%*zu", width as i32, v.bytes); first = false; };
     if (maxline) { if (!first) { c::putchar(32); }; c::fprintf(c::stdout, "%*zu", width as i32, v.maxline); first = false; };
     if (hasname) {
@@ -157,6 +212,8 @@ fn help() void = {
 };
 
 export fn run(start: usize, argc: usize) i32 = {
+    lc::setlocale(0i32, "");
+    let singlebyte_c: bool = singlebyte_c_locale();
     let mut lines: bool = false;
     let mut words: bool = false;
     let mut chars: bool = false;
@@ -239,7 +296,7 @@ export fn run(start: usize, argc: usize) i32 = {
             else if (longmatch(key, "--max-line-length")) { maxline = true; }
             else if (longmatch(key, "--debug")) { }
             else if (longmatch(key, "--help")) { help(); if (!stream::finishoutputbrief("wc")) { return 1; }; return 0; }
-            else if (longmatch(key, "--version")) { io::println("wc (zovutils) 0.1.9"); if (!stream::finishoutputbrief("wc")) { return 1; }; return 0; };
+            else if (longmatch(key, "--version")) { io::println("wc (zovutils) 0.1.10"); if (!stream::finishoutputbrief("wc")) { return 1; }; return 0; };
             i += 1usize; continue;
         };
         if (arg.len >= 2usize && arg.data[1usize] != 45u8) {
@@ -290,7 +347,7 @@ export fn run(start: usize, argc: usize) i32 = {
     };
     if (files0_given && files.len() == 0usize) { return 0; };
 
-    let mut total: Counts = Counts{ lines = 0usize, words = 0usize, bytes = 0usize, maxline = 0usize };
+    let mut total: Counts = Counts{ lines = 0usize, words = 0usize, chars = 0usize, bytes = 0usize, maxline = 0usize };
     let mut status: i32 = 0;
     let mut counts = vec::new[Counts]();
     defer counts.free();
@@ -307,13 +364,14 @@ export fn run(start: usize, argc: usize) i32 = {
     if (nfiles == 0usize) {
         let seekable: bool = c::fseek(c::stdin, 0i64, c::SEEK_CUR) == 0;
         if (!seekable) { c::clearerr(c::stdin); };
-        let mut v: Counts = Counts{ lines = 0usize, words = 0usize, bytes = 0usize, maxline = 0usize };
-        if (!scan(c::stdin, &mut v)) { status = 1; };
+        let mut v: Counts = Counts{ lines = 0usize, words = 0usize, chars = 0usize, bytes = 0usize, maxline = 0usize };
+        if (!scan(c::stdin, &mut v, singlebyte_c)) { status = 1; };
         let mut width: usize = 1usize;
         if (seekable) {
             if (lines && digits(v.lines) > width) { width = digits(v.lines); };
             if (words && digits(v.words) > width) { width = digits(v.words); };
-            if ((chars || bytes) && digits(v.bytes) > width) { width = digits(v.bytes); };
+            if (chars && digits(v.chars) > width) { width = digits(v.chars); };
+            if (bytes && digits(v.bytes) > width) { width = digits(v.bytes); };
             if (maxline && digits(v.maxline) > width) { width = digits(v.maxline); };
             if (columns(lines, words, chars, bytes, maxline) > 1usize && digits(v.bytes) > width) { width = digits(v.bytes); };
         } else {
@@ -341,10 +399,10 @@ export fn run(start: usize, argc: usize) i32 = {
                 if (raw == null) { stream::errorprefix("wc", path); status = 1; first += 1usize; continue; };
                 fp = raw!; owned = true;
             };
-            let mut v: Counts = Counts{ lines = 0usize, words = 0usize, bytes = 0usize, maxline = 0usize };
-            if (scan(fp, &mut v)) {
+            let mut v: Counts = Counts{ lines = 0usize, words = 0usize, chars = 0usize, bytes = 0usize, maxline = 0usize };
+            if (scan(fp, &mut v, singlebyte_c)) {
                 counts.push(v); names.push(path);
-                total.lines += v.lines; total.words += v.words; total.bytes += v.bytes;
+                total.lines += v.lines; total.words += v.words; total.chars += v.chars; total.bytes += v.bytes;
                 if (v.maxline > total.maxline) { total.maxline = v.maxline; };
             } else { stream::errorprefix("wc", path); status = 1; };
             if (owned && !stream::closefile(fp)) { stream::errorprefix("wc", path); status = 1; };
@@ -355,14 +413,16 @@ export fn run(start: usize, argc: usize) i32 = {
             let v: Counts = counts.get(k);
             if (lines && digits(v.lines) > width) { width = digits(v.lines); };
             if (words && digits(v.words) > width) { width = digits(v.words); };
-            if ((chars || bytes) && digits(v.bytes) > width) { width = digits(v.bytes); };
+            if (chars && digits(v.chars) > width) { width = digits(v.chars); };
+            if (bytes && digits(v.bytes) > width) { width = digits(v.bytes); };
             if (maxline && digits(v.maxline) > width) { width = digits(v.maxline); };
             if (columns(lines, words, chars, bytes, maxline) > 1usize && digits(v.bytes) > width) { width = digits(v.bytes); };
         };
         if (nfiles > 1usize || total_mode == "always") {
             if (lines && digits(total.lines) > width) { width = digits(total.lines); };
             if (words && digits(total.words) > width) { width = digits(total.words); };
-            if ((chars || bytes) && digits(total.bytes) > width) { width = digits(total.bytes); };
+            if (chars && digits(total.chars) > width) { width = digits(total.chars); };
+            if (bytes && digits(total.bytes) > width) { width = digits(total.bytes); };
             if (maxline && digits(total.maxline) > width) { width = digits(total.maxline); };
             if (columns(lines, words, chars, bytes, maxline) > 1usize && digits(total.bytes) > width) { width = digits(total.bytes); };
         };

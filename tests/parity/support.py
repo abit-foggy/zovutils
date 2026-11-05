@@ -35,11 +35,23 @@ class Suite:
         path.write_bytes(data)
         return str(path)
 
-    def case(self, utility: str, args: list[str], *, stdin: bytes = b"") -> None:
+    def case(
+        self,
+        utility: str,
+        args: list[str],
+        *,
+        stdin: bytes = b"",
+        extra_env: dict[str, str] | None = None,
+    ) -> None:
         self.count += 1
-        zov = self._run([str(self.zovutils), utility, *args], stdin)
         gnu_env = self.env.copy()
+        if extra_env:
+            gnu_env.update(extra_env)
+        zov_env = self.env.copy()
+        if extra_env:
+            zov_env.update(extra_env)
         gnu_env["PATH"] = str(self.gnu_dir) + os.pathsep + gnu_env.get("PATH", "")
+        zov = self._run([str(self.zovutils), utility, *args], stdin, env=zov_env)
         gnu = self._run([utility, *args], stdin, env=gnu_env)
         if zov != gnu:
             label = f"{utility} {' '.join(args)}".rstrip()
