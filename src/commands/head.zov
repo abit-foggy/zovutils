@@ -11,7 +11,9 @@ fn parsecount(text: str) (numparse::ByteCount | ParseError) = {
 
 fn invalidnumber(unit: str, text: str) void = {
     c::fprintf(c::stderr, "head: invalid number of %s: ", unit);
-    stream::printquotedargument(c::stderr, text);
+    let mut shown: str = text;
+    if (text.len > 0usize && text.data[0usize] == 45u8) { shown = text[1usize..text.len]; };
+    stream::printquotedargument(c::stderr, shown);
     c::fputc(10, c::stderr);
 };
 
@@ -236,7 +238,7 @@ export fn run(start: usize, argc: usize) i32 = {
             };
             if (longmatch(key, "--version")) {
                 if (has_equal) { badargument("--version"); return 1; };
-                io::println("head (zovutils) 0.1.52"); if (!stream::finishoutput("head")) { return 1; }; return 0;
+                io::println("head (zovutils) 0.1.53"); if (!stream::finishoutput("head")) { return 1; }; return 0;
             };
             badlong(arg); return 1;
         };
