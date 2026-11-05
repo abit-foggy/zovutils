@@ -44,7 +44,7 @@ export fn main() i32 = {
         return 0;
     };
     if (argc >= 2usize && (env::argat(1usize) == "--version" || env::argat(1usize) == "-V")) {
-        io::println("zovutils 0.1.69 (GNU Coreutils 9.11 compatibility target)");
+        io::println("zovutils 0.1.72 (GNU Coreutils 9.11 compatibility target)");
         return 0;
     };
     return dispatch(env::argat(1usize), 2usize, argc);

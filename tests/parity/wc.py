@@ -30,6 +30,9 @@ def run(s: Suite) -> None:
         ((text + "\0") * 12000).encode(),
     )
     zero_name = s.fixture("wc-zero-name", b"\0")
+    zero_after_valid = s.fixture("wc-zero-after-valid", (text + "\0\0" + binary + "\0").encode())
+    zero_after_single = s.fixture("wc-zero-after-single", (text + "\0\0").encode())
+    zero_after_missing = s.fixture("wc-zero-after-missing", (missing + "\0\0" + text + "\0").encode())
     zero_unusual = s.fixture("wc-zero-list\nname", b"\0")
     empty_files0 = s.fixture("wc-files0-empty", b"")
     unterminated_files0 = s.fixture("wc-files0-unterminated", (text + "\0" + binary).encode())
@@ -194,9 +197,18 @@ def run(s: Suite) -> None:
         ["--files0-from", files0],
         ["--files0-from=-"],
         ["--files0-from=" + empty_files0],
+        ["--files0-from=" + empty_files0, "--total=auto"],
+        ["--files0-from=" + empty_files0, "--total=always"],
+        ["--files0-from=" + empty_files0, "--total=only"],
+        ["--files0-from=" + empty_files0, "--total=never"],
         ["--files0-from=" + unusual_files0],
         ["--files0-from=" + unterminated_files0],
         ["--files0-from=" + zero_name],
+        ["--files0-from=" + zero_name, "--total=always"],
+        ["--files0-from=" + zero_after_valid],
+        ["--files0-from=" + zero_after_valid, "--total=always"],
+        ["--files0-from=" + zero_after_single],
+        ["--files0-from=" + zero_after_missing],
         ["--files0-from=" + zero_unusual],
         [missing],
         [empty, text],

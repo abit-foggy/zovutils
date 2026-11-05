@@ -247,6 +247,8 @@ export fn run(start: usize, argc: usize) i32 = {
     let posixly_correct: bool = platform_env::zov_posixly_correct() != 0i32;
     let mut files = vec::new[str]();
     defer files.free();
+    let mut files0_invalid_entries = vec::new[usize]();
+    defer files0_invalid_entries.free();
     let mut i: usize = start;
     while (i < argc) {
         let arg: str = env::argat(i);
@@ -319,7 +321,7 @@ export fn run(start: usize, argc: usize) i32 = {
             else if (longmatch(key, "--max-line-length")) { maxline = true; }
             else if (longmatch(key, "--debug")) { debug = true; }
             else if (longmatch(key, "--help")) { help(); if (!stream::finishoutputbrief("wc")) { return 1; }; return 0; }
-            else if (longmatch(key, "--version")) { io::println("wc (zovutils) 0.1.69"); if (!stream::finishoutputbrief("wc")) { return 1; }; return 0; };
+            else if (longmatch(key, "--version")) { io::println("wc (zovutils) 0.1.72"); if (!stream::finishoutputbrief("wc")) { return 1; }; return 0; };
             i += 1usize; continue;
         };
         if (arg.len >= 2usize && arg.data[1usize] != 45u8) {
@@ -339,6 +341,7 @@ export fn run(start: usize, argc: usize) i32 = {
     let line_fast: bool = lines && !words && !maxline && (!chars || singlebyte_c);
     let mut backend_reported: bool = false;
     let mut file_list: String = String::new();
+    let mut files0_invalid: bool = false;
     if (files0_given) {
         if (files.len() > 0usize) {
             c::fprintf(c::stderr, "wc: extra operand ");
@@ -357,12 +360,15 @@ export fn run(start: usize, argc: usize) i32 = {
         if (list_owned) { stream::closefile(listfp); };
         let list_view: str = file_list.view();
         let mut begin: usize = 0usize;
+        let mut list_entry: usize = 0usize;
         for (let j in 0..list_view.len) {
             if (list_view.data[j] == 0u8) {
+                list_entry += 1usize;
                 if (j == begin) {
-                    c::fprintf(c::stderr, "wc: "); stream::printquoted(c::stderr, files0_from, false);
-                    c::fprintf(c::stderr, ":%zu: invalid zero-length file name\n", files.len() + 1usize);
-                    return 1;
+                    files0_invalid = true;
+                    files0_invalid_entries.push(list_entry);
+                    begin = j + 1usize;
+                    continue;
                 };
                 files.push(list_view[begin..j]);
                 begin = j + 1usize;
@@ -370,15 +376,29 @@ export fn run(start: usize, argc: usize) i32 = {
         };
         if (begin < list_view.len) { files.push(list_view[begin..list_view.len]); };
     };
-    if (files0_given && files.len() == 0usize) { return 0; };
+    if (files0_given && files.len() == 0usize) {
+        for (let k in 0..files0_invalid_entries.len()) {
+            c::fprintf(c::stderr, "wc: "); stream::printquoted(c::stderr, files0_from, false);
+            c::fprintf(c::stderr, ":%zu: invalid zero-length file name\n", files0_invalid_entries.get(k));
+        };
+        let zero: Counts = Counts{ lines = 0usize, words = 0usize, chars = 0usize, bytes = 0usize, maxline = 0usize };
+        if (total_mode == "always") { print_counts(zero, lines, words, chars, bytes, maxline, "total", true, 1usize); }
+        else if (total_mode == "only") { print_counts(zero, lines, words, chars, bytes, maxline, "", false, 1usize); };
+        if (!stream::finishoutput("wc")) { return 1; };
+        if (files0_invalid) { return 1; };
+        return 0;
+    };
 
     let mut total: Counts = Counts{ lines = 0usize, words = 0usize, chars = 0usize, bytes = 0usize, maxline = 0usize };
     let mut status: i32 = 0;
+    if (files0_invalid) { status = 1; };
     let mut counts = vec::new[Counts]();
     defer counts.free();
     let mut names = vec::new[str]();
     defer names.free();
     let nfiles: usize = files.len();
+    let mut total_operands: usize = nfiles;
+    if (files0_given) { total_operands += files0_invalid_entries.len(); };
     let mut stdin_operand: bool = false;
     for (let k in 0..nfiles) { if (files.get(k) == "-") { stdin_operand = true; }; };
     let mut stdin_seekable: bool = true;
@@ -436,6 +456,10 @@ export fn run(start: usize, argc: usize) i32 = {
             if (owned && !stream::closefile(fp)) { stream::errorprefix("wc", path); status = 1; };
             first += 1usize;
         };
+        for (let k in 0..files0_invalid_entries.len()) {
+            c::fprintf(c::stderr, "wc: "); stream::printquoted(c::stderr, files0_from, false);
+            c::fprintf(c::stderr, ":%zu: invalid zero-length file name\n", files0_invalid_entries.get(k));
+        };
         let mut width: usize = 1usize;
         for (let k in 0..counts.len()) {
             let v: Counts = counts.get(k);
@@ -444,23 +468,23 @@ export fn run(start: usize, argc: usize) i32 = {
             if (chars && digits(v.chars) > width) { width = digits(v.chars); };
             if (bytes && digits(v.bytes) > width) { width = digits(v.bytes); };
             if (maxline && digits(v.maxline) > width) { width = digits(v.maxline); };
-            if ((columns(lines, words, chars, bytes, maxline) > 1usize || nfiles > 1usize) && digits(v.bytes) > width) { width = digits(v.bytes); };
+            if ((columns(lines, words, chars, bytes, maxline) > 1usize || total_operands > 1usize) && digits(v.bytes) > width) { width = digits(v.bytes); };
         };
-        if (nfiles > 1usize || total_mode == "always") {
+        if (total_operands > 1usize || total_mode == "always") {
             if (lines && digits(total.lines) > width) { width = digits(total.lines); };
             if (words && digits(total.words) > width) { width = digits(total.words); };
             if (chars && digits(total.chars) > width) { width = digits(total.chars); };
             if (bytes && digits(total.bytes) > width) { width = digits(total.bytes); };
             if (maxline && digits(total.maxline) > width) { width = digits(total.maxline); };
-            if ((columns(lines, words, chars, bytes, maxline) > 1usize || nfiles > 1usize) && digits(total.bytes) > width) { width = digits(total.bytes); };
+            if ((columns(lines, words, chars, bytes, maxline) > 1usize || total_operands > 1usize) && digits(total.bytes) > width) { width = digits(total.bytes); };
         };
-        if (stdin_operand && !stdin_seekable && (nfiles > 1usize || columns(lines, words, chars, bytes, maxline) > 1usize) && width < 7usize) { width = 7usize; };
+        if (stdin_operand && !stdin_seekable && (total_operands > 1usize || columns(lines, words, chars, bytes, maxline) > 1usize) && width < 7usize) { width = 7usize; };
         if (files0_given && files0_from == "-") { width = 1usize; };
         if (total_mode == "only") { width = 1usize; };
         if (total_mode != "only") {
             for (let k in 0..counts.len()) { print_counts(counts.get(k), lines, words, chars, bytes, maxline, names.get(k), true, width); };
         };
-        if ((nfiles > 1usize && total_mode != "never") || total_mode == "always" || total_mode == "only") {
+        if ((total_operands > 1usize && total_mode != "never") || total_mode == "always" || total_mode == "only") {
             let mut total_name: str = "total";
             let mut total_hasname: bool = true;
             if (total_mode == "only") { total_name = ""; total_hasname = false; };
