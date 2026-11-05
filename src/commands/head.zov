@@ -248,7 +248,7 @@ export fn run(start: usize, argc: usize) i32 = {
             };
             if (longmatch(key, "--version")) {
                 if (has_equal) { badargument("--version"); return 1; };
-                io::println("head (zovutils) 0.1.79"); if (!stream::finishoutput("head")) { return 1; }; return 0;
+                io::println("head (zovutils) 0.1.82"); if (!stream::finishoutput("head")) { return 1; }; return 0;
             };
             badlong(arg); return 1;
         };
@@ -364,7 +364,8 @@ export fn run(start: usize, argc: usize) i32 = {
             printed = true;
         };
         let mut input_limit: i64 = -1i64;
-        let mut input_position: i64 = c::ftell(fp);
+        let mut input_position: i64 = -1i64;
+        if (stream::regularfile(fp)) { input_position = c::ftell(fp); };
         if (stream::sameopenfile(fp, c::stdout)) {
             if (!negative && input_position >= 0i64 && c::fseek(fp, 0i64, c::SEEK_END) == 0) {
                 let end: i64 = c::ftell(fp);

@@ -8,4 +8,9 @@ static inline int zov_file_is_regular(int descriptor) {
     return fstat(descriptor, &info) == 0 && S_ISREG(info.st_mode);
 }
 
+static inline int zov_file_is_character(int descriptor) {
+    struct stat info;
+    return fstat(descriptor, &info) == 0 && S_ISCHR(info.st_mode);
+}
+
 #endif

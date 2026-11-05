@@ -16,6 +16,9 @@ def _limit_output_file() -> None:
 
 def run(s: Suite) -> None:
     s.product_version("head")
+    if os.path.exists("/dev/zero"):
+        s.case("head", ["-c", "4096", "/dev/zero"])
+
     empty = s.fixture("head-empty", b"")
     lines = s.fixture("head-lines", b"one\ntwo\nthree\nfour\n")
     no_final_newline = s.fixture("head-no-final-newline", b"a\nb\nc")

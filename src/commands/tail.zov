@@ -2,6 +2,7 @@ use std::env;
 use std::io;
 use std::vec as vec;
 use <stdio.h> as c;
+use <unistd.h> as posix;
 use <platform_env.h> as platform_env;
 use <stdlib.h> as libc;
 use <string.h> as strc;
@@ -39,6 +40,35 @@ fn copyfrom(fp: *c::FILE, start: i64, dest: *c::FILE) bool = {
 };
 
 fn tailfrom(fp: *c::FILE, count: usize, bytes: bool, delim: u8, dest: *c::FILE, raw_input: bool) bool = {
+    if (bytes && stream::characterfile(fp)) {
+        let descriptor: i32 = c::fileno(fp);
+        let initial: i64 = posix::lseek(descriptor, 0i64, c::SEEK_CUR);
+        if (initial >= 0i64) {
+            let end: i64 = posix::lseek(descriptor, 0i64, c::SEEK_END);
+            if (end >= 0i64) {
+                let mut target: i64 = initial;
+                if (end > initial && count < (end - initial) as usize) {
+                    target = end - count as i64;
+                };
+                if (c::fseek(fp, target, c::SEEK_SET) != 0
+                    || !stream::seekdescriptor(fp, target)) { return false; };
+                let buf: [65536]u8;
+                let mut remaining: usize = count;
+                while (remaining > 0usize) {
+                    let mut want: usize = remaining;
+                    if (want > 65536usize) { want = 65536usize; };
+                    let read_count: i64 = readinput(fp, ((&buf[0usize]) as *u8), want, raw_input);
+                    if (read_count < 0i64) { return false; };
+                    if (read_count == 0i64) { break; };
+                    let n: usize = read_count as usize;
+                    if (!stream::writebytes(dest, ((&buf[0usize]) as *u8), n)) { return false; };
+                    remaining -= n;
+                };
+                return true;
+            };
+            posix::lseek(descriptor, initial, c::SEEK_SET);
+        };
+    };
     let raw: nullable *c::FILE = c::tmpfile();
     if (raw == null) { return false; };
     let tmp: *c::FILE = raw!;
@@ -472,7 +502,7 @@ export fn run(start: usize, argc: usize) i32 = {
             };
             if (longmatch(key, "--version")) {
                 if (has_equal) { badargument("--version"); return 1; };
-                io::println("tail (zovutils) 0.1.79"); if (!stream::finishoutput("tail")) { return 1; }; return 0;
+                io::println("tail (zovutils) 0.1.82"); if (!stream::finishoutput("tail")) { return 1; }; return 0;
             };
             badlong(arg); return 1;
         };

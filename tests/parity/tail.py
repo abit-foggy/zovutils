@@ -210,6 +210,15 @@ def _follow_write_failure(s: Suite) -> None:
 
 
 def run(s: Suite) -> None:
+    # GNU treats seekable character devices such as /dev/zero as bounded
+    # byte streams for -c, rather than trying to spool them until EOF.
+    if os.path.exists("/dev/zero"):
+        s.case("tail", ["-c", "4096", "/dev/zero"])
+        s.case("tail", ["-b", "/dev/zero"])
+    for path in ("/proc/version", "/sys/kernel/profiling"):
+        if os.path.isfile(path) and os.access(path, os.R_OK):
+            s.case("tail", ["-c", "-1", path])
+
     s.case("tail", ["-n", "1", s.fixture("tail-posixly", b"one\ntwo\n")], extra_env={"POSIXLY_CORRECT": "1"})
     s.case("tail", [s.fixture("tail-posixly-late", b"one\ntwo\n"), "-n", "1"], extra_env={"POSIXLY_CORRECT": ""})
     s.product_version("tail")
