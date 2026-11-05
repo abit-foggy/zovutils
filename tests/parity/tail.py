@@ -256,6 +256,9 @@ def run(s: Suite) -> None:
         ["+2"],
         ["+0"],
         ["+"],
+        ["+b"],
+        ["+c"],
+        ["+l"],
         ["+", lines],
         ["+", large],
         ["-n", "1", "+", lines],
@@ -276,7 +279,7 @@ def run(s: Suite) -> None:
         for fixture in fixtures:
             s.case("tail", [*opts, fixture])
 
-    for value in ("0", "1", "2", "-1", "-2", "+0", "+1", "+2", "1K", "1b", "1Q"):
+    for value in ("0", "1", "2", "-1", "-2", "+0", "+1", "+2", "1K", "1b", "1Q", "k", "K", "m", "M", "b", "kB", "KiB", "-k", "+k", "g"):
         for flag in ("-n", "-c"):
             for fixture in (empty, lines, no_final_newline, binary):
                 s.case("tail", [flag, value, fixture])
@@ -315,6 +318,12 @@ def run(s: Suite) -> None:
     for args in (
         ["--help"],
         ["--hel"],
+        ["---", lines],
+        ["---d", lines],
+        ["---p", lines],
+        ["---disable-inotify=x", lines],
+        ["---presume-input-pipe=x", lines],
+        ["---x"],
         ["-n", "1", lines, binary],
         ["-n", "0", lines, binary],
         ["-n", "0", missing],

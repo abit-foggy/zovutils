@@ -78,9 +78,11 @@ export fn bytecountsize(text: str) (ByteCount | ParseError) = {
     if (start == text.len) { return ParseError; };
     let mut end: usize = text.len;
     let mut mult: usize = 1usize;
+    let mut has_suffix: bool = false;
     let last: u8 = text.data[end - 1usize];
     if (last == 98u8) {
         mult = 512usize;
+        has_suffix = true;
         end -= 1usize;
     } else if (last == 66u8) {
         if (end - start < 2usize) { return ParseError; };
@@ -89,18 +91,20 @@ export fn bytecountsize(text: str) (ByteCount | ParseError) = {
             let exponent: usize = suffixexponent(text.data[end - 3usize]);
             if (exponent == 0usize) { return ParseError; };
             mult = power_saturating(1024usize, exponent);
+            has_suffix = true;
             end -= 3usize;
         } else {
             let exponent: usize = suffixexponent(unit);
             if (exponent == 0usize) { return ParseError; };
             mult = power_saturating(1000usize, exponent);
+            has_suffix = true;
             end -= 2usize;
         };
     } else {
         let exponent: usize = suffixexponent(last);
-        if (exponent > 0usize) { mult = power_saturating(1024usize, exponent); end -= 1usize; };
+        if (exponent > 0usize) { mult = power_saturating(1024usize, exponent); has_suffix = true; end -= 1usize; };
     };
-    if (end <= start) { return ParseError; };
+    if (end <= start && (!has_suffix || positive)) { return ParseError; };
     let mut value: usize = 0usize;
     for (let i in start..end) {
         let ch: u8 = text.data[i];
@@ -109,6 +113,7 @@ export fn bytecountsize(text: str) (ByteCount | ParseError) = {
         if (value > (~0usize - digit) / 10usize) { value = ~0usize; }
         else if (value != ~0usize) { value = value * 10usize + digit; };
     };
+    if (end == start && has_suffix) { value = 1usize; };
     if (value > ~0usize / mult) { value = ~0usize; }
     else if (value != ~0usize) { value *= mult; };
     return ByteCount{ magnitude = value, negative = negative };
@@ -123,9 +128,10 @@ export fn bytecount(text: str) (i64 | ParseError) = {
     if (start == text.len) { return ParseError; };
     let mut end: usize = text.len;
     let mut mult: usize = 1usize;
+    let mut has_suffix: bool = false;
     let last: u8 = text.data[end - 1usize];
     if (last == 98u8) {
-        mult = 512usize; end -= 1usize;
+        mult = 512usize; has_suffix = true; end -= 1usize;
     } else if (last == 66u8) {
         if (end - start < 2usize) { return ParseError; };
         let unit: u8 = text.data[end - 2usize];
@@ -137,14 +143,18 @@ export fn bytecount(text: str) (i64 | ParseError) = {
             mult = suffixpower(unit, 1000usize); end -= 2usize;
         };
         if (mult == 0usize) { return ParseError; };
+        has_suffix = true;
     } else if (last == 75u8 || last == 77u8 || last == 71u8 || last == 84u8 || last == 80u8 || last == 69u8 || last == 90u8 || last == 89u8 || last == 82u8 || last == 81u8 || last == 107u8 || last == 109u8 || last == 103u8 || last == 116u8 || last == 112u8 || last == 101u8 || last == 122u8 || last == 121u8 || last == 114u8 || last == 113u8) {
-        mult = suffixpower(last, 1024usize); end -= 1usize;
+        mult = suffixpower(last, 1024usize); has_suffix = true; end -= 1usize;
     };
-    if (end <= start) { return ParseError; };
-    let magnitude = number(text[start..end]);
-    let value: usize = match (magnitude) {
-        case let n: usize => n,
-        case ParseError => return ParseError,
+    if (end <= start && (!has_suffix || positive)) { return ParseError; };
+    let mut value: usize = 1usize;
+    if (!(end == start && has_suffix)) {
+        let magnitude = number(text[start..end]);
+        value = match (magnitude) {
+            case let n: usize => n,
+            case ParseError => return ParseError,
+        };
     };
     if (value > 9223372036854775807usize / mult) { return ParseError; };
     let scaled: i64 = (value * mult) as i64;
@@ -200,6 +210,20 @@ test "byte counts accept GNU binary and decimal suffixes" {
     let mib = bytecount("1MiB");
     let mib_value: i64 = match (mib) { case let v: i64 => v, case ParseError => 0i64 };
     assert(mib_value == 1048576i64);
+};
+
+test "suffix-only counts imply one unit unless explicitly positive" {
+    let kib = bytecountsize("k");
+    let kib_value: ByteCount = match (kib) { case let v: ByteCount => v, case ParseError => ByteCount{ magnitude = 0usize, negative = false } };
+    assert(kib_value.magnitude == 1024usize && !kib_value.negative);
+    let decimal = bytecountsize("kB");
+    let decimal_value: ByteCount = match (decimal) { case let v: ByteCount => v, case ParseError => ByteCount{ magnitude = 0usize, negative = false } };
+    assert(decimal_value.magnitude == 1000usize && !decimal_value.negative);
+    let negative = bytecountsize("-b");
+    let negative_value: ByteCount = match (negative) { case let v: ByteCount => v, case ParseError => ByteCount{ magnitude = 0usize, negative = false } };
+    assert(negative_value.magnitude == 512usize && negative_value.negative);
+    let positive = bytecountsize("+k");
+    assert(match (positive) { case let _: ByteCount => false, case ParseError => true });
 };
 
 test "large byte counts saturate to the platform size limit" {

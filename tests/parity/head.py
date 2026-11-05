@@ -72,7 +72,7 @@ def run(s: Suite) -> None:
 
     # Exercise signed counts, GNU size suffixes, and both attached and long
     # forms across empty, unterminated, binary, and streamed file contents.
-    for value in ("0", "1", "2", "-1", "-2", "+1", "+2", "-0", "1K", "1b"):
+    for value in ("0", "1", "2", "-1", "-2", "+1", "+2", "-0", "1K", "1b", "k", "K", "m", "M", "b", "kB", "KiB", "-k", "+k", "g"):
         for flag in ("-n", "-c"):
             for fixture in fixtures:
                 s.case("head", [flag, value, fixture])
@@ -114,6 +114,9 @@ def run(s: Suite) -> None:
     for args in (
         ["--help"],
         ["--hel"],
+        ["---"],
+        ["---", lines],
+        [lines, "---", binary],
         ["-n", "1", lines, binary],
         ["-2f", lines],
         ["-2K", lines],
@@ -148,6 +151,9 @@ def run(s: Suite) -> None:
         ["-c", "-2"],
         ["--", "-n"],
         ["-x"],
+        ["-z5"],
+        ["-q5"],
+        ["-qxx"],
         ["--bogus"],
         ["-n"],
         ["--lines"],

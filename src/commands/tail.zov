@@ -147,6 +147,18 @@ fn longmatch(arg: str, option: str) bool = {
     return arg.len > 2usize && arg.len <= option.len && arg == option[0usize..arg.len];
 };
 
+fn triplematch(arg: str, option: str) bool = {
+    return arg.len >= 3usize && arg.len <= option.len && arg == option[0usize..arg.len];
+};
+
+fn tripleambiguity(arg: str) bool = {
+    if (triplematch(arg, "---disable-inotify") && triplematch(arg, "---presume-input-pipe")) {
+        c::fprintf(c::stderr, "tail: option '%s' is ambiguous; possibilities: '---disable-inotify' '---presume-input-pipe'\nTry 'tail --help' for more information.\n", arg);
+        return true;
+    };
+    return false;
+};
+
 fn longambiguity(arg: str) bool = {
     if (longmatch(arg, "--silent") && longmatch(arg, "--sleep-interval")) {
         c::fprintf(c::stderr, "tail: option '%s' is ambiguous; possibilities: '--silent' '--sleep-interval'\nTry 'tail --help' for more information.\n", arg);
@@ -277,7 +289,7 @@ export fn run(start: usize, argc: usize) i32 = {
         let arg: str = env::argat(i);
         if (operands || arg == "-") { if (posixly_correct) { operands = true; }; files.push(arg); i += 1usize; continue; };
         if (arg == "--") { operands = true; i += 1usize; continue; };
-        if (arg == "+" && i == start) {
+        if (i == start && (arg == "+" || (arg.len == 2usize && arg.data[0usize] == 43u8 && (arg.data[1usize] == 98u8 || arg.data[1usize] == 99u8 || arg.data[1usize] == 108u8)))) {
             let mut legacy_ok: bool = true;
             let mut look: usize = i + 1usize;
             let mut ended_options: bool = false;
@@ -293,7 +305,14 @@ export fn run(start: usize, argc: usize) i32 = {
                 if (operands_after_legacy > 1usize) { legacy_ok = false; break; };
                 look += 1usize;
             };
-            if (legacy_ok) { plus = true; count = 10usize; i += 1usize; continue; };
+            if (legacy_ok) {
+                plus = true; count = 10usize;
+                if (arg.len == 2usize) {
+                    bytes = arg.data[1usize] != 108u8;
+                    if (arg.data[1usize] == 98u8) { count = 5120usize; };
+                };
+                i += 1usize; continue;
+            };
         };
         if (arg.len > 1usize && arg.data[0usize] == 43u8 && arg.data[1usize] >= 48u8 && arg.data[1usize] <= 57u8) {
             let mut legacy_ok: bool = i == start;
@@ -349,6 +368,15 @@ export fn run(start: usize, argc: usize) i32 = {
             for (let j in 2usize..arg.len) { if (arg.data[j] == 61u8) { eqpos = j; break; }; };
             let key: str = arg[0usize..eqpos];
             let has_equal: bool = eqpos < arg.len;
+            if (tripleambiguity(key)) { return 1; };
+            if (triplematch(key, "---disable-inotify")) {
+                if (has_equal) { badargument("---disable-inotify"); return 1; };
+                i += 1usize; continue;
+            };
+            if (triplematch(key, "---presume-input-pipe")) {
+                if (has_equal) { badargument("---presume-input-pipe"); return 1; };
+                i += 1usize; continue;
+            };
             if (longambiguity(key)) { return 1; };
             if (longmatch(key, "--bytes") || longmatch(key, "--lines")) {
                 bytes = longmatch(key, "--bytes");
@@ -438,7 +466,7 @@ export fn run(start: usize, argc: usize) i32 = {
             };
             if (longmatch(key, "--version")) {
                 if (has_equal) { badargument("--version"); return 1; };
-                io::println("tail (zovutils) 0.1.67"); if (!stream::finishoutput("tail")) { return 1; }; return 0;
+                io::println("tail (zovutils) 0.1.69"); if (!stream::finishoutput("tail")) { return 1; }; return 0;
             };
             badlong(arg); return 1;
         };
