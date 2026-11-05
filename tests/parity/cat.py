@@ -86,6 +86,11 @@ def run(s: Suite) -> None:
         ["-E", no_final_newline],
         ["-E", crlf],
         ["-E", crlf_boundary],
+        ["-vE", crlf_boundary],
+        ["-sE", crlf_boundary],
+        ["-n", crlf_boundary],
+        ["-b", crlf_boundary],
+        ["-nsE", crlf_boundary],
         ["-vE", crlf],
         ["-sE", crlf],
         ["-T", tabs],
@@ -303,6 +308,29 @@ ssize_t read(int fd, void *buffer, size_t count) {
         s.count += 1
         if safe_same_results[0] != safe_same_results[1]:
             raise AssertionError(f"cat safe same-file no-op behavior differs: {safe_same_results!r}")
+
+    same_hardlink = s.path("cat-same-output-hardlink")
+    os.link(same_path, same_hardlink)
+    hardlink_results = []
+    for command in (
+        [str(s.zovutils), "cat", same_hardlink],
+        [str(s.gnu_dir / "cat"), same_hardlink],
+    ):
+        with open(same_path, "wb") as fixture:
+            fixture.write(b"hardlink-self\n")
+        with open(same_path, "r+b") as output:
+            output.seek(0)
+            proc = subprocess.run(
+                command,
+                stdout=output,
+                stderr=subprocess.PIPE,
+                env=s.env,
+                timeout=5,
+            )
+        hardlink_results.append((proc.returncode, proc.stderr, open(same_path, "rb").read()))
+    s.count += 1
+    if hardlink_results[0] != hardlink_results[1]:
+        raise AssertionError(f"cat hard-link same-file handling differs: {hardlink_results!r}")
 
     append_results = []
     for command in (
