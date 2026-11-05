@@ -47,3 +47,10 @@ def run(s: Suite) -> None:
         for utility in ("head", "tail"):
             for flag in ("-n", "-c"):
                 s.case(utility, [flag, value, suffix_fixture])
+
+    for utility, prefix in (("head", "-1"), ("tail", "+1"), ("tail", "-1")):
+        for codepoint in range(1, 128):
+            suffix = chr(codepoint)
+            if utility == "tail" and suffix == "f":
+                continue
+            s.case(utility, [prefix + suffix, suffix_fixture])
