@@ -20,8 +20,11 @@ notification backend on systems where it is available, so this diagnostic is
 checked against zovutils' actual backend rather than byte-compared to GNU.
 
 The initial supported targets follow Zov: Linux and macOS on `x86_64` and
-`aarch64`. OS calls stay behind `src/shared/` helpers so support can expand
-when Zov's hosted runtime supports more platforms.
+`aarch64`. The `GNU Coreutils parity` GitHub Actions workflow builds GNU 9.11
+from its checksum-verified release archive and runs the full suite on each
+target. It pins the Zov compiler source revision used by the workflow. OS calls
+stay behind `src/shared/` helpers so support can expand when Zov's hosted
+runtime supports more platforms.
 
 The current command coverage is `cat`, `head`, `tail`, and `wc`; this does not
 yet claim GNU Coreutils compatibility. See the project README for the planned

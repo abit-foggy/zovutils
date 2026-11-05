@@ -38,7 +38,8 @@ The Python parity suite requires GNU Coreutils 9.11, uses `LC_ALL=C` and
 `TZ=UTC0` for its base cases, and compares output bytes, diagnostics, and exit
 status. `wc` also runs locale-sensitive cases under an installed UTF-8 locale.
 Command cases live in separate scripts under `tests/parity/`. See
-[compatibility policy](docs/compatibility.md).
+[compatibility policy](docs/compatibility.md). GitHub Actions runs the suite on
+Linux and macOS across x86_64 and aarch64.
 
 ## Roadmap
 
