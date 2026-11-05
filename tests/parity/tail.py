@@ -104,10 +104,13 @@ def _follow(
         gnu_data = open(s.path(f"{mode}-gnu.out"), "rb").read()
         zov_err = Path(s.path(f"{mode}-zov.err")).read_bytes()
         gnu_err = Path(s.path(f"{mode}-gnu.err")).read_bytes()
+        zov_status = zov.returncode
+        gnu_status = gnu.returncode
         s.count += 1
-        if zov_data != gnu_data or zov_err != gnu_err:
+        if (zov_data, zov_err, zov_status) != (gnu_data, gnu_err, gnu_status):
             raise ParityFailure(
-                f"tail {mode} follow differs: zov={(zov_data, zov_err)!r}, gnu={(gnu_data, gnu_err)!r}"
+                f"tail {mode} follow differs: zov={(zov_data, zov_err, zov_status)!r}, "
+                f"gnu={(gnu_data, gnu_err, gnu_status)!r}"
             )
     finally:
         for process in (zov, gnu, child):
