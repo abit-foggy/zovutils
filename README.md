@@ -15,7 +15,7 @@ supported command and behavior.
 
 ```sh
 zovc check
-zovc build --release
+zovc build
 ./target/zovutils cat README.md
 ./target/zovutils wc -l README.md
 ```

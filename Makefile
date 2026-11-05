@@ -11,7 +11,7 @@ check:
 	$(ZOVC) check
 
 build:
-	$(ZOVC) build --release
+	$(ZOVC) build
 
 unit:
 	ZOVC="$(ZOVC)" sh tests/unit/run.sh
