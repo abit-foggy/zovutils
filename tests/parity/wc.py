@@ -146,7 +146,7 @@ def run(s: Suite) -> None:
     # The full character, whitespace, and display-width paths depend on the
     # active LC_CTYPE locale. Run them where a UTF-8 locale is installed.
     utf8_locale = None
-    for candidate in ("C.UTF-8", "C.utf8", "en_US.UTF-8"):
+    for candidate in ("C.UTF-8", "C.utf8", "UTF-8", "en_US.UTF-8", "en_US.utf8"):
         try:
             locale.setlocale(locale.LC_CTYPE, candidate)
             utf8_locale = candidate
