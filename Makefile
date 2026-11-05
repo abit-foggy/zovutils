@@ -17,7 +17,7 @@ unit:
 	ZOVC="$(ZOVC)" sh tests/unit/run.sh
 
 parity: build
-	sh tests/parity/run.sh
+	python3 tests/parity/run.py
 
 test: unit parity
 

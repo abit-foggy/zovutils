@@ -35,9 +35,8 @@ fn copyhead(fp: *c::FILE, count: usize, bytes: bool, delim: u8) bool = {
             let mut take: usize = n;
             for (let i in 0..n) {
                 if (buf[i] == delim) {
-                    take = i + 1usize;
                     remain -= 1usize;
-                    if (remain == 0usize) { stopped = true; break; };
+                    if (remain == 0usize) { take = i + 1usize; stopped = true; break; };
                 };
             };
             if (take > 0usize && !stream::writebytes(c::stdout, ((&buf[0usize]) as *u8), take)) { return false; };
@@ -168,19 +167,19 @@ export fn run(start: usize, argc: usize) i32 = {
     let mut printed: bool = false;
     for (let k in 0..files.len()) {
         let path: str = files.get(k);
+        let mut fp: *c::FILE = c::stdin;
+        let mut owned: bool = false;
+        if (path != "-") {
+            let raw: nullable *c::FILE = stream::openread(path);
+            if (raw == null) { stream::erroropen("head", path); status = 1; continue; };
+            fp = raw!; owned = true;
+        };
         if (headers) {
             if (printed) { io::println(""); };
             let mut label: str = path;
             if (path == "-") { label = "(standard input)"; };
             c::fprintf(c::stdout, "==> %s <==\n", label);
             printed = true;
-        };
-        let mut fp: *c::FILE = c::stdin;
-        let mut owned: bool = false;
-        if (path != "-") {
-            let raw: nullable *c::FILE = stream::openread(path);
-            if (raw == null) { stream::errorprefix("head", path); status = 1; continue; };
-            fp = raw!; owned = true;
         };
         let mut ok: bool = false;
         if (negative) { ok = copyexclude(fp, count, bytes, delim); }

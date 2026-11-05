@@ -166,7 +166,14 @@ export fn run(start: usize, argc: usize) i32 = {
             if (words && digits(v.words) > width) { width = digits(v.words); };
             if ((chars || bytes) && digits(v.bytes) > width) { width = digits(v.bytes); };
             if (maxline && digits(v.maxline) > width) { width = digits(v.maxline); };
-        } else { width = 7usize; };
+        } else {
+            let mut columns: usize = 0usize;
+            if (lines) { columns += 1usize; };
+            if (words) { columns += 1usize; };
+            if (chars || bytes) { columns += 1usize; };
+            if (maxline) { columns += 1usize; };
+            if (columns > 1usize) { width = 7usize; };
+        };
         if (total_mode == "only") { width = 1usize; };
         if (total_mode != "only") { print_counts(v, lines, words, chars, bytes, maxline, "", false, width); };
         if (total_mode == "always" || total_mode == "only") {
@@ -207,6 +214,7 @@ export fn run(start: usize, argc: usize) i32 = {
             if ((chars || bytes) && digits(total.bytes) > width) { width = digits(total.bytes); };
             if (maxline && digits(total.maxline) > width) { width = digits(total.maxline); };
         };
+        if (files0_given && files0_from == "-") { width = 1usize; };
         if (total_mode == "only") { width = 1usize; };
         if (total_mode != "only") {
             for (let k in 0..counts.len()) { print_counts(counts.get(k), lines, words, chars, bytes, maxline, names.get(k), true, width); };

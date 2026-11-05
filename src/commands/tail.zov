@@ -240,18 +240,18 @@ export fn run(start: usize, argc: usize) i32 = {
     let mut printed: bool = false;
     for (let k in 0..files.len()) {
         let path: str = files.get(k);
+        let mut fp: *c::FILE = c::stdin;
+        let mut owned: bool = false;
+        if (path != "-") {
+            let raw: nullable *c::FILE = stream::openread(path);
+            if (raw == null) { stream::erroropen("tail", path); status = 1; continue; };
+            fp = raw!; owned = true;
+        };
         if (headers) {
             if (printed) { io::println(""); };
             let mut label: str = path;
             if (path == "-") { label = "(standard input)"; };
             c::fprintf(c::stdout, "==> %s <==\n", label); printed = true;
-        };
-        let mut fp: *c::FILE = c::stdin;
-        let mut owned: bool = false;
-        if (path != "-") {
-            let raw: nullable *c::FILE = stream::openread(path);
-            if (raw == null) { stream::errorprefix("tail", path); status = 1; continue; };
-            fp = raw!; owned = true;
         };
         let mut ok: bool = false;
         if (plus) { ok = tailplus(fp, count, bytes, delim); }

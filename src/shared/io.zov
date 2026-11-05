@@ -42,6 +42,11 @@ export fn errorprefix(name: str, path: str) void = {
     c::perror((0i64 as *i8));
 };
 
+export fn erroropen(name: str, path: str) void = {
+    c::fprintf(c::stderr, "%s: cannot open '%s' for reading: ", name, path);
+    c::perror((0i64 as *i8));
+};
+
 test "byte stream helpers preserve binary bytes" {
     let raw: nullable *c::FILE = c::tmpfile();
     assert(raw != null);

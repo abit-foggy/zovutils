@@ -2,8 +2,9 @@
 
 The behavior target is GNU Coreutils 9.11. GNU executables are used only as
 test oracles; this project does not copy, port, or link GNU Coreutils source.
-The parity runner requires a directory of GNU 9.11 executables in
-`GNU_COREUTILS_DIR` and checks the oracle version before running cases.
+The Python parity suite is split into shared support and command-specific
+scripts under `tests/parity/`. It requires a directory of GNU 9.11 executables
+in `GNU_COREUTILS_DIR` and checks the oracle version before running cases.
 
 Parity tests set `LC_ALL=C` and `TZ=UTC0` so byte and time output is stable.
 Each case compares standard output, standard error, and exit status. Fixtures

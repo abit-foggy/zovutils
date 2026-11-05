@@ -34,8 +34,9 @@ make unit
 GNU_COREUTILS_DIR=/path/to/gnu-coreutils-9.11/bin make parity
 ```
 
-The parity runner requires GNU Coreutils 9.11, sets `LC_ALL=C` and `TZ=UTC0`,
-and compares output bytes, diagnostics, and exit status. See
+The Python parity suite requires GNU Coreutils 9.11, sets `LC_ALL=C` and
+`TZ=UTC0`, and compares output bytes, diagnostics, and exit status. Command
+cases live in separate scripts under `tests/parity/`. See
 [compatibility policy](docs/compatibility.md).
 
 ## Roadmap
