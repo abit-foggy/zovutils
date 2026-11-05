@@ -225,6 +225,35 @@ def run(s: Suite) -> None:
     if same_results[0] != same_results[1]:
         raise AssertionError(f"cat same-file output handling differs: {same_results!r}")
 
+    same_alias = s.path("cat-same-output-alias")
+    os.symlink(same_path, same_alias)
+    for source, payload, offset in (
+        (same_path, b"abcdef", 0),
+        (same_alias, b"abcdef", 0),
+        (same_path, b"", 0),
+    ):
+        safe_same_results = []
+        for command in (
+            [str(s.zovutils), "cat", source],
+            [str(s.gnu_dir / "cat"), source],
+        ):
+            with open(same_path, "wb") as fixture:
+                fixture.write(payload)
+            with open(same_path, "r+b") as output:
+                output.seek(offset)
+                proc = subprocess.run(
+                    command,
+                    stdout=output,
+                    stderr=subprocess.PIPE,
+                    env=s.env,
+                    timeout=5,
+                    check=False,
+                )
+            safe_same_results.append((proc.returncode, proc.stderr, open(same_path, "rb").read()))
+        s.count += 1
+        if safe_same_results[0] != safe_same_results[1]:
+            raise AssertionError(f"cat safe same-file no-op behavior differs: {safe_same_results!r}")
+
     # GNU's cat behavior through an installed command-name symlink.
     alias = s.root / "cat"
     alias.symlink_to(s.zovutils)

@@ -171,6 +171,11 @@ fn process(fp: *c::FILE, number_all: bool, number_nonblank: bool, squeeze: bool,
     return true;
 };
 
+fn samefile_safe_noop(output: *c::FILE) bool = {
+    let output_position: i64 = c::ftell(output);
+    return output_position == 0i64;
+};
+
 export fn run(start: usize, argc: usize) i32 = {
     let mut number_all: bool = false;
     let mut number_nonblank: bool = false;
@@ -226,8 +231,8 @@ export fn run(start: usize, argc: usize) i32 = {
         if (longprefix(arg, "--show-tabs")) { show_tabs = true; i += 1usize; continue; };
         if (longprefix(arg, "--show-nonprinting")) { show_nonprinting = true; i += 1usize; continue; };
         if (arg == "--help" || longprefix(arg, "--help")) { help(); if (!stream::finishoutput("cat")) { return 1; }; return 0; };
-        if (longprefix(arg, "--version")) { io::println("cat (zovutils) 0.1.44"); if (!stream::finishoutput("cat")) { return 1; }; return 0; };
-        if (arg == "--version") { io::println("cat (zovutils) 0.1.44"); if (!stream::finishoutput("cat")) { return 1; }; return 0; };
+        if (longprefix(arg, "--version")) { io::println("cat (zovutils) 0.1.45"); if (!stream::finishoutput("cat")) { return 1; }; return 0; };
+        if (arg == "--version") { io::println("cat (zovutils) 0.1.45"); if (!stream::finishoutput("cat")) { return 1; }; return 0; };
         if (arg.len >= 2usize && arg[0usize..2usize] == "--" && badlongargument(arg)) { return 1; };
         if (arg.len < 2usize || arg.data[1usize] != 45u8) {
             for (let j in 1usize..arg.len) {
@@ -271,9 +276,11 @@ export fn run(start: usize, argc: usize) i32 = {
                 owned = true;
             };
             if (stream::sameopenfile(fp, c::stdout)) {
-                c::fprintf(c::stderr, "cat: "); stream::printquoted(c::stderr, path, false);
-                c::fprintf(c::stderr, ": input file is output file\n");
-                status = 1;
+                if (!samefile_safe_noop(c::stdout)) {
+                    c::fprintf(c::stderr, "cat: "); stream::printquoted(c::stderr, path, false);
+                    c::fprintf(c::stderr, ": input file is output file\n");
+                    status = 1;
+                };
                 if (owned) { stream::closefile(fp); };
                 index += 1usize;
                 continue;
