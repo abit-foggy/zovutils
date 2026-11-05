@@ -28,6 +28,12 @@ export fn readchunk(fp: *c::FILE, buf: *u8, cap: usize) i64 = {
     return -1i64;
 };
 
+// Synchronize the descriptor position after stdio has read ahead. Callers
+// first position the FILE stream with fseek, then use this for shared fds.
+export fn seekdescriptor(fp: *c::FILE, offset: i64) bool = {
+    return posix::lseek(c::fileno(fp), offset, c::SEEK_SET) == offset;
+};
+
 export fn readerror(fp: *c::FILE) bool = {
     return c::ferror(fp) != 0;
 };
