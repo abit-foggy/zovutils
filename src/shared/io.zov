@@ -163,6 +163,15 @@ export fn samefile(fp: *c::FILE, path: str) bool = {
         && (descriptor_info[0usize] & 4294967295u64) == (path_info[0usize] & 4294967295u64);
 };
 
+export fn sameopenfile(first: *c::FILE, second: *c::FILE) bool = {
+    let mut first_info: [32]u64;
+    let mut second_info: [32]u64;
+    if (sysc::fstat(c::fileno(first), ((&first_info[0usize]) as *void)) != 0) { return false; };
+    if (sysc::fstat(c::fileno(second), ((&second_info[0usize]) as *void)) != 0) { return false; };
+    return first_info[1usize] == second_info[1usize]
+        && (first_info[0usize] & 4294967295u64) == (second_info[0usize] & 4294967295u64);
+};
+
 test "byte stream helpers preserve binary bytes" {
     let raw: nullable *c::FILE = c::tmpfile();
     assert(raw != null);

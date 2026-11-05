@@ -1,10 +1,17 @@
 """Parity cases for cat."""
 
 import os
+import resource
 import select
+import signal
 import subprocess
 
 from support import Suite
+
+
+def _limit_output_file() -> None:
+    resource.setrlimit(resource.RLIMIT_FSIZE, (65536, 65536))
+    signal.signal(signal.SIGXFSZ, signal.SIG_IGN)
 
 
 def run(s: Suite) -> None:
@@ -174,6 +181,32 @@ def run(s: Suite) -> None:
         s.count += 1
         if outcomes[0] != outcomes[1]:
             raise AssertionError(f"cat streaming behavior differs: {opts!r}: {outcomes!r}")
+
+    # GNU refuses to read an input inode that is also stdout. Bound the child
+    # file size so a regression cannot grow it without limit.
+    same_path = s.path("cat-same-output")
+    same_results = []
+    for command in (
+        [str(s.zovutils), "cat", same_path],
+        [str(s.gnu_dir / "cat"), same_path],
+    ):
+        with open(same_path, "wb") as fixture:
+            fixture.write(b"abcdef")
+        with open(same_path, "r+b") as output:
+            output.seek(2)
+            proc = subprocess.run(
+                command,
+                stdout=output,
+                stderr=subprocess.PIPE,
+                env=s.env,
+                timeout=5,
+                check=False,
+                preexec_fn=_limit_output_file,
+            )
+        same_results.append((proc.returncode, proc.stderr, open(same_path, "rb").read()))
+    s.count += 1
+    if same_results[0] != same_results[1]:
+        raise AssertionError(f"cat same-file output handling differs: {same_results!r}")
 
     # GNU's cat behavior through an installed command-name symlink.
     alias = s.root / "cat"
