@@ -96,6 +96,10 @@ fn longmatch(arg: str, option: str) bool = {
     return arg.len > 2usize && arg.len <= option.len && arg == option[0usize..arg.len];
 };
 
+fn valueprefix(arg: str, option: str) bool = {
+    return arg.len <= option.len && arg == option[0usize..arg.len];
+};
+
 fn badargument(option: str) void = {
     c::fprintf(c::stderr, "wc: option '%s' doesn't allow an argument\nTry 'wc --help' for more information.\n", option);
 };
@@ -116,8 +120,8 @@ fn missingargument(option: str) void = {
     c::fprintf(c::stderr, "wc: option '%s' requires an argument\nTry 'wc --help' for more information.\n", option);
 };
 
-fn ambiguous_total() void = {
-    c::fprintf(c::stderr, "wc: ambiguous argument '' for '--total'\nValid arguments are:\n  - 'auto'\n  - 'always'\n  - 'only'\n  - 'never'\nTry 'wc --help' for more information.\n");
+fn ambiguous_total(value: str) void = {
+    c::fprintf(c::stderr, "wc: ambiguous argument '%s' for '--total'\nValid arguments are:\n  - 'auto'\n  - 'always'\n  - 'only'\n  - 'never'\nTry 'wc --help' for more information.\n", value);
 };
 
 fn help() void = {
@@ -195,8 +199,17 @@ export fn run(start: usize, argc: usize) i32 = {
                     total_mode = env::argat(i + 1usize);
                     i += 1usize;
                 };
-                if (total_mode == "") { ambiguous_total(); return 1; };
-                if (total_mode != "auto" && total_mode != "always" && total_mode != "only" && total_mode != "never") { badtotal(total_mode); return 1; };
+                let mut total_matches: usize = 0usize;
+                if (valueprefix(total_mode, "auto")) { total_matches += 1usize; };
+                if (valueprefix(total_mode, "always")) { total_matches += 1usize; };
+                if (valueprefix(total_mode, "only")) { total_matches += 1usize; };
+                if (valueprefix(total_mode, "never")) { total_matches += 1usize; };
+                if (total_matches == 0usize) { badtotal(total_mode); return 1; };
+                if (total_matches > 1usize) { ambiguous_total(total_mode); return 1; };
+                if (valueprefix(total_mode, "auto")) { total_mode = "auto"; }
+                else if (valueprefix(total_mode, "always")) { total_mode = "always"; }
+                else if (valueprefix(total_mode, "only")) { total_mode = "only"; }
+                else { total_mode = "never"; };
                 i += 1usize; continue;
             };
             if (longmatch(key, "--files0-from")) {
