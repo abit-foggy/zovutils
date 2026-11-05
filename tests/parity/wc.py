@@ -230,6 +230,9 @@ def run(s: Suite) -> None:
             stdin = (text + "\0" + binary + "\0").encode()
         s.case("wc", args, stdin=stdin)
     for args, stdin in (
+        (["-"], b"one two\n"),
+        (["-lc", "-"], b"one two\n"),
+        (["--total=always", "-"], b"one two\n"),
         ([], b"one two\nthree\n"),
         (["-mc"], b"one two\n"),
         (["-c", "-", text], b"one\ntwo\n"),
