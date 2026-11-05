@@ -15,9 +15,10 @@ from GNU output. Fixtures cover empty input, binary bytes, missing final
 newlines, multiple files, missing files, and large streamed inputs.
 Platform-dependent cases run both implementations on the same host.
 
-`tail --debug` reports the zovutils polling backend. GNU may report its native
-notification backend on systems where it is available, so this diagnostic is
-checked against zovutils' actual backend rather than byte-compared to GNU.
+`tail --debug` reports the selected follow backend. On Linux, zovutils uses
+inotify for watchable regular files and falls back to polling when notifications
+are unavailable; other platforms use polling. The parity case compares this
+diagnostic with GNU on the same host.
 
 The initial supported targets follow Zov: Linux and macOS on `x86_64` and
 `aarch64`. The `GNU Coreutils parity` GitHub Actions workflow builds GNU 9.11

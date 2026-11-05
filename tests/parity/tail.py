@@ -166,17 +166,32 @@ def _follow(
 
 def _debug_report(s: Suite) -> None:
     path = s.fixture("tail-debug", b"initial\n")
-    child = subprocess.Popen(["python3", "-c", "import time; time.sleep(0.3)"])
-    proc = subprocess.Popen(
-        [str(s.zovutils), "tail", "--debug", "-f", "-s", "0.05", "--pid", str(child.pid), path],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        env=s.env,
-    )
-    child.wait(timeout=3)
-    stdout, stderr = proc.communicate(timeout=3)
-    if proc.returncode != 0 or stdout != b"initial\n" or stderr != b"tail: using polling method\n":
-        raise ParityFailure(f"tail --debug polling report differs: {(proc.returncode, stdout, stderr)!r}")
+    alias = s.path("tail-debug-symlink")
+    os.symlink(path, alias)
+    scenarios = (("descriptor", ["-f"], path, b"initial\n"),
+                 ("name", ["--follow=name"], path, b"initial\n"),
+                 ("symlink", ["-f"], alias, b"initial\n"))
+    if Path("/dev/null").exists():
+        scenarios += (("character-device", ["-f"], "/dev/null", b""),)
+    for label, follow_options, source, expected_output in scenarios:
+        results = []
+        for command in (
+            [str(s.zovutils), "tail"],
+            [str(s.gnu_dir / "tail")],
+        ):
+            child = subprocess.Popen(["python3", "-c", "import time; time.sleep(0.3)"])
+            proc = subprocess.Popen(
+                [*command, "--debug", *follow_options, "-s", "0.05", "--pid", str(child.pid), source],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                env=s.env,
+            )
+            child.wait(timeout=3)
+            stdout, stderr = proc.communicate(timeout=3)
+            results.append((proc.returncode, stdout, stderr))
+        s.count += 1
+        if results[0] != results[1] or results[0][0:2] != (0, expected_output):
+            raise ParityFailure(f"tail --debug {label} backend report differs: {results!r}")
 
 
 def _follow_write_failure(s: Suite) -> None:

@@ -6,6 +6,7 @@ use <unistd.h> as posix;
 use <platform_env.h> as platform_env;
 use <stdlib.h> as libc;
 use <string.h> as strc;
+use <tail_watch.h> as tailwatch;
 use shared::io as stream;
 use shared::numbers as numparse;
 use shared::platform as platform;
@@ -502,7 +503,7 @@ export fn run(start: usize, argc: usize) i32 = {
             };
             if (longmatch(key, "--version")) {
                 if (has_equal) { badargument("--version"); return 1; };
-                io::println("tail (zovutils) 0.1.92"); if (!stream::finishoutput("tail")) { return 1; }; return 0;
+                io::println("tail (zovutils) 0.1.96"); if (!stream::finishoutput("tail")) { return 1; }; return 0;
             };
             badlong(arg); return 1;
         };
@@ -623,7 +624,6 @@ export fn run(start: usize, argc: usize) i32 = {
         return 0;
     };
     if (files.len() == 0usize) { files.push("-"); };
-    if (debug && follow) { c::fprintf(c::stderr, "tail: using polling method\n"); };
     let headers: bool = verbose || (!quiet && files.len() > 1usize);
     let follow_headers: bool = !quiet && files.len() > 1usize;
     let mut status: i32 = 0;
@@ -703,9 +703,37 @@ export fn run(start: usize, argc: usize) i32 = {
             if (!stream::finishoutput("tail")) { status = 1; };
             return 1;
         };
+        let mut notify_fd: i32 = tailwatch::zov_tail_watch_open();
+        let mut notify_count: usize = 0usize;
+        if (notify_fd >= 0i32) {
+            for (let k in 0..follow_paths.len()) {
+                let path: str = follow_paths.get(k);
+                if (path != "-") {
+                    let mut name_mode: i32 = 0i32;
+                    if (follow_name) { name_mode = 1i32; };
+                    let added: i32 = tailwatch::zov_tail_watch_add(notify_fd, path, name_mode);
+                    if (added > 0i32) { notify_count += added as usize; };
+                };
+            };
+        };
+        if (debug) {
+            if (notify_fd >= 0i32 && notify_count > 0usize) { c::fprintf(c::stderr, "tail: using notification mode\n"); }
+            else { c::fprintf(c::stderr, "tail: using polling mode\n"); };
+        };
         if (!stream::finishoutput("tail")) { status = 1; follow_write_failed = true; };
         let buf: [65536]u8;
         while (!follow_write_failed) {
+            if (notify_fd >= 0i32) {
+                for (let k in 0..follow_paths.len()) {
+                    let path: str = follow_paths.get(k);
+                    if (path != "-") {
+                        let mut name_mode: i32 = 0i32;
+                        if (follow_name) { name_mode = 1i32; };
+                        let added: i32 = tailwatch::zov_tail_watch_add(notify_fd, path, name_mode);
+                        if (added > 0i32) { notify_count += added as usize; };
+                    };
+                };
+            };
             for (let k in 0..follow_fps.len()) {
                 let path: str = follow_paths.get(k);
                 let rawfp: nullable *c::FILE = follow_fps.get(k);
@@ -713,6 +741,10 @@ export fn run(start: usize, argc: usize) i32 = {
                     let raw: nullable *c::FILE = stream::openread(path);
                     if (raw != null) {
                         let next: *c::FILE = raw!;
+                        if (!stream::samefile(next, path)) {
+                            stream::closefile(next);
+                            continue;
+                        };
                         c::fprintf(c::stderr, "tail: "); stream::printquoted(c::stderr, path, true);
                         c::fprintf(c::stderr, " has appeared;  following new file\n");
                         let mut output_started: bool = false;
@@ -734,28 +766,34 @@ export fn run(start: usize, argc: usize) i32 = {
                     let raw: nullable *c::FILE = stream::openread(path);
                     if (raw != null) {
                         let next: *c::FILE = raw!;
-                        c::fseek(next, 0i64, c::SEEK_END);
-                        let end: i64 = c::ftell(next);
-                        let mut begin: i64 = pos;
-                        let replaced: bool = !stream::samefile(fp, path);
-                        if (end < begin || replaced) { begin = 0i64; };
-                        if (replaced) {
-                            c::fprintf(c::stderr, "tail: "); stream::printquoted(c::stderr, path, true);
-                            c::fprintf(c::stderr, " has been replaced;  following new file\n");
-                        };
-                        if (end > begin && c::fseek(next, begin, c::SEEK_SET) == 0) {
-                            if (follow_headers) { printfollowheader(path, k, &mut printed, &mut last_header_index); };
-                            while (true) {
-                                let n: usize = stream::readbytes(next, ((&buf[0usize]) as *u8), 65536usize);
-                                if (n == 0usize) { break; };
-                                if (!stream::writebytes(c::stdout, ((&buf[0usize]) as *u8), n)) { follow_write_failed = true; status = 1; break; };
+                        if (!stream::samefile(next, path)) { stream::closefile(next); }
+                        else {
+                            c::fseek(next, 0i64, c::SEEK_END);
+                            let end: i64 = c::ftell(next);
+                            let mut begin: i64 = pos;
+                            let replaced: bool = !stream::sameopenfile(fp, next);
+                            if (end < begin || replaced) { begin = 0i64; };
+                            if (replaced) {
+                                c::fprintf(c::stderr, "tail: "); stream::printquoted(c::stderr, path, true);
+                                c::fprintf(c::stderr, " has been replaced;  following new file\n");
                             };
-                            if (!follow_write_failed && !stream::finishoutput("tail")) { follow_write_failed = true; status = 1; };
-                        } else { c::fseek(next, end, c::SEEK_SET); };
-                        if (follow_owned.get(k)) { stream::closefile(fp); };
-                        let next_follow: nullable *c::FILE = next;
-                        follow_fps.set(k, next_follow);
-                        follow_owned.set(k, true);
+                            if (end > begin && c::fseek(next, begin, c::SEEK_SET) == 0) {
+                                if (follow_headers) { printfollowheader(path, k, &mut printed, &mut last_header_index); };
+                                while (true) {
+                                    let n: usize = stream::readbytes(next, ((&buf[0usize]) as *u8), 65536usize);
+                                    if (n == 0usize) { break; };
+                                    if (!stream::writebytes(c::stdout, ((&buf[0usize]) as *u8), n)) { follow_write_failed = true; status = 1; break; };
+                                };
+                                if (!follow_write_failed && !stream::finishoutput("tail")) { follow_write_failed = true; status = 1; };
+                            } else { c::fseek(next, end, c::SEEK_SET); };
+                            if (!stream::samefile(next, path)) { stream::closefile(next); }
+                            else {
+                                if (follow_owned.get(k)) { stream::closefile(fp); };
+                                let next_follow: nullable *c::FILE = next;
+                                follow_fps.set(k, next_follow);
+                                follow_owned.set(k, true);
+                            };
+                        };
                     } else if (retry) { }
                     else { };
                 } else {
@@ -782,12 +820,20 @@ export fn run(start: usize, argc: usize) i32 = {
             let mut alive: bool = pids.len() == 0usize;
             for (let k in 0..pids.len()) { if (platform::process_alive(pids.get(k))) { alive = true; }; };
             if (!alive) { break; };
-            platform::sleep(interval_secs);
+            if (notify_fd >= 0i32) {
+                if (tailwatch::zov_tail_watch_wait(notify_fd, interval_secs) < 0i32) {
+                    posix::close(notify_fd);
+                    notify_fd = -1i32;
+                    if (debug) { c::fprintf(c::stderr, "tail: inotify wait failed, reverting to polling\n"); };
+                };
+            };
+            if (notify_fd < 0i32) { platform::sleep(interval_secs); };
         };
         for (let k in 0..follow_fps.len()) {
             let fp: nullable *c::FILE = follow_fps.get(k);
             if (fp != null && follow_owned.get(k)) { stream::closefile(fp!); };
         };
+        if (notify_fd >= 0i32) { posix::close(notify_fd); };
     };
     if (!follow || !follow_write_failed) { if (!stream::finishoutput("tail")) { status = 1; }; };
     return status;
