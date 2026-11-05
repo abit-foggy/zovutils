@@ -138,6 +138,7 @@ def run(s: Suite) -> None:
     ):
         s.case("cat", args, stdin=b"from-stdin\n")
     s.case("cat", [], stdin=b"stdin\0bytes\n")
+    s.case("cat", ["-", "-"], stdin=b"stdin is consumed once\n")
 
     # GNU's cat behavior through an installed command-name symlink.
     alias = s.root / "cat"

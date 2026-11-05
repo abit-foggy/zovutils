@@ -118,6 +118,7 @@ def run(s: Suite) -> None:
     ):
         s.case("head", args)
     s.case("head", ["-n", "2"], stdin=b"one\ntwo\nthree\n")
+    s.case("head", [lines, "-", "-"], stdin=b"stdin is consumed once\n")
     s.case("head", ["-c", "4"], stdin=b"a\0b\n\xff")
     s.case("head", ["-n", "-1"], stdin=b"one\ntwo\nthree\n")
     s.case("head", ["-c", "-2"], stdin=b"a\0b\n\xff")

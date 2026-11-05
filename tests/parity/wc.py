@@ -55,6 +55,9 @@ def run(s: Suite) -> None:
         ["-clwL", text],
         [text, binary],
         ["--total=always", text],
+        ["--total=always"],
+        ["--total=only"],
+        ["--total=never"],
         ["--total=only", text],
         ["--total=never", text],
         ["-lcw", large],
@@ -103,5 +106,9 @@ def run(s: Suite) -> None:
         (["-l"], b"one\ntwo"),
         (["-m"], b"a\0\xff"),
         (["-L"], b"a\tb\n"),
+        (["-", "-"], b"one two\n"),
+        (["--total=always"], b"one two\n"),
+        (["--total=only"], b"one two\n"),
+        (["--total=never"], b"one two\n"),
     ):
         s.case("wc", args, stdin=stdin)

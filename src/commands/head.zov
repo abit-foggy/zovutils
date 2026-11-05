@@ -289,7 +289,7 @@ export fn run(start: usize, argc: usize) i32 = {
         if (headers) {
             if (printed) { io::println(""); };
             let mut label: str = path;
-            if (path == "-") { label = "(standard input)"; };
+            if (path == "-") { label = "standard input"; };
             c::fprintf(c::stdout, "==> %s <==\n", label);
             printed = true;
         };

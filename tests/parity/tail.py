@@ -293,6 +293,7 @@ def run(s: Suite) -> None:
     ):
         s.case("tail", args)
     s.case("tail", ["-n", "2"], stdin=b"one\ntwo\nthree\n")
+    s.case("tail", [lines, "-", "-"], stdin=b"stdin is consumed once\n")
     s.case("tail", ["-c", "4"], stdin=b"a\0b\n\xff")
     _follow(s, "descriptor")
     _follow(s, "descriptor-long")

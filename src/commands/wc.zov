@@ -284,6 +284,13 @@ export fn run(start: usize, argc: usize) i32 = {
     let mut names = vec::new[str]();
     defer names.free();
     let nfiles: usize = files.len();
+    let mut stdin_operand: bool = false;
+    for (let k in 0..nfiles) { if (files.get(k) == "-") { stdin_operand = true; }; };
+    let mut stdin_seekable: bool = true;
+    if (stdin_operand) {
+        stdin_seekable = c::fseek(c::stdin, 0i64, c::SEEK_CUR) == 0;
+        if (!stdin_seekable) { c::clearerr(c::stdin); };
+    };
     if (nfiles == 0usize) {
         let seekable: bool = c::fseek(c::stdin, 0i64, c::SEEK_CUR) == 0;
         if (!seekable) { c::clearerr(c::stdin); };
@@ -346,6 +353,7 @@ export fn run(start: usize, argc: usize) i32 = {
             if (maxline && digits(total.maxline) > width) { width = digits(total.maxline); };
             if (columns(lines, words, chars, bytes, maxline) > 1usize && digits(total.bytes) > width) { width = digits(total.bytes); };
         };
+        if (stdin_operand && !stdin_seekable && columns(lines, words, chars, bytes, maxline) > 1usize && width < 7usize) { width = 7usize; };
         if (files0_given && files0_from == "-") { width = 1usize; };
         if (total_mode == "only") { width = 1usize; };
         if (total_mode != "only") {
