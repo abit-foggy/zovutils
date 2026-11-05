@@ -1,0 +1,134 @@
+export type ParseError = !void;
+
+export fn number(text: str) (usize | ParseError) = {
+    if (text.len == 0usize) { return ParseError; };
+    let mut value: usize = 0usize;
+    for (let i in 0..text.len) {
+        let c: u8 = text.data[i];
+        if (c < 48u8 || c > 57u8) { return ParseError; };
+        let digit: usize = (c - 48u8) as usize;
+        if (value > ((~0usize - digit) / 10usize)) { return ParseError; };
+        value = value * 10usize + digit;
+    };
+    return value;
+};
+
+export fn signednumber(text: str) (i64 | ParseError) = {
+    if (text.len == 0usize) { return ParseError; };
+    let negative: bool = text.data[0usize] == 45u8;
+    let positive: bool = text.data[0usize] == 43u8;
+    let mut offset: usize = 0usize;
+    if (negative || positive) { offset = 1usize; };
+    if (offset == text.len) { return ParseError; };
+    let parsed = number(text[offset..text.len]);
+    let magnitude: usize = match (parsed) {
+        case let n: usize => n,
+        case ParseError => return ParseError,
+    };
+    if (magnitude > 9223372036854775807usize) { return ParseError; };
+    let v: i64 = magnitude as i64;
+    if (negative) { return -v; };
+    return v;
+};
+
+fn suffixpower(unit: u8, base: usize) usize = {
+    if (unit == 107u8 || unit == 75u8) { return base; };
+    if (unit == 109u8 || unit == 77u8) { return base * base; };
+    if (unit == 103u8 || unit == 71u8) { return base * base * base; };
+    if (unit == 116u8 || unit == 84u8) { return base * base * base * base; };
+    if (unit == 112u8 || unit == 80u8) { return base * base * base * base * base; };
+    if (unit == 101u8 || unit == 69u8) { return base * base * base * base * base * base; };
+    if (unit == 122u8 || unit == 90u8) { return base * base * base * base * base * base * base; };
+    if (unit == 121u8 || unit == 89u8) { return base * base * base * base * base * base * base * base; };
+    if (unit == 114u8 || unit == 82u8) { return base * base * base * base * base * base * base * base * base; };
+    if (unit == 113u8 || unit == 81u8) { return base * base * base * base * base * base * base * base * base * base; };
+    return 0usize;
+};
+
+export fn bytecount(text: str) (i64 | ParseError) = {
+    if (text.len == 0usize) { return ParseError; };
+    let negative: bool = text.data[0usize] == 45u8;
+    let positive: bool = text.data[0usize] == 43u8;
+    let mut start: usize = 0usize;
+    if (negative || positive) { start = 1usize; };
+    if (start == text.len) { return ParseError; };
+    let mut end: usize = text.len;
+    let mut mult: usize = 1usize;
+    let last: u8 = text.data[end - 1usize];
+    if (last == 98u8) {
+        mult = 512usize; end -= 1usize;
+    } else if (last == 66u8) {
+        if (end - start < 2usize) { return ParseError; };
+        let unit: u8 = text.data[end - 2usize];
+        if (unit == 105u8 && end - start >= 3usize) {
+            mult = suffixpower(text.data[end - 3usize], 1024usize); end -= 3usize;
+        } else if (unit == 107u8) {
+            mult = 1000usize; end -= 2usize;
+        } else {
+            mult = suffixpower(unit, 1000usize); end -= 2usize;
+        };
+        if (mult == 0usize) { return ParseError; };
+    } else if (last == 75u8 || last == 77u8 || last == 71u8 || last == 84u8 || last == 80u8 || last == 69u8 || last == 90u8 || last == 89u8 || last == 82u8 || last == 81u8 || last == 107u8 || last == 109u8 || last == 103u8 || last == 116u8 || last == 112u8 || last == 101u8 || last == 122u8 || last == 121u8 || last == 114u8 || last == 113u8) {
+        mult = suffixpower(last, 1024usize); end -= 1usize;
+    };
+    if (end <= start) { return ParseError; };
+    let magnitude = number(text[start..end]);
+    let value: usize = match (magnitude) {
+        case let n: usize => n,
+        case ParseError => return ParseError,
+    };
+    if (value > 9223372036854775807usize / mult) { return ParseError; };
+    let scaled: i64 = (value * mult) as i64;
+    if (negative) { return -scaled; };
+    return scaled;
+};
+
+export fn option(arg: str, shortname: u8, longname: str) bool = {
+    if (arg == longname) { return true; };
+    return arg.len == 2usize && arg.data[0usize] == 45u8 && arg.data[1usize] == shortname;
+};
+
+test "decimal parsing accepts zero and leading zeroes" {
+    let zero = number("0");
+    let zero_value: usize = match (zero) {
+        case let n: usize => n,
+        case ParseError => 99usize,
+    };
+    assert(zero_value == 0usize);
+    let padded = number("00042");
+    let padded_value: usize = match (padded) {
+        case let n: usize => n,
+        case ParseError => 0usize,
+    };
+    assert(padded_value == 42usize);
+};
+
+test "decimal parsing rejects non-digits and overflow" {
+    let bad = number("4x");
+    assert(match (bad) { case let _: usize => false, case ParseError => true });
+    let overflow = number("18446744073709551616");
+    assert(match (overflow) { case let _: usize => false, case ParseError => true });
+};
+
+test "signed parsing preserves sign and rejects empty signs" {
+    let negative = signednumber("-12");
+    let n: i64 = match (negative) { case let v: i64 => v, case ParseError => 0i64 };
+    assert(n == -12i64);
+    let positive = signednumber("+7");
+    let p: i64 = match (positive) { case let v: i64 => v, case ParseError => 0i64 };
+    assert(p == 7i64);
+    let invalid = signednumber("-");
+    assert(match (invalid) { case let _: i64 => false, case ParseError => true });
+};
+
+test "byte counts accept GNU binary and decimal suffixes" {
+    let kib = bytecount("2K");
+    let kib_value: i64 = match (kib) { case let v: i64 => v, case ParseError => 0i64 };
+    assert(kib_value == 2048i64);
+    let kb = bytecount("2kB");
+    let kb_value: i64 = match (kb) { case let v: i64 => v, case ParseError => 0i64 };
+    assert(kb_value == 2000i64);
+    let mib = bytecount("1MiB");
+    let mib_value: i64 = match (mib) { case let v: i64 => v, case ParseError => 0i64 };
+    assert(mib_value == 1048576i64);
+};

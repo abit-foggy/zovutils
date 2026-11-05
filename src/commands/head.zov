@@ -1,0 +1,192 @@
+use std::env;
+use std::io;
+use std::vec as vec;
+use <stdio.h> as c;
+use shared::io as stream;
+use shared::numbers as numparse;
+
+fn parsecount(text: str) (i64 | ParseError) = {
+    return numparse::bytecount(text);
+};
+
+fn magnitude(value: i64) usize = {
+    if (value < 0i64) { return (-value) as usize; };
+    return value as usize;
+};
+
+fn startsminus(text: str) bool = {
+    return text.len > 0usize && text.data[0usize] == 45u8;
+};
+
+fn copyhead(fp: *c::FILE, count: usize, bytes: bool, delim: u8) bool = {
+    let buf: [65536]u8;
+    let mut remain: usize = count;
+    let mut stopped: bool = count == 0usize;
+    while (!stopped) {
+        let n: usize = stream::readbytes(fp, ((&buf[0usize]) as *u8), 65536usize);
+        if (n == 0usize) { break; };
+        if (bytes) {
+            let mut take: usize = remain;
+            if (n < remain) { take = n; };
+            if (take > 0usize && !stream::writebytes(c::stdout, ((&buf[0usize]) as *u8), take)) { return false; };
+            remain -= take;
+            if (remain == 0usize) { stopped = true; };
+        } else {
+            let mut take: usize = n;
+            for (let i in 0..n) {
+                if (buf[i] == delim) {
+                    take = i + 1usize;
+                    remain -= 1usize;
+                    if (remain == 0usize) { stopped = true; break; };
+                };
+            };
+            if (take > 0usize && !stream::writebytes(c::stdout, ((&buf[0usize]) as *u8), take)) { return false; };
+        };
+    };
+    return !stream::readerror(fp);
+};
+
+fn copyupto(fp: *c::FILE, length: i64) bool = {
+    if (c::fseek(fp, 0i64, c::SEEK_SET) != 0) { return false; };
+    let buf: [65536]u8;
+    let mut remain: usize = length as usize;
+    while (remain > 0usize) {
+        let mut want: usize = 65536usize;
+        if (remain < want) { want = remain; };
+        let n: usize = stream::readbytes(fp, ((&buf[0usize]) as *u8), want);
+        if (n == 0usize) { break; };
+        if (!stream::writebytes(c::stdout, ((&buf[0usize]) as *u8), n)) { return false; };
+        remain -= n;
+    };
+    return !stream::readerror(fp);
+};
+
+fn copyexclude(fp: *c::FILE, count: usize, bytes: bool, delim: u8) bool = {
+    let raw: nullable *c::FILE = c::tmpfile();
+    if (raw == null) { return false; };
+    let tmp: *c::FILE = raw!;
+    let buf: [65536]u8;
+    while (true) {
+        let n: usize = stream::readbytes(fp, ((&buf[0usize]) as *u8), 65536usize);
+        if (n == 0usize) { break; };
+        if (!stream::writebytes(tmp, ((&buf[0usize]) as *u8), n)) { c::fclose(tmp); return false; };
+    };
+    if (stream::readerror(fp) || c::fseek(tmp, 0i64, c::SEEK_END) != 0) { c::fclose(tmp); return false; };
+    let size: i64 = c::ftell(tmp);
+    if (size < 0i64) { c::fclose(tmp); return false; };
+    let mut cutoff: i64 = size;
+    if (bytes) {
+        if (count < size as usize) { cutoff = size - count as i64; }
+        else { cutoff = 0i64; };
+    } else if (count > 0usize && size > 0i64) {
+        let mut pos: i64 = size;
+        if (c::fseek(tmp, size - 1i64, c::SEEK_SET) == 0 && c::fgetc(tmp) == delim as i32) { pos = size - 1i64; };
+        let mut found: usize = 0usize;
+        cutoff = 0i64;
+        while (pos > 0i64 && found < count) {
+            pos -= 1i64;
+            if (c::fseek(tmp, pos, c::SEEK_SET) != 0) { c::fclose(tmp); return false; };
+            if (c::fgetc(tmp) == delim as i32) { found += 1usize; cutoff = pos + 1i64; };
+        };
+        if (found < count) { cutoff = 0i64; };
+    };
+    let ok: bool = copyupto(tmp, cutoff);
+    c::fclose(tmp);
+    return ok;
+};
+
+export fn run(start: usize, argc: usize) i32 = {
+    let mut count: usize = 10usize;
+    let mut negative: bool = false;
+    let mut bytes: bool = false;
+    let mut delim: u8 = 10u8;
+    let mut quiet: bool = false;
+    let mut verbose: bool = false;
+    let mut files = vec::new[str]();
+    defer files.free();
+    let mut operands: bool = false;
+    let mut i: usize = start;
+    while (i < argc) {
+        let arg: str = env::argat(i);
+        if (operands || arg == "-") { files.push(arg); i += 1usize; continue; };
+        if (arg == "--") { operands = true; i += 1usize; continue; };
+        if (arg == "--help") { io::println("Usage: head [OPTION]... [FILE]..."); return 0; };
+        if (arg == "--version") { io::println("head (zovutils) 0.1.0"); return 0; };
+        if (arg == "-q" || arg == "--quiet" || arg == "--silent") { quiet = true; i += 1usize; continue; };
+        if (arg == "-v" || arg == "--verbose") { verbose = true; i += 1usize; continue; };
+        if (arg == "-z" || arg == "--zero-terminated") { delim = 0u8; i += 1usize; continue; };
+        if (arg.len > 8usize && (arg[0usize..8usize] == "--bytes=" || arg[0usize..8usize] == "--lines=")) {
+            bytes = arg[2usize..7usize] == "bytes";
+            let value_text: str = arg[8usize..arg.len];
+            let r = parsecount(value_text);
+            let value: i64 = match (r) { case let n: i64 => n, case ParseError => { c::fprintf(c::stderr, "head: invalid number: '%s'\n", value_text); return 1; } };
+            negative = value < 0i64 || startsminus(value_text); count = magnitude(value);
+            i += 1usize; continue;
+        };
+        if (arg == "-c" || arg == "--bytes" || arg == "-n" || arg == "--lines") {
+            if (i + 1usize >= argc) { c::fprintf(c::stderr, "head: option requires an argument -- '%s'\n", arg); return 1; };
+            bytes = (arg == "-c" || arg == "--bytes");
+            let r = parsecount(env::argat(i + 1usize));
+            let value: i64 = match (r) { case let n: i64 => n, case ParseError => { c::fprintf(c::stderr, "head: invalid number: '%s'\n", env::argat(i + 1usize)); return 1; } };
+            negative = value < 0i64 || startsminus(env::argat(i + 1usize)); count = magnitude(value);
+            i += 2usize; continue;
+        };
+        if (arg.len > 2usize && arg.data[0usize] == 45u8 && arg.data[1usize] == 110u8) {
+            let r = parsecount(arg[2usize..arg.len]);
+            let value: i64 = match (r) { case let n: i64 => n, case ParseError => { c::fprintf(c::stderr, "head: invalid number: '%s'\n", arg[2usize..arg.len]); return 1; } };
+            negative = value < 0i64 || startsminus(arg[2usize..arg.len]); count = magnitude(value);
+            bytes = false; i += 1usize; continue;
+        };
+        if (arg.len > 2usize && arg.data[0usize] == 45u8 && arg.data[1usize] == 99u8) {
+            let r = parsecount(arg[2usize..arg.len]);
+            let value: i64 = match (r) { case let n: i64 => n, case ParseError => { c::fprintf(c::stderr, "head: invalid number: '%s'\n", arg[2usize..arg.len]); return 1; } };
+            negative = value < 0i64 || startsminus(arg[2usize..arg.len]); count = magnitude(value);
+            bytes = true; i += 1usize; continue;
+        };
+        if (arg.len > 1usize && arg.data[0usize] == 45u8 && arg.data[1usize] >= 48u8 && arg.data[1usize] <= 57u8) {
+            let r = parsecount(arg[1usize..arg.len]);
+            let value: i64 = match (r) { case let n: i64 => n, case ParseError => { c::fprintf(c::stderr, "head: invalid number: '%s'\n", arg[1usize..arg.len]); return 1; } };
+            negative = value < 0i64 || startsminus(arg[1usize..arg.len]); count = magnitude(value);
+            bytes = false; i += 1usize; continue;
+        };
+        if (arg.len > 1usize && arg.data[0usize] == 45u8 && arg.data[1usize] != 45u8) {
+            for (let j in 1usize..arg.len) {
+                let ch: u8 = arg.data[j];
+                if (ch == 113u8) { quiet = true; }
+                else if (ch == 118u8) { verbose = true; }
+                else if (ch == 122u8) { delim = 0u8; }
+                else { c::fprintf(c::stderr, "head: invalid option -- '%c'\n", ch as i32); return 1; };
+            };
+            i += 1usize; continue;
+        };
+        if (arg.data[0usize] == 45u8) { c::fprintf(c::stderr, "head: unrecognized option '%s'\n", arg); return 1; };
+        files.push(arg); i += 1usize;
+    };
+    if (files.len() == 0usize) { files.push("-"); };
+    let headers: bool = verbose || (!quiet && files.len() > 1usize);
+    let mut status: i32 = 0;
+    let mut printed: bool = false;
+    for (let k in 0..files.len()) {
+        let path: str = files.get(k);
+        if (headers) {
+            if (printed) { io::println(""); };
+            let mut label: str = path;
+            if (path == "-") { label = "(standard input)"; };
+            c::fprintf(c::stdout, "==> %s <==\n", label);
+            printed = true;
+        };
+        let mut fp: *c::FILE = c::stdin;
+        let mut owned: bool = false;
+        if (path != "-") {
+            let raw: nullable *c::FILE = stream::openread(path);
+            if (raw == null) { stream::errorprefix("head", path); status = 1; continue; };
+            fp = raw!; owned = true;
+        };
+        let mut ok: bool = false;
+        if (negative) { ok = copyexclude(fp, count, bytes, delim); }
+        else { ok = copyhead(fp, count, bytes, delim); };
+        if (!ok) { stream::errorprefix("head", path); status = 1; };
+        if (owned && !stream::closefile(fp)) { stream::errorprefix("head", path); status = 1; };
+    };
+    return status;
+};

@@ -1,0 +1,159 @@
+use std::env;
+use std::io;
+use std::vec as vec;
+use <stdio.h> as c;
+use shared::io as stream;
+
+fn badoption(arg: str) void = {
+    c::fprintf(c::stderr, "cat: invalid option -- '%s'\nTry 'cat --help' for more information.\n", arg);
+};
+
+fn numberline(line: usize) void = {
+    let mut n: usize = line;
+    let mut width: usize = 1usize;
+    while (n >= 10usize) { n = n / 10usize; width += 1usize; };
+    while (width < 6usize) { io::print(" "); width += 1usize; };
+    io::print(line);
+    io::print("\t");
+};
+
+fn emit_visible(fp: *c::FILE, b: u8, show_tabs: bool, show_ends: bool, show_nonprinting: bool) bool = {
+    if (b == 10u8) {
+        if (show_ends && !stream::putbyte(fp, 36u8)) { return false; };
+        return stream::putbyte(fp, 10u8);
+    };
+    if (b == 9u8 && show_tabs) {
+        return stream::putstr(fp, "^I");
+    };
+    if (!show_nonprinting || (b >= 32u8 && b != 127u8 && b < 128u8)) {
+        return stream::putbyte(fp, b);
+    };
+    if (b >= 128u8) {
+        if (!stream::putstr(fp, "M-")) { return false; };
+        let low: u8 = b & 127u8;
+        if (low < 32u8 || low == 127u8) {
+            if (!stream::putbyte(fp, 94u8)) { return false; };
+            if (low == 127u8) { return stream::putbyte(fp, 63u8); };
+            return stream::putbyte(fp, low + 64u8);
+        };
+        return stream::putbyte(fp, low);
+    };
+    if (!stream::putbyte(fp, 94u8)) { return false; };
+    if (b == 127u8) { return stream::putbyte(fp, 63u8); };
+    return stream::putbyte(fp, b + 64u8);
+};
+
+fn process(fp: *c::FILE, number_all: bool, number_nonblank: bool, squeeze: bool,
+           show_tabs: bool, show_ends: bool, show_nonprinting: bool) bool = {
+    let buf: [65536]u8;
+    let mut line: usize = 1usize;
+    let mut line_start: bool = true;
+    let mut line_nonblank: bool = false;
+    let mut previous_blank: bool = false;
+    while (true) {
+        let n: usize = stream::readbytes(fp, ((&buf[0usize]) as *u8), 65536usize);
+        if (n == 0usize) { break; };
+        for (let i in 0..n) {
+            let b: u8 = buf[i];
+            if (b == 10u8) {
+                if (squeeze && line_start && previous_blank) {
+                    previous_blank = true;
+                    continue;
+                };
+                if (line_start && number_all) { numberline(line); };
+                if (!emit_visible(c::stdout, b, show_tabs, show_ends, show_nonprinting)) { return false; };
+                previous_blank = !line_nonblank;
+                if (number_all || line_nonblank) { line = line + 1usize; };
+                line_nonblank = false;
+                line_start = true;
+                continue;
+            };
+            if (line_start) {
+                if (number_all || number_nonblank) { numberline(line); };
+                line_start = false;
+            };
+            line_nonblank = true;
+            if (!emit_visible(c::stdout, b, show_tabs, show_ends, show_nonprinting)) { return false; };
+        };
+    };
+    return !stream::readerror(fp);
+};
+
+export fn run(start: usize, argc: usize) i32 = {
+    let mut number_all: bool = false;
+    let mut number_nonblank: bool = false;
+    let mut squeeze: bool = false;
+    let mut show_tabs: bool = false;
+    let mut show_ends: bool = false;
+    let mut show_nonprinting: bool = false;
+    let mut operands: bool = false;
+    let mut files = vec::new[str]();
+    defer files.free();
+    let mut i: usize = start;
+    while (i < argc) {
+        let arg: str = env::argat(i);
+        if (arg == "--") { operands = true; i += 1usize; continue; };
+        if (operands || arg.len == 0usize || arg.data[0usize] != 45u8 || arg == "-") {
+            files.push(arg);
+            i += 1usize;
+            continue;
+        };
+        if (arg == "--number") { number_all = true; i += 1usize; continue; };
+        if (arg == "--number-nonblank") { number_nonblank = true; i += 1usize; continue; };
+        if (arg == "--squeeze-blank") { squeeze = true; i += 1usize; continue; };
+        if (arg == "--show-ends") { show_ends = true; i += 1usize; continue; };
+        if (arg == "--show-tabs") { show_tabs = true; i += 1usize; continue; };
+        if (arg == "--show-nonprinting") { show_nonprinting = true; i += 1usize; continue; };
+        if (arg == "--help") {
+            io::println("Usage: cat [OPTION]... [FILE]...");
+            io::println("Concatenate FILE(s) to standard output.");
+            return 0;
+        };
+        if (arg == "--version") { io::println("cat (zovutils) 0.1.0"); return 0; };
+        if (arg.len < 2usize || arg.data[1usize] != 45u8) {
+            for (let j in 1usize..arg.len) {
+                let opt: u8 = arg.data[j];
+                if (opt == 110u8) { number_all = true; }
+                else if (opt == 98u8) { number_nonblank = true; }
+                else if (opt == 115u8) { squeeze = true; }
+                else if (opt == 65u8) { show_nonprinting = true; show_tabs = true; show_ends = true; }
+                else if (opt == 101u8) { show_nonprinting = true; show_ends = true; }
+                else if (opt == 116u8) { show_nonprinting = true; show_tabs = true; }
+                else if (opt == 69u8) { show_ends = true; }
+                else if (opt == 84u8) { show_tabs = true; }
+                else if (opt == 118u8) { show_nonprinting = true; }
+                else if (opt == 117u8) { }
+                else { badoption(arg); return 1; };
+            };
+            i += 1usize;
+            continue;
+        };
+        badoption(arg);
+        return 1;
+    };
+    if (number_nonblank) { number_all = false; };
+    let mut status: i32 = 0;
+    let mut index: usize = 0usize;
+    if (files.len() == 0usize) {
+        if (!process(c::stdin, number_all, number_nonblank, squeeze, show_tabs, show_ends, show_nonprinting)) { status = 1; };
+    } else {
+        while (index < files.len()) {
+            let path: str = files.get(index);
+            let mut fp: *c::FILE = c::stdin;
+            let mut owned: bool = false;
+            if (path != "-") {
+                let raw: nullable *c::FILE = stream::openread(path);
+                if (raw == null) { stream::errorprefix("cat", path); status = 1; index += 1usize; continue; };
+                fp = raw!;
+                owned = true;
+            };
+            if (!process(fp, number_all, number_nonblank, squeeze, show_tabs, show_ends, show_nonprinting)) {
+                stream::errorprefix("cat", path);
+                status = 1;
+            };
+            if (owned && !stream::closefile(fp)) { stream::errorprefix("cat", path); status = 1; };
+            index += 1usize;
+        };
+    };
+    return status;
+};

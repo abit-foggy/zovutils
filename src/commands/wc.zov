@@ -1,0 +1,169 @@
+use std::env;
+use std::io;
+use std::vec as vec;
+use <stdio.h> as c;
+use <ctype.h> as ct;
+use shared::io as stream;
+
+type Counts = struct { lines: usize, words: usize, bytes: usize, maxline: usize };
+fn scan(fp: *c::FILE, out: &mut Counts) bool = {
+    out.lines = 0usize; out.words = 0usize; out.bytes = 0usize; out.maxline = 0usize;
+    let mut linebytes: usize = 0usize;
+    let mut inword: bool = false;
+    let buf: [65536]u8;
+    while (true) {
+        let n: usize = stream::readbytes(fp, ((&buf[0usize]) as *u8), 65536usize);
+        if (n == 0usize) { break; };
+        out.bytes += n;
+        for (let i in 0..n) {
+            let b: u8 = buf[i];
+            if (b == 10u8) {
+                out.lines += 1usize;
+                if (linebytes > out.maxline) { out.maxline = linebytes; };
+                linebytes = 0usize;
+            } else if (b == 9u8) { linebytes += 8usize - (linebytes % 8usize); }
+            else if (b >= 32u8 && b != 127u8) { linebytes += 1usize; };
+            if (ct::isspace(b as i32) != 0) { inword = false; }
+            else if (!inword) { out.words += 1usize; inword = true; };
+        };
+    };
+    if (linebytes > out.maxline) { out.maxline = linebytes; };
+    return !stream::readerror(fp);
+};
+
+fn digits(n: usize) usize = {
+    let mut value: usize = n;
+    let mut width: usize = 1usize;
+    while (value >= 10usize) { value = value / 10usize; width += 1usize; };
+    return width;
+};
+
+fn print_counts(v: Counts, lines: bool, words: bool, chars: bool, bytes: bool, maxline: bool, name: str, hasname: bool, width: usize) void = {
+    let mut first: bool = true;
+    if (lines) { c::fprintf(c::stdout, "%*zu", width as i32, v.lines); first = false; };
+    if (words) { if (!first) { c::putchar(32); }; c::fprintf(c::stdout, "%*zu", width as i32, v.words); first = false; };
+    if (chars) { if (!first) { c::putchar(32); }; c::fprintf(c::stdout, "%*zu", width as i32, v.bytes); first = false; };
+    if (bytes) { if (!first) { c::putchar(32); }; c::fprintf(c::stdout, "%*zu", width as i32, v.bytes); first = false; };
+    if (maxline) { if (!first) { c::putchar(32); }; c::fprintf(c::stdout, "%*zu", width as i32, v.maxline); first = false; };
+    if (hasname) { c::fprintf(c::stdout, " %s", name); };
+    c::putchar(10);
+};
+
+export fn run(start: usize, argc: usize) i32 = {
+    let mut lines: bool = false;
+    let mut words: bool = false;
+    let mut chars: bool = false;
+    let mut bytes: bool = false;
+    let mut maxline: bool = false;
+    let mut total_mode: str = "auto";
+    let mut operands: bool = false;
+    let mut files = vec::new[str]();
+    defer files.free();
+    let mut i: usize = start;
+    while (i < argc) {
+        let arg: str = env::argat(i);
+        if (arg == "--") { operands = true; i += 1usize; continue; };
+        if (operands || arg == "-" || arg.len == 0usize || arg.data[0usize] != 45u8) {
+            files.push(arg); i += 1usize; continue;
+        };
+        if (arg == "--help") { io::println("Usage: wc [OPTION]... [FILE]..."); return 0; };
+        if (arg == "--version") { io::println("wc (zovutils) 0.1.0"); return 0; };
+        if (arg.len > 8usize && arg[0usize..8usize] == "--total=") {
+            total_mode = arg[8usize..arg.len];
+            if (total_mode != "auto" && total_mode != "always" && total_mode != "only" && total_mode != "never") {
+                c::fprintf(c::stderr, "wc: invalid argument %s for %s\n", total_mode, "--total"); return 1;
+            };
+            i += 1usize; continue;
+        };
+        if (arg == "--lines") { lines = true; }
+        else if (arg == "--words") { words = true; }
+        else if (arg == "--chars") { chars = true; }
+        else if (arg == "--bytes") { bytes = true; }
+        else if (arg == "--max-line-length") { maxline = true; }
+        else if (arg.len >= 2usize && arg.data[1usize] != 45u8) {
+            for (let j in 1usize..arg.len) {
+                let ch: u8 = arg.data[j];
+                if (ch == 108u8) { lines = true; }
+                else if (ch == 119u8) { words = true; }
+                else if (ch == 109u8) { chars = true; }
+                else if (ch == 99u8) { bytes = true; }
+                else if (ch == 76u8) { maxline = true; }
+                else { c::fprintf(c::stderr, "wc: invalid option -- '%c'\n", ch as i32); return 1; };
+            };
+        } else { c::fprintf(c::stderr, "wc: unrecognized option '%s'\n", arg); return 1; };
+        i += 1usize;
+    };
+    if (!lines && !words && !chars && !bytes && !maxline) { lines = true; words = true; bytes = true; };
+
+    let mut total: Counts = Counts{ lines = 0usize, words = 0usize, bytes = 0usize, maxline = 0usize };
+    let mut status: i32 = 0;
+    let mut counts = vec::new[Counts]();
+    defer counts.free();
+    let mut names = vec::new[str]();
+    defer names.free();
+    let nfiles: usize = files.len();
+    if (nfiles == 0usize) {
+        let seekable: bool = c::fseek(c::stdin, 0i64, c::SEEK_CUR) == 0;
+        if (!seekable) { c::clearerr(c::stdin); };
+        let mut v: Counts = Counts{ lines = 0usize, words = 0usize, bytes = 0usize, maxline = 0usize };
+        if (!scan(c::stdin, &mut v)) { status = 1; };
+        let mut width: usize = 1usize;
+        if (seekable) {
+            if (lines && digits(v.lines) > width) { width = digits(v.lines); };
+            if (words && digits(v.words) > width) { width = digits(v.words); };
+            if ((chars || bytes) && digits(v.bytes) > width) { width = digits(v.bytes); };
+            if (maxline && digits(v.maxline) > width) { width = digits(v.maxline); };
+        } else { width = 7usize; };
+        if (total_mode == "only") { width = 1usize; };
+        if (total_mode != "only") { print_counts(v, lines, words, chars, bytes, maxline, "", false, width); };
+        if (total_mode == "always" || total_mode == "only") {
+            if (total_mode == "only") { print_counts(v, lines, words, chars, bytes, maxline, "", false, width); }
+            else { print_counts(v, lines, words, chars, bytes, maxline, "total", true, width); };
+        };
+    } else {
+        let mut first: usize = 0usize;
+        while (first < files.len()) {
+            let path: str = files.get(first);
+            let mut fp: *c::FILE = c::stdin;
+            let mut owned: bool = false;
+            if (path != "-") {
+                let raw: nullable *c::FILE = stream::openread(path);
+                if (raw == null) { stream::errorprefix("wc", path); status = 1; first += 1usize; continue; };
+                fp = raw!; owned = true;
+            };
+            let mut v: Counts = Counts{ lines = 0usize, words = 0usize, bytes = 0usize, maxline = 0usize };
+            if (scan(fp, &mut v)) {
+                counts.push(v); names.push(path);
+                total.lines += v.lines; total.words += v.words; total.bytes += v.bytes;
+                if (v.maxline > total.maxline) { total.maxline = v.maxline; };
+            } else { stream::errorprefix("wc", path); status = 1; };
+            if (owned && !stream::closefile(fp)) { stream::errorprefix("wc", path); status = 1; };
+            first += 1usize;
+        };
+        let mut width: usize = 1usize;
+        for (let k in 0..counts.len()) {
+            let v: Counts = counts.get(k);
+            if (lines && digits(v.lines) > width) { width = digits(v.lines); };
+            if (words && digits(v.words) > width) { width = digits(v.words); };
+            if ((chars || bytes) && digits(v.bytes) > width) { width = digits(v.bytes); };
+            if (maxline && digits(v.maxline) > width) { width = digits(v.maxline); };
+        };
+        if (nfiles > 1usize || total_mode == "always") {
+            if (lines && digits(total.lines) > width) { width = digits(total.lines); };
+            if (words && digits(total.words) > width) { width = digits(total.words); };
+            if ((chars || bytes) && digits(total.bytes) > width) { width = digits(total.bytes); };
+            if (maxline && digits(total.maxline) > width) { width = digits(total.maxline); };
+        };
+        if (total_mode == "only") { width = 1usize; };
+        if (total_mode != "only") {
+            for (let k in 0..counts.len()) { print_counts(counts.get(k), lines, words, chars, bytes, maxline, names.get(k), true, width); };
+        };
+        if (nfiles > 1usize || total_mode == "always" || total_mode == "only") {
+            let mut total_name: str = "total";
+            let mut total_hasname: bool = true;
+            if (total_mode == "only") { total_name = ""; total_hasname = false; };
+            print_counts(total, lines, words, chars, bytes, maxline, total_name, total_hasname, width);
+        };
+    };
+    return status;
+};

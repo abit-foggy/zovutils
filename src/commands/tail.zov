@@ -1,0 +1,203 @@
+use std::env;
+use std::io;
+use std::vec as vec;
+use <stdio.h> as c;
+use <unistd.h> as u;
+use shared::io as stream;
+use shared::numbers as numparse;
+
+fn spool(fp: *c::FILE, tmp: *c::FILE) bool = {
+    let buf: [65536]u8;
+    while (true) {
+        let n: usize = stream::readbytes(fp, ((&buf[0usize]) as *u8), 65536usize);
+        if (n == 0usize) { break; };
+        if (!stream::writebytes(tmp, ((&buf[0usize]) as *u8), n)) { return false; };
+    };
+    return !stream::readerror(fp);
+};
+
+fn copyfrom(fp: *c::FILE, start: i64) bool = {
+    if (c::fseek(fp, start, c::SEEK_SET) != 0) { return false; };
+    let buf: [65536]u8;
+    while (true) {
+        let n: usize = stream::readbytes(fp, ((&buf[0usize]) as *u8), 65536usize);
+        if (n == 0usize) { break; };
+        if (!stream::writebytes(c::stdout, ((&buf[0usize]) as *u8), n)) { return false; };
+    };
+    return !stream::readerror(fp);
+};
+
+fn tailfrom(fp: *c::FILE, count: usize, bytes: bool, delim: u8) bool = {
+    let raw: nullable *c::FILE = c::tmpfile();
+    if (raw == null) { return false; };
+    let tmp: *c::FILE = raw!;
+    if (!spool(fp, tmp)) { c::fclose(tmp); return false; };
+    if (c::fseek(tmp, 0i64, c::SEEK_END) != 0) { c::fclose(tmp); return false; };
+    let size: i64 = c::ftell(tmp);
+    if (size < 0i64) { c::fclose(tmp); return false; };
+    let mut start: i64 = 0i64;
+    if (count == 0usize) {
+        start = size;
+    } else if (bytes) {
+        if (count == 0usize) { start = size; }
+        else if (count < size as usize) { start = size - count as i64; };
+    } else if (size > 0i64) {
+        let mut pos: i64 = size;
+        if (c::fseek(tmp, size - 1i64, c::SEEK_SET) == 0 && c::fgetc(tmp) == delim as i32) { pos = size - 1i64; };
+        let mut found: usize = 0usize;
+        while (pos > 0i64 && found < count) {
+            pos -= 1i64;
+            if (c::fseek(tmp, pos, c::SEEK_SET) != 0) { c::fclose(tmp); return false; };
+            if (c::fgetc(tmp) == delim as i32) { found += 1usize; start = pos + 1i64; };
+        };
+        if (found < count) { start = 0i64; };
+    };
+    let ok: bool = copyfrom(tmp, start);
+    c::fclose(tmp);
+    return ok;
+};
+
+fn tailplus(fp: *c::FILE, count: usize, bytes: bool, delim: u8) bool = {
+    let buf: [65536]u8;
+    let mut remain: usize = 0usize;
+    if (count > 0usize) { remain = count - 1usize; };
+    let mut output: bool = remain == 0usize;
+    while (true) {
+        let n: usize = stream::readbytes(fp, ((&buf[0usize]) as *u8), 65536usize);
+        if (n == 0usize) { break; };
+        let mut begin: usize = 0usize;
+        if (!output) {
+            let mut i: usize = 0usize;
+            while (i < n) {
+                if (bytes) {
+                    if (remain == 0usize) { begin = i; output = true; break; };
+                    remain -= 1usize;
+                } else if (buf[i] == delim) {
+                    remain -= 1usize;
+                    if (remain == 0usize) { begin = i + 1usize; output = true; break; };
+                };
+                i += 1usize;
+            };
+        };
+        if (output && begin < n && !stream::writebytes(c::stdout, ((&buf[begin]) as *u8), n - begin)) { return false; };
+    };
+    return !stream::readerror(fp);
+};
+
+fn parsevalue(text: str) (i64 | ParseError) = {
+    return numparse::bytecount(text);
+};
+
+fn startsplus(text: str) bool = {
+    return text.len > 0usize && text.data[0usize] == 43u8;
+};
+
+fn magnitude(value: i64) usize = {
+    if (value < 0i64) { return (-value) as usize; };
+    return value as usize;
+};
+
+export fn run(start: usize, argc: usize) i32 = {
+    let mut count: usize = 10usize;
+    let mut plus: bool = false;
+    let mut bytes: bool = false;
+    let mut delim: u8 = 10u8;
+    let mut quiet: bool = false;
+    let mut verbose: bool = false;
+    let mut follow: bool = false;
+    let mut files = vec::new[str]();
+    defer files.free();
+    let mut operands: bool = false;
+    let mut i: usize = start;
+    while (i < argc) {
+        let arg: str = env::argat(i);
+        if (operands || arg == "-") { files.push(arg); i += 1usize; continue; };
+        if (arg == "--") { operands = true; i += 1usize; continue; };
+        if (arg == "--help") { io::println("Usage: tail [OPTION]... [FILE]..."); return 0; };
+        if (arg == "--version") { io::println("tail (zovutils) 0.1.0"); return 0; };
+        if (arg == "-q" || arg == "--quiet" || arg == "--silent") { quiet = true; i += 1usize; continue; };
+        if (arg == "-v" || arg == "--verbose") { verbose = true; i += 1usize; continue; };
+        if (arg == "-z" || arg == "--zero-terminated") { delim = 0u8; i += 1usize; continue; };
+        if (arg == "-f" || arg == "--follow" || arg == "-F") { follow = true; i += 1usize; continue; };
+        if (arg == "--retry") { i += 1usize; continue; };
+        if (arg.len > 8usize && (arg[0usize..8usize] == "--bytes=" || arg[0usize..8usize] == "--lines=")) {
+            bytes = arg[2usize..7usize] == "bytes";
+            let value_text: str = arg[8usize..arg.len];
+            let r = parsevalue(value_text);
+            let value: i64 = match (r) { case let n: i64 => n, case ParseError => { c::fprintf(c::stderr, "tail: invalid number: '%s'\n", value_text); return 1; } };
+            plus = startsplus(value_text); count = magnitude(value);
+            i += 1usize; continue;
+        };
+        if (arg == "-n" || arg == "--lines" || arg == "-c" || arg == "--bytes") {
+            if (i + 1usize >= argc) { c::fprintf(c::stderr, "tail: option requires an argument -- '%s'\n", arg); return 1; };
+            bytes = (arg == "-c" || arg == "--bytes");
+            let r = parsevalue(env::argat(i + 1usize));
+            let value: i64 = match (r) { case let n: i64 => n, case ParseError => { c::fprintf(c::stderr, "tail: invalid number: '%s'\n", env::argat(i + 1usize)); return 1; } };
+            plus = startsplus(env::argat(i + 1usize));
+            count = magnitude(value);
+            i += 2usize; continue;
+        };
+        if (arg.len > 2usize && arg.data[0usize] == 45u8 && arg.data[1usize] == 110u8) {
+            let r = parsevalue(arg[2usize..arg.len]);
+            let value: i64 = match (r) { case let n: i64 => n, case ParseError => { c::fprintf(c::stderr, "tail: invalid number: '%s'\n", arg[2usize..arg.len]); return 1; } };
+            plus = startsplus(arg[2usize..arg.len]); count = magnitude(value); bytes = false; i += 1usize; continue;
+        };
+        if (arg.len > 2usize && arg.data[0usize] == 45u8 && arg.data[1usize] == 99u8) {
+            let r = parsevalue(arg[2usize..arg.len]);
+            let value: i64 = match (r) { case let n: i64 => n, case ParseError => { c::fprintf(c::stderr, "tail: invalid number: '%s'\n", arg[2usize..arg.len]); return 1; } };
+            plus = startsplus(arg[2usize..arg.len]); count = magnitude(value); bytes = true; i += 1usize; continue;
+        };
+        if (arg.len > 1usize && arg.data[0usize] == 45u8 && arg.data[1usize] >= 48u8 && arg.data[1usize] <= 57u8) {
+            let r = parsevalue(arg[1usize..arg.len]);
+            let value: i64 = match (r) { case let n: i64 => n, case ParseError => { c::fprintf(c::stderr, "tail: invalid number: '%s'\n", arg[1usize..arg.len]); return 1; } };
+            plus = startsplus(arg[1usize..arg.len]); count = magnitude(value); bytes = false; i += 1usize; continue;
+        };
+        if (arg.len > 1usize && arg.data[0usize] == 45u8 && arg.data[1usize] != 45u8) {
+            for (let j in 1usize..arg.len) {
+                let ch: u8 = arg.data[j];
+                if (ch == 113u8) { quiet = true; }
+                else if (ch == 118u8) { verbose = true; }
+                else if (ch == 122u8) { delim = 0u8; }
+                else if (ch == 102u8 || ch == 70u8) { follow = true; }
+                else { c::fprintf(c::stderr, "tail: invalid option -- '%c'\n", ch as i32); return 1; };
+            };
+            i += 1usize; continue;
+        };
+        if (arg.data[0usize] == 45u8) { c::fprintf(c::stderr, "tail: unrecognized option '%s'\n", arg); return 1; };
+        files.push(arg); i += 1usize;
+    };
+    if (files.len() == 0usize) { files.push("-"); };
+    let headers: bool = verbose || (!quiet && files.len() > 1usize);
+    let mut status: i32 = 0;
+    let mut printed: bool = false;
+    for (let k in 0..files.len()) {
+        let path: str = files.get(k);
+        if (headers) {
+            if (printed) { io::println(""); };
+            let mut label: str = path;
+            if (path == "-") { label = "(standard input)"; };
+            c::fprintf(c::stdout, "==> %s <==\n", label); printed = true;
+        };
+        let mut fp: *c::FILE = c::stdin;
+        let mut owned: bool = false;
+        if (path != "-") {
+            let raw: nullable *c::FILE = stream::openread(path);
+            if (raw == null) { stream::errorprefix("tail", path); status = 1; continue; };
+            fp = raw!; owned = true;
+        };
+        let mut ok: bool = false;
+        if (plus) { ok = tailplus(fp, count, bytes, delim); }
+        else { ok = tailfrom(fp, count, bytes, delim); };
+        if (!ok) { stream::errorprefix("tail", path); status = 1; };
+        if (follow) {
+            let buf: [65536]u8;
+            while (true) {
+                let n: usize = stream::readbytes(fp, ((&buf[0usize]) as *u8), 65536usize);
+                if (n > 0usize) { stream::writebytes(c::stdout, ((&buf[0usize]) as *u8), n); }
+                else { c::clearerr(fp); u::sleep(1u32); };
+            };
+        };
+        if (owned && !stream::closefile(fp)) { stream::errorprefix("tail", path); status = 1; };
+    };
+    return status;
+};

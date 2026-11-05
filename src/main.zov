@@ -1,10 +1,50 @@
+use std::env;
 use std::io;
 
-export fn main() i32 = {
-    io::println("hello from zovutils");
-    return 0;
+use commands::cat;
+use commands::head;
+use commands::tail;
+use commands::wc;
+
+fn basename(path: str) str = {
+    let mut start: usize = 0usize;
+    for (let i in 0..path.len) {
+        if (path.data[i] == 47u8) { start = i + 1usize; };
+    };
+    return path[start..path.len];
 };
 
-test "sanity" {
-    assert(1 + 1 == 2);
+fn dispatch(name: str, start: usize, argc: usize) i32 = {
+    if (name == "cat") { return cat::run(start, argc); };
+    if (name == "head") { return head::run(start, argc); };
+    if (name == "tail") { return tail::run(start, argc); };
+    if (name == "wc") { return wc::run(start, argc); };
+    io::println("zovutils: unknown utility '" + name + "'");
+    io::println("usage: zovutils <utility> [arguments...]");
+    return 1;
+};
+
+export fn main() i32 = {
+    let argc: usize = env::argscount();
+    if (argc == 0usize) { return 1; };
+
+    let invoked_as: str = basename(env::argat(0usize));
+    if (invoked_as != "zovutils" && invoked_as != "main") {
+        return dispatch(invoked_as, 1usize, argc);
+    };
+    if (argc < 2usize) {
+        io::println("usage: zovutils <utility> [arguments...]");
+        io::println("utilities: cat head tail wc");
+        return 1;
+    };
+    if (env::argat(1usize) == "--help" || env::argat(1usize) == "-h") {
+        io::println("usage: zovutils <utility> [arguments...]");
+        io::println("utilities: cat head tail wc");
+        return 0;
+    };
+    if (argc >= 2usize && (env::argat(1usize) == "--version" || env::argat(1usize) == "-V")) {
+        io::println("zovutils 0.1.0 (GNU Coreutils 9.11 compatibility target)");
+        return 0;
+    };
+    return dispatch(env::argat(1usize), 2usize, argc);
 };

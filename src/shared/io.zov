@@ -1,0 +1,43 @@
+use <stdio.h> as c;
+
+export type StreamError = !i32;
+
+export fn openread(path: str) nullable *c::FILE = {
+    return c::fopen(path, "rb");
+};
+
+export fn closefile(fp: *c::FILE) bool = {
+    return c::fclose(fp) == 0;
+};
+
+export fn readbytes(fp: *c::FILE, buf: *u8, cap: usize) usize = {
+    return c::fread(buf as *void, 1usize, cap, fp);
+};
+
+export fn readerror(fp: *c::FILE) bool = {
+    return c::ferror(fp) != 0;
+};
+
+export fn writebytes(fp: *c::FILE, buf: *u8, len: usize) bool = {
+    let mut done: usize = 0usize;
+    while (done < len) {
+        let n: usize = c::fwrite((&buf[done]) as *void, 1usize, len - done, fp);
+        if (n == 0usize) { return false; };
+        done += n;
+    };
+    return true;
+};
+
+export fn putbyte(fp: *c::FILE, b: u8) bool = {
+    return c::fputc(b as i32, fp) != -1;
+};
+
+export fn putstr(fp: *c::FILE, s: str) bool = {
+    if (s.len == 0usize) { return true; };
+    return writebytes(fp, s.data as *u8, s.len);
+};
+
+export fn errorprefix(name: str, path: str) void = {
+    c::fprintf(c::stderr, "%s: %s: ", name, path);
+    c::perror((0i64 as *i8));
+};
