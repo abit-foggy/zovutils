@@ -5,7 +5,7 @@ use <stdio.h> as c;
 use <platform_env.h> as platform_env;
 use shared::io as stream;
 
-type State = struct { line: usize, line_start: bool, line_nonblank: bool, previous_blank: bool };
+type State = struct { line: usize, line_start: bool, line_nonblank: bool, previous_blank: bool, pending_cr: bool };
 type Output = struct { data: [65536]u8, used: usize };
 
 fn badshort(opt: u8) void = {
@@ -177,6 +177,11 @@ fn process(fp: *c::FILE, number_all: bool, number_nonblank: bool, squeeze: bool,
         };
         for (let i in 0..n) {
             let b: u8 = buf[i];
+            if (state.pending_cr) {
+                if (b == 10u8 && !queuestr(&mut output, "^M")) { return false; };
+                if (b != 10u8 && !queuebyte(&mut output, 13u8)) { return false; };
+                state.pending_cr = false;
+            };
             if (b == 10u8) {
                 if (squeeze && state.line_start && state.previous_blank) {
                     state.previous_blank = true;
@@ -195,6 +200,7 @@ fn process(fp: *c::FILE, number_all: bool, number_nonblank: bool, squeeze: bool,
                 state.line_start = false;
             };
             state.line_nonblank = true;
+            if (b == 13u8 && show_ends && !show_nonprinting) { state.pending_cr = true; continue; };
             if (!emit_visible(&mut output, b, show_tabs, show_ends, show_nonprinting)) { return false; };
         };
         if (!flush_output(&mut output)) { return false; };
@@ -268,8 +274,8 @@ export fn run(start: usize, argc: usize) i32 = {
         if (longprefix(arg, "--show-tabs")) { show_tabs = true; i += 1usize; continue; };
         if (longprefix(arg, "--show-nonprinting")) { show_nonprinting = true; i += 1usize; continue; };
         if (arg == "--help" || longprefix(arg, "--help")) { help(); if (!stream::finishoutput("cat")) { return 1; }; return 0; };
-        if (longprefix(arg, "--version")) { io::println("cat (zovutils) 0.1.74"); if (!stream::finishoutput("cat")) { return 1; }; return 0; };
-        if (arg == "--version") { io::println("cat (zovutils) 0.1.74"); if (!stream::finishoutput("cat")) { return 1; }; return 0; };
+        if (longprefix(arg, "--version")) { io::println("cat (zovutils) 0.1.75"); if (!stream::finishoutput("cat")) { return 1; }; return 0; };
+        if (arg == "--version") { io::println("cat (zovutils) 0.1.75"); if (!stream::finishoutput("cat")) { return 1; }; return 0; };
         if (arg.len >= 2usize && arg[0usize..2usize] == "--" && badlongargument(arg)) { return 1; };
         if (arg.len < 2usize || arg.data[1usize] != 45u8) {
             for (let j in 1usize..arg.len) {
@@ -293,7 +299,7 @@ export fn run(start: usize, argc: usize) i32 = {
         return 1;
     };
     if (number_nonblank) { number_all = false; };
-    let mut state: State = State{ line = 1usize, line_start = true, line_nonblank = false, previous_blank = false };
+    let mut state: State = State{ line = 1usize, line_start = true, line_nonblank = false, previous_blank = false, pending_cr = false };
     let mut status: i32 = 0;
     let mut index: usize = 0usize;
     if (files.len() == 0usize) {
@@ -334,6 +340,7 @@ export fn run(start: usize, argc: usize) i32 = {
             index += 1usize;
         };
     };
+    if (state.pending_cr) { if (!stream::putbyte(c::stdout, 13u8)) { status = 1; }; state.pending_cr = false; };
     if (!stream::finishoutput("cat")) { status = 1; };
     return status;
 };

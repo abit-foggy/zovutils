@@ -23,11 +23,15 @@ def run(s: Suite) -> None:
     no_final_newline = s.fixture("no-final-newline", b"no-final-newline")
     binary = s.fixture("binary", b"a\0b\n\xffz")
     tabs = s.fixture("tabs", b"a\tb\n\t\n")
+    crlf = s.fixture("crlf", b"a\r\n\r\nend\rX\n")
     all_bytes = s.fixture("all-bytes", bytes(range(256)))
     boundary = s.fixture("boundary", b"x" * 65535 + b"\n\n\nend")
+    crlf_boundary = s.fixture("crlf-boundary", b"x" * 65535 + b"\r\n")
     large = s.fixture("large", (b"stream\0bytes\xff\n" * 131072) + b"tail")
     split_first = s.fixture("split-first", b"first")
     split_second = s.fixture("split-second", b"second\n\n")
+    split_cr = s.fixture("split-cr", b"split\r")
+    split_lf = s.fixture("split-lf", b"\nend")
     split_blank = s.fixture("split-blank", b"\nlast\n")
     unusual_name = s.fixture("cat-line\nbreak", b"name with newline\n")
     invalid_byte_name = s.fixture("cat-invalid-\udcff", b"name with invalid byte\n")
@@ -48,7 +52,7 @@ def run(s: Suite) -> None:
     for mask in range(1 << len(switches)):
         selected = "".join(flag for bit, flag in enumerate(switches) if mask & (1 << bit))
         opts = ["-" + selected] if selected else []
-        for fixture in (text, binary, boundary):
+        for fixture in (text, binary, boundary, crlf):
             s.case("cat", [*opts, fixture])
 
     # GNU accepts every unambiguous abbreviation of a long option and reports
@@ -80,6 +84,10 @@ def run(s: Suite) -> None:
         ["-A", binary],
         ["-v", binary],
         ["-E", no_final_newline],
+        ["-E", crlf],
+        ["-E", crlf_boundary],
+        ["-vE", crlf],
+        ["-sE", crlf],
         ["-T", tabs],
         ["-t", tabs],
         ["-e", binary],
@@ -124,6 +132,8 @@ def run(s: Suite) -> None:
         ["-s", split_second, split_blank],
         ["-n", split_first, split_second],
         ["-n", split_first, "-", split_second],
+        ["-E", split_cr, split_lf],
+        ["-E", split_cr],
         ["-b", split_blank, split_second],
         ["-n", "-s", split_second, split_blank],
         ["-b", "-s", split_blank, split_second],
