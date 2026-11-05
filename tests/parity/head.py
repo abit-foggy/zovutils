@@ -22,6 +22,7 @@ def run(s: Suite) -> None:
     s.write_failure("head", [lines])
     s.write_failure("head", ["--help"])
     s.write_failure("head", ["--version"])
+    s.broken_pipe_case("head", ["-c", "100000", large])
     s.symlink_dispatch("head", ["-n", "1", lines])
 
     options = (

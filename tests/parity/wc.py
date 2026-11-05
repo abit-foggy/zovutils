@@ -20,6 +20,10 @@ def run(s: Suite) -> None:
     wide_bytes_narrow_line = s.fixture("wc-wide-bytes-narrow-line", (b"x" * 50 + b"\n") * 3)
     missing = s.path("wc-missing")
     files0 = s.fixture("wc-files0", (text + "\0" + binary + "\0").encode())
+    many_files0 = s.fixture(
+        "wc-files0-many",
+        ((text + "\0") * 12000).encode(),
+    )
     zero_name = s.fixture("wc-zero-name", b"\0")
     zero_unusual = s.fixture("wc-zero-list\nname", b"\0")
     empty_files0 = s.fixture("wc-files0-empty", b"")
@@ -33,6 +37,7 @@ def run(s: Suite) -> None:
     s.write_failure("wc", [text])
     s.write_failure("wc", ["--help"])
     s.write_failure("wc", ["--version"])
+    s.broken_pipe_case("wc", ["--files0-from=" + many_files0])
     s.symlink_dispatch("wc", ["-l", text])
     s.permission_denied_case("wc", ["-l", unreadable, text], unreadable)
 

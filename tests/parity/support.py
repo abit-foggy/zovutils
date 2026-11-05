@@ -145,6 +145,33 @@ class Suite:
         finally:
             os.chmod(path, 0o600)
 
+    def broken_pipe_case(self, utility: str, args: list[str]) -> None:
+        """Compare SIGPIPE behavior after a downstream reader exits."""
+        results = []
+        for command in (
+            [str(self.zovutils), utility, *args],
+            [str(self.gnu_dir / utility), *args],
+        ):
+            proc = subprocess.Popen(
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                env=self.env,
+            )
+            assert proc.stdout is not None and proc.stderr is not None
+            proc.stdout.close()
+            stderr = proc.stderr.read()
+            try:
+                status = proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait()
+                raise ParityFailure(f"{utility} did not stop after a broken pipe")
+            results.append((status, stderr))
+        self.count += 1
+        if results[0] != results[1]:
+            raise ParityFailure(f"{utility} broken-pipe behavior differs: {results!r}")
+
     def symlink_dispatch(self, utility: str, args: list[str]) -> None:
         alias = self.root / utility
         alias.symlink_to(self.zovutils)

@@ -236,3 +236,4 @@ def run(s: Suite) -> None:
     s.write_failure("cat", [text])
     s.write_failure("cat", ["--help"])
     s.write_failure("cat", ["--version"])
+    s.broken_pipe_case("cat", [large])
