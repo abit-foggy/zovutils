@@ -183,6 +183,7 @@ def run(s: Suite) -> None:
         [missing_unusual],
         [missing_quote_control],
         ["--", "-l"],
+        [missing, "--", text, "--", "--help=x"],
         [text, "-c"],
         ["--total=auto", text, binary],
         ["--total=always", text, binary],
@@ -227,6 +228,7 @@ def run(s: Suite) -> None:
         s.case("wc", args, stdin=stdin)
     for args, stdin in (
         ([], b"one two\nthree\n"),
+        (["-mc"], b"one two\n"),
         (["-c", "-", text], b"one\ntwo\n"),
         (["-l", "-", text], b"one\ntwo\n"),
         (["-l"], b"one\ntwo"),

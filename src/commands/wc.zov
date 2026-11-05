@@ -248,7 +248,7 @@ export fn run(start: usize, argc: usize) i32 = {
     let mut i: usize = start;
     while (i < argc) {
         let arg: str = env::argat(i);
-        if (arg == "--") { operands = true; i += 1usize; continue; };
+        if (!operands && arg == "--") { operands = true; i += 1usize; continue; };
         if (operands || arg == "-" || arg.len == 0usize || arg.data[0usize] != 45u8) {
             files.push(arg); i += 1usize; continue;
         };
@@ -316,7 +316,7 @@ export fn run(start: usize, argc: usize) i32 = {
             else if (longmatch(key, "--max-line-length")) { maxline = true; }
             else if (longmatch(key, "--debug")) { debug = true; }
             else if (longmatch(key, "--help")) { help(); if (!stream::finishoutputbrief("wc")) { return 1; }; return 0; }
-            else if (longmatch(key, "--version")) { io::println("wc (zovutils) 0.1.59"); if (!stream::finishoutputbrief("wc")) { return 1; }; return 0; };
+            else if (longmatch(key, "--version")) { io::println("wc (zovutils) 0.1.61"); if (!stream::finishoutputbrief("wc")) { return 1; }; return 0; };
             i += 1usize; continue;
         };
         if (arg.len >= 2usize && arg.data[1usize] != 45u8) {
@@ -398,7 +398,8 @@ export fn run(start: usize, argc: usize) i32 = {
             let mut columns: usize = 0usize;
             if (lines) { columns += 1usize; };
             if (words) { columns += 1usize; };
-            if (chars || bytes) { columns += 1usize; };
+            if (chars) { columns += 1usize; };
+            if (bytes) { columns += 1usize; };
             if (maxline) { columns += 1usize; };
             if (columns > 1usize) { width = 7usize; };
         };
