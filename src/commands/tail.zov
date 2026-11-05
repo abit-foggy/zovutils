@@ -104,6 +104,10 @@ fn badshort(opt: u8) void = {
     c::fprintf(c::stderr, "tail: invalid option -- '%c'\nTry 'tail --help' for more information.\n", opt as i32);
 };
 
+fn invalidcontext(opt: u8) void = {
+    c::fprintf(c::stderr, "tail: option used in invalid context -- %c\n", opt as i32);
+};
+
 fn badlong(arg: str) void = {
     c::fprintf(c::stderr, "tail: unrecognized option '%s'\nTry 'tail --help' for more information.\n", arg);
 };
@@ -233,6 +237,15 @@ export fn run(start: usize, argc: usize) i32 = {
         if (operands || arg == "-") { files.push(arg); i += 1usize; continue; };
         if (arg == "--") { operands = true; i += 1usize; continue; };
         if (arg.len > 1usize && arg.data[0usize] == 43u8 && arg.data[1usize] >= 48u8 && arg.data[1usize] <= 57u8) {
+            let mut legacy_ok: bool = i == start;
+            let mut look: usize = i + 1usize;
+            while (look < argc) {
+                let next: str = env::argat(look);
+                if (next == "--") { break; };
+                if (next.len > 1usize && next.data[0usize] == 45u8) { legacy_ok = false; break; };
+                look += 1usize;
+            };
+            if (legacy_ok) {
             let mut value_text: str = arg[1usize..arg.len];
             bytes = false;
             let last: u8 = value_text.data[value_text.len - 1usize];
@@ -243,6 +256,7 @@ export fn run(start: usize, argc: usize) i32 = {
             let r = parsevalue(value_text);
             let value: numparse::ByteCount = match (r) { case let n: numparse::ByteCount => n, case ParseError => { if (bytes) { invalidnumber("bytes", value_text); } else { invalidnumber("lines", value_text); }; return 1; } };
             plus = true; count = value.magnitude; i += 1usize; continue;
+            };
         };
         if (arg == "-q" || arg == "--quiet" || arg == "--silent") { quiet = true; verbose = false; i += 1usize; continue; };
         if (arg == "-v" || arg == "--verbose") { verbose = true; quiet = false; i += 1usize; continue; };
@@ -339,7 +353,7 @@ export fn run(start: usize, argc: usize) i32 = {
             };
             if (longmatch(key, "--version")) {
                 if (has_equal) { badargument("--version"); return 1; };
-                io::println("tail (zovutils) 0.1.11"); if (!stream::finishoutput("tail")) { return 1; }; return 0;
+                io::println("tail (zovutils) 0.1.12"); if (!stream::finishoutput("tail")) { return 1; }; return 0;
             };
             badlong(arg); return 1;
         };
@@ -373,6 +387,14 @@ export fn run(start: usize, argc: usize) i32 = {
             plus = startsplus(arg[2usize..arg.len]); count = value.magnitude; bytes = true; i += 1usize; continue;
         };
         if (arg.len > 1usize && arg.data[0usize] == 45u8 && arg.data[1usize] >= 48u8 && arg.data[1usize] <= 57u8) {
+            if (i != start) { invalidcontext(arg.data[1usize]); return 1; };
+            let mut look: usize = i + 1usize;
+            while (look < argc) {
+                let next: str = env::argat(look);
+                if (next == "--") { break; };
+                if (next.len > 1usize && next.data[0usize] == 45u8) { invalidcontext(arg.data[1usize]); return 1; };
+                look += 1usize;
+            };
             let mut value_text: str = arg[1usize..arg.len];
             bytes = false;
             let last: u8 = value_text.data[value_text.len - 1usize];
