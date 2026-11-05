@@ -29,7 +29,15 @@ static inline long long zov_regular_bytes_remaining(int descriptor) {
         return -1;
     if (position >= info.st_size)
         return 0;
-    return (long long) (info.st_size - position);
+    off_t end = lseek(descriptor, 0, SEEK_END);
+    if (end < 0)
+        return -1;
+    if (end < position) {
+        if (lseek(descriptor, position, SEEK_SET) < 0)
+            return -1;
+        return 0;
+    }
+    return (long long) (end - position);
 }
 
 #endif

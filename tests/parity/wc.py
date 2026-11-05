@@ -84,6 +84,36 @@ def run(s: Suite) -> None:
         if stdin_results[0] != stdin_results[1]:
             raise AssertionError(f"wc stdin file-type behavior differs: {source}: {stdin_results!r}")
 
+    # GNU wc advances seekable stdin to EOF even when -c uses file metadata
+    # instead of reading the file. A second wc sharing the descriptor sees 0.
+    for payload in (b"xy", b"x" * 1048576):
+        positioned_wc_input = s.fixture("wc-positioned-stdin", payload)
+        repeated_wc_results = []
+        for command in (
+            [str(s.zovutils), "wc", "-c"],
+            [str(s.gnu_dir / "wc"), "-c"],
+        ):
+            with open(positioned_wc_input, "rb") as source:
+                counts = []
+                for _ in range(2):
+                    result = subprocess.run(
+                        command,
+                        stdin=source,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        env=s.env,
+                        timeout=5,
+                        check=False,
+                    )
+                    counts.append((result.returncode, result.stdout, result.stderr))
+            repeated_wc_results.append(counts)
+        s.count += 1
+        expected = [(0, f"{len(payload)}\n".encode(), b""), (0, b"0\n", b"")]
+        if repeated_wc_results[0] != repeated_wc_results[1] or repeated_wc_results[0] != expected:
+            raise AssertionError(
+                f"wc -c stdin position differs for {len(payload)} bytes: {repeated_wc_results!r}"
+            )
+
     same_path = s.path("wc-same-file")
     same_file_options = (
         [], ["-l"], ["-w"], ["-c"], ["-m"], ["-L"], ["-lwcL"],
