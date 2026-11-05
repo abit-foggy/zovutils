@@ -4,8 +4,44 @@ use std::vec as vec;
 use <stdio.h> as c;
 use shared::io as stream;
 
-fn badoption(arg: str) void = {
-    c::fprintf(c::stderr, "cat: invalid option -- '%s'\nTry 'cat --help' for more information.\n", arg);
+type State = struct { line: usize, line_start: bool, line_nonblank: bool, previous_blank: bool };
+
+fn badshort(opt: u8) void = {
+    c::fprintf(c::stderr, "cat: invalid option -- '%c'\nTry 'cat --help' for more information.\n", opt as i32);
+};
+
+fn badlong(arg: str) void = {
+    c::fprintf(c::stderr, "cat: unrecognized option '%s'\nTry 'cat --help' for more information.\n", arg);
+};
+
+fn badargument(option: str) void = {
+    c::fprintf(c::stderr, "cat: option '%s' doesn't allow an argument\nTry 'cat --help' for more information.\n", option);
+};
+
+fn longprefix(arg: str, option: str) bool = {
+    return arg.len > 2usize && arg.len < option.len && arg == option[0usize..arg.len];
+};
+
+fn longambiguity(arg: str) bool = {
+    let mut count: usize = 0usize;
+    if (longprefix(arg, "--number-nonblank")) { count += 1usize; };
+    if (longprefix(arg, "--number")) { count += 1usize; };
+    if (longprefix(arg, "--squeeze-blank")) { count += 1usize; };
+    if (longprefix(arg, "--show-nonprinting")) { count += 1usize; };
+    if (longprefix(arg, "--show-ends")) { count += 1usize; };
+    if (longprefix(arg, "--show-tabs")) { count += 1usize; };
+    if (longprefix(arg, "--show-all")) { count += 1usize; };
+    if (count <= 1usize) { return false; };
+    c::fprintf(c::stderr, "cat: option '%s' is ambiguous; possibilities:", arg);
+    if (longprefix(arg, "--number-nonblank")) { c::fprintf(c::stderr, " '%s'", "--number-nonblank"); };
+    if (longprefix(arg, "--number")) { c::fprintf(c::stderr, " '%s'", "--number"); };
+    if (longprefix(arg, "--squeeze-blank")) { c::fprintf(c::stderr, " '%s'", "--squeeze-blank"); };
+    if (longprefix(arg, "--show-nonprinting")) { c::fprintf(c::stderr, " '%s'", "--show-nonprinting"); };
+    if (longprefix(arg, "--show-ends")) { c::fprintf(c::stderr, " '%s'", "--show-ends"); };
+    if (longprefix(arg, "--show-tabs")) { c::fprintf(c::stderr, " '%s'", "--show-tabs"); };
+    if (longprefix(arg, "--show-all")) { c::fprintf(c::stderr, " '%s'", "--show-all"); };
+    c::fprintf(c::stderr, "\nTry 'cat --help' for more information.\n");
+    return true;
 };
 
 fn numberline(line: usize) void = {
@@ -22,8 +58,9 @@ fn emit_visible(fp: *c::FILE, b: u8, show_tabs: bool, show_ends: bool, show_nonp
         if (show_ends && !stream::putbyte(fp, 36u8)) { return false; };
         return stream::putbyte(fp, 10u8);
     };
-    if (b == 9u8 && show_tabs) {
-        return stream::putstr(fp, "^I");
+    if (b == 9u8) {
+        if (show_tabs) { return stream::putstr(fp, "^I"); };
+        return stream::putbyte(fp, b);
     };
     if (!show_nonprinting || (b >= 32u8 && b != 127u8 && b < 128u8)) {
         return stream::putbyte(fp, b);
@@ -44,35 +81,31 @@ fn emit_visible(fp: *c::FILE, b: u8, show_tabs: bool, show_ends: bool, show_nonp
 };
 
 fn process(fp: *c::FILE, number_all: bool, number_nonblank: bool, squeeze: bool,
-           show_tabs: bool, show_ends: bool, show_nonprinting: bool) bool = {
+           show_tabs: bool, show_ends: bool, show_nonprinting: bool, state: &mut State) bool = {
     let buf: [65536]u8;
-    let mut line: usize = 1usize;
-    let mut line_start: bool = true;
-    let mut line_nonblank: bool = false;
-    let mut previous_blank: bool = false;
     while (true) {
         let n: usize = stream::readbytes(fp, ((&buf[0usize]) as *u8), 65536usize);
         if (n == 0usize) { break; };
         for (let i in 0..n) {
             let b: u8 = buf[i];
             if (b == 10u8) {
-                if (squeeze && line_start && previous_blank) {
-                    previous_blank = true;
+                if (squeeze && state.line_start && state.previous_blank) {
+                    state.previous_blank = true;
                     continue;
                 };
-                if (line_start && number_all) { numberline(line); };
+                if (state.line_start && number_all) { numberline(state.line); };
                 if (!emit_visible(c::stdout, b, show_tabs, show_ends, show_nonprinting)) { return false; };
-                previous_blank = !line_nonblank;
-                if (number_all || line_nonblank) { line = line + 1usize; };
-                line_nonblank = false;
-                line_start = true;
+                state.previous_blank = !state.line_nonblank;
+                if (number_all || state.line_nonblank) { state.line += 1usize; };
+                state.line_nonblank = false;
+                state.line_start = true;
                 continue;
             };
-            if (line_start) {
-                if (number_all || number_nonblank) { numberline(line); };
-                line_start = false;
+            if (state.line_start) {
+                if (number_all || number_nonblank) { numberline(state.line); };
+                state.line_start = false;
             };
-            line_nonblank = true;
+            state.line_nonblank = true;
             if (!emit_visible(c::stdout, b, show_tabs, show_ends, show_nonprinting)) { return false; };
         };
     };
@@ -98,12 +131,43 @@ export fn run(start: usize, argc: usize) i32 = {
             i += 1usize;
             continue;
         };
-        if (arg == "--number") { number_all = true; i += 1usize; continue; };
-        if (arg == "--number-nonblank") { number_nonblank = true; i += 1usize; continue; };
-        if (arg == "--squeeze-blank") { squeeze = true; i += 1usize; continue; };
-        if (arg == "--show-ends") { show_ends = true; i += 1usize; continue; };
-        if (arg == "--show-tabs") { show_tabs = true; i += 1usize; continue; };
-        if (arg == "--show-nonprinting") { show_nonprinting = true; i += 1usize; continue; };
+        if (arg == "--number" || (arg.len >= 9usize && arg[0usize..9usize] == "--number=")) {
+            if (arg != "--number") { badargument("--number"); return 1; };
+            number_all = true; i += 1usize; continue;
+        };
+        if (arg == "--number-nonblank" || (arg.len >= 18usize && arg[0usize..18usize] == "--number-nonblank=")) {
+            if (arg != "--number-nonblank") { badargument("--number-nonblank"); return 1; };
+            number_nonblank = true; i += 1usize; continue;
+        };
+        if (arg == "--squeeze-blank" || (arg.len >= 16usize && arg[0usize..16usize] == "--squeeze-blank=")) {
+            if (arg != "--squeeze-blank") { badargument("--squeeze-blank"); return 1; };
+            squeeze = true; i += 1usize; continue;
+        };
+        if (arg == "--show-all" || (arg.len >= 11usize && arg[0usize..11usize] == "--show-all=")) {
+            if (arg != "--show-all") { badargument("--show-all"); return 1; };
+            show_nonprinting = true; show_tabs = true; show_ends = true; i += 1usize; continue;
+        };
+        if (arg == "--show-ends" || (arg.len >= 12usize && arg[0usize..12usize] == "--show-ends=")) {
+            if (arg != "--show-ends") { badargument("--show-ends"); return 1; };
+            show_ends = true; i += 1usize; continue;
+        };
+        if (arg == "--show-tabs" || (arg.len >= 12usize && arg[0usize..12usize] == "--show-tabs=")) {
+            if (arg != "--show-tabs") { badargument("--show-tabs"); return 1; };
+            show_tabs = true; i += 1usize; continue;
+        };
+        if (arg == "--show-nonprinting" || (arg.len >= 19usize && arg[0usize..19usize] == "--show-nonprinting=")) {
+            if (arg != "--show-nonprinting") { badargument("--show-nonprinting"); return 1; };
+            show_nonprinting = true; i += 1usize; continue;
+        };
+        if (longambiguity(arg)) { return 1; };
+        if (longprefix(arg, "--number-nonblank")) { number_nonblank = true; i += 1usize; continue; };
+        if (longprefix(arg, "--squeeze-blank")) { squeeze = true; i += 1usize; continue; };
+        if (longprefix(arg, "--show-all")) { show_nonprinting = true; show_tabs = true; show_ends = true; i += 1usize; continue; };
+        if (longprefix(arg, "--show-ends")) { show_ends = true; i += 1usize; continue; };
+        if (longprefix(arg, "--show-tabs")) { show_tabs = true; i += 1usize; continue; };
+        if (longprefix(arg, "--show-nonprinting")) { show_nonprinting = true; i += 1usize; continue; };
+        if (longprefix(arg, "--help")) { io::println("Usage: cat [OPTION]... [FILE]..."); return 0; };
+        if (longprefix(arg, "--version")) { io::println("cat (zovutils) 0.1.0"); return 0; };
         if (arg == "--help") {
             io::println("Usage: cat [OPTION]... [FILE]...");
             io::println("Concatenate FILE(s) to standard output.");
@@ -123,19 +187,20 @@ export fn run(start: usize, argc: usize) i32 = {
                 else if (opt == 84u8) { show_tabs = true; }
                 else if (opt == 118u8) { show_nonprinting = true; }
                 else if (opt == 117u8) { }
-                else { badoption(arg); return 1; };
+                else { badshort(opt); return 1; };
             };
             i += 1usize;
             continue;
         };
-        badoption(arg);
+        badlong(arg);
         return 1;
     };
     if (number_nonblank) { number_all = false; };
+    let mut state: State = State{ line = 1usize, line_start = true, line_nonblank = false, previous_blank = false };
     let mut status: i32 = 0;
     let mut index: usize = 0usize;
     if (files.len() == 0usize) {
-        if (!process(c::stdin, number_all, number_nonblank, squeeze, show_tabs, show_ends, show_nonprinting)) { status = 1; };
+        if (!process(c::stdin, number_all, number_nonblank, squeeze, show_tabs, show_ends, show_nonprinting, &mut state)) { status = 1; };
     } else {
         while (index < files.len()) {
             let path: str = files.get(index);
@@ -147,7 +212,7 @@ export fn run(start: usize, argc: usize) i32 = {
                 fp = raw!;
                 owned = true;
             };
-            if (!process(fp, number_all, number_nonblank, squeeze, show_tabs, show_ends, show_nonprinting)) {
+            if (!process(fp, number_all, number_nonblank, squeeze, show_tabs, show_ends, show_nonprinting, &mut state)) {
                 stream::errorprefix("cat", path);
                 status = 1;
             };

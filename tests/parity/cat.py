@@ -10,8 +10,22 @@ def run(s: Suite) -> None:
     no_final_newline = s.fixture("no-final-newline", b"no-final-newline")
     binary = s.fixture("binary", b"a\0b\n\xffz")
     tabs = s.fixture("tabs", b"a\tb\n\t\n")
+    all_bytes = s.fixture("all-bytes", bytes(range(256)))
+    boundary = s.fixture("boundary", b"x" * 65535 + b"\n\n\nend")
+    split_first = s.fixture("split-first", b"first")
+    split_second = s.fixture("split-second", b"second\n\n")
+    split_blank = s.fixture("split-blank", b"\nlast\n")
     directory = s.path("directory")
     s.root.joinpath("directory").mkdir()
+
+    # Exercise every combination of cat's independent display/numbering flags
+    # against text, binary, and chunk-boundary inputs.
+    switches = "nbsETv"
+    for mask in range(1 << len(switches)):
+        selected = "".join(flag for bit, flag in enumerate(switches) if mask & (1 << bit))
+        opts = ["-" + selected] if selected else []
+        for fixture in (text, binary, boundary):
+            s.case("cat", [*opts, fixture])
 
     for args in (
         [],
@@ -28,15 +42,54 @@ def run(s: Suite) -> None:
         ["-t", tabs],
         ["-e", binary],
         ["-u", text],
+        ["--number", text],
+        ["--number-nonblank", text],
+        ["--squeeze-blank", text],
+        ["--show-ends", text],
+        ["--show-tabs", tabs],
+        ["--show-nonprinting", all_bytes],
+        ["--show-all", all_bytes],
+        ["--show-a", all_bytes],
+        ["--show-e", all_bytes],
+        ["--show-t", tabs],
+        ["--show-n", all_bytes],
+        ["--squeez", text],
+        ["--number-n", text],
+        ["--n"],
+        ["--s"],
+        ["-v", all_bytes],
+        ["-A", all_bytes],
+        ["-e", all_bytes],
+        ["-t", all_bytes],
+        ["-A", "-n", "-s", all_bytes],
+        ["-n", "-b", "-n", text],
+        ["-n", "-b", "-b", "-n", text],
+        ["-b", "-s", text],
+        ["-n", boundary],
+        ["-s", boundary],
         [text, "-n"],
         [text, lines],
+        ["-n", split_first, split_second],
+        ["-s", split_second, split_blank],
+        ["-n", split_first, split_second],
+        [split_first, "-", split_second],
         ["--", "-n"],
         [directory],
         [s.path("missing")],
         [text, s.path("missing"), lines],
         [empty, text],
+        ["-x"],
+        ["--bogus"],
+        ["--show-all=bad"],
+        ["--number="],
+        ["--number-nonblank="],
+        ["--squeeze-blank="],
+        ["--show-all="],
+        ["--show-ends="],
+        ["--show-tabs="],
+        ["--show-nonprinting="],
     ):
-        s.case("cat", args)
+        s.case("cat", args, stdin=b"from-stdin\n")
     s.case("cat", [], stdin=b"stdin\0bytes\n")
 
     # GNU's cat behavior through an installed command-name symlink.
