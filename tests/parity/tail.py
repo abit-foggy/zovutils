@@ -28,6 +28,7 @@ def _follow(
     multi_file: bool = False,
     quiet: bool = False,
     verbose: bool = False,
+    count_zero: bool = False,
 ) -> None:
     path = s.path(f"tail-follow-{mode}")
     if not initial_missing:
@@ -42,6 +43,8 @@ def _follow(
     gnu_err_file = open(s.path(f"{mode}-gnu.err"), "wb")
     if mode == "legacy-follow":
         args = ["-2f"]
+    elif count_zero:
+        args = ["-n", "0", "-f", "-s", "0.1"]
     elif mode == "descriptor" or mode.startswith("descriptor-"):
         args = ["-f", "-s", "0.1"]
     elif mode == "descriptor-long":
@@ -72,7 +75,9 @@ def _follow(
             [str(s.gnu_dir / "tail"), *args, *paths], stdout=gnu_out, stderr=gnu_err_file, env=s.env
         )
         has_headers = verbose or (multi_file and not quiet)
-        if multi_file and has_headers:
+        if count_zero:
+            initial_output = b""
+        elif multi_file and has_headers:
             initial_output = f"==> {path} <==\ninitial\n\n==> {paths[-1]} <==\nsecond\n".encode()
         elif multi_file:
             initial_output = b"initial\nsecond\n"
@@ -80,21 +85,24 @@ def _follow(
             initial_output = f"==> {path} <==\ninitial\n".encode()
         else:
             initial_output = b"initial\n"
-        deadline = time.monotonic() + 5
-        while time.monotonic() < deadline:
-            zov_out.flush()
-            gnu_out.flush()
-            zov_err_file.flush()
-            gnu_err_file.flush()
-            if initial_missing:
-                ready = all(Path(s.path(f"{mode}-{who}.err")).read_bytes().startswith(b"tail: cannot open") for who in ("zov", "gnu"))
-            else:
-                ready = all(Path(s.path(f"{mode}-{who}.out")).read_bytes().startswith(initial_output) for who in ("zov", "gnu"))
-            if ready:
-                break
-            time.sleep(0.02)
+        if count_zero:
+            time.sleep(0.3)
         else:
-            raise ParityFailure(f"tail {mode} follow did not reach its initial state")
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline:
+                zov_out.flush()
+                gnu_out.flush()
+                zov_err_file.flush()
+                gnu_err_file.flush()
+                if initial_missing:
+                    ready = all(Path(s.path(f"{mode}-{who}.err")).read_bytes().startswith(b"tail: cannot open") for who in ("zov", "gnu"))
+                else:
+                    ready = all(Path(s.path(f"{mode}-{who}.out")).read_bytes().startswith(initial_output) for who in ("zov", "gnu"))
+                if ready:
+                    break
+                time.sleep(0.02)
+            else:
+                raise ParityFailure(f"tail {mode} follow did not reach its initial state")
         if initial_missing:
             with open(path, "wb") as fixture:
                 fixture.write(b"appeared\n")
@@ -143,6 +151,8 @@ def _follow(
                 f"tail {mode} follow differs: zov={(zov_data, zov_err, zov_status)!r}, "
                 f"gnu={(gnu_data, gnu_err, gnu_status)!r}"
             )
+        if count_zero and zov_data != b"appended\n":
+            raise ParityFailure(f"tail -n0f did not emit only appended data: {zov_data!r}")
     finally:
         for process in (zov, gnu, child):
             if process is not None and process.poll() is None:
@@ -556,6 +566,7 @@ def run(s: Suite) -> None:
                     )
 
     _follow(s, "descriptor")
+    _follow(s, "descriptor-zero", count_zero=True)
     _follow(s, "descriptor-truncate", truncation=True)
     _follow(s, "descriptor-multi", multi_file=True)
     _follow(s, "name-multi", multi_file=True)
