@@ -193,6 +193,82 @@ def run(s: Suite) -> None:
     s.case("head", ["-n", "0"], stdin=b"")
     s.permission_denied_case("head", ["-n", "1", unreadable, lines], unreadable)
 
+    # Preserve the input descriptor position so a following reader sees the
+    # bytes head left behind. This matches GNU's head-pos and head-c checks.
+    positioned = s.fixture("head-positioned-stdin", b"one\ntwo\nthree\n")
+    for opts in (
+        ["-c", "0"],
+        ["-c", "2"],
+        ["-c", "-2"],
+        ["-n", "0"],
+        ["-n", "1"],
+        ["-n", "-1"],
+    ):
+        for offset in (0, 4, 8):
+            outcomes = []
+            for command in (
+                [str(s.zovutils), "head", *opts],
+                [str(s.gnu_dir / "head"), *opts],
+            ):
+                with open(positioned, "rb") as source:
+                    source.seek(offset)
+                    proc = subprocess.run(
+                        command,
+                        stdin=source,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE,
+                        env=s.env,
+                        timeout=5,
+                        check=False,
+                    )
+                    remaining = bytearray()
+                    while True:
+                        chunk = os.read(source.fileno(), 65536)
+                        if not chunk:
+                            break
+                        remaining.extend(chunk)
+                outcomes.append((proc.returncode, proc.stdout, proc.stderr, bytes(remaining)))
+            s.count += 1
+            if outcomes[0] != outcomes[1]:
+                raise AssertionError(
+                    f"head input-position behavior differs: "
+                    f"options={opts!r} offset={offset}: {outcomes!r}"
+                )
+
+    large_positioned = s.fixture(
+        "head-large-positioned-stdin",
+        b"".join(f"{line:05d}\n".encode() for line in range(70000)),
+    )
+    large_position_results = []
+    for command in (
+        [str(s.zovutils), "head", "-n", "-50000"],
+        [str(s.gnu_dir / "head"), "-n", "-50000"],
+    ):
+        with open(large_positioned, "rb") as source:
+            proc = subprocess.run(
+                command,
+                stdin=source,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                env=s.env,
+                timeout=10,
+                check=False,
+            )
+            remaining = bytearray()
+            while True:
+                chunk = os.read(source.fileno(), 65536)
+                if not chunk:
+                    break
+                remaining.extend(chunk)
+        large_position_results.append(
+            (proc.returncode, proc.stdout, proc.stderr, bytes(remaining))
+        )
+    s.count += 1
+    if large_position_results[0] != large_position_results[1]:
+        raise AssertionError(
+            f"head large negative-line input position differs: {large_position_results!r}"
+        )
+
     # Positive-count modes emit as soon as enough bytes arrive, before stdin
     # reaches EOF. Check newline, byte, and NUL-delimited reads against GNU.
     for opts, payload in (
