@@ -126,6 +126,8 @@ def run(s: Suite) -> None:
         s.case("wc", args, stdin=stdin)
     for args, stdin in (
         ([], b"one two\nthree\n"),
+        (["-c", "-", text], b"one\ntwo\n"),
+        (["-l", "-", text], b"one\ntwo\n"),
         (["-l"], b"one\ntwo"),
         (["-m"], b"a\0\xff"),
         (["-L"], b"a\tb\n"),

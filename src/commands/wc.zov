@@ -296,7 +296,7 @@ export fn run(start: usize, argc: usize) i32 = {
             else if (longmatch(key, "--max-line-length")) { maxline = true; }
             else if (longmatch(key, "--debug")) { }
             else if (longmatch(key, "--help")) { help(); if (!stream::finishoutputbrief("wc")) { return 1; }; return 0; }
-            else if (longmatch(key, "--version")) { io::println("wc (zovutils) 0.1.22"); if (!stream::finishoutputbrief("wc")) { return 1; }; return 0; };
+            else if (longmatch(key, "--version")) { io::println("wc (zovutils) 0.1.23"); if (!stream::finishoutputbrief("wc")) { return 1; }; return 0; };
             i += 1usize; continue;
         };
         if (arg.len >= 2usize && arg.data[1usize] != 45u8) {
@@ -426,7 +426,7 @@ export fn run(start: usize, argc: usize) i32 = {
             if (maxline && digits(total.maxline) > width) { width = digits(total.maxline); };
             if ((columns(lines, words, chars, bytes, maxline) > 1usize || nfiles > 1usize) && digits(total.bytes) > width) { width = digits(total.bytes); };
         };
-        if (stdin_operand && !stdin_seekable && columns(lines, words, chars, bytes, maxline) > 1usize && width < 7usize) { width = 7usize; };
+        if (stdin_operand && !stdin_seekable && nfiles > 1usize && width < 7usize) { width = 7usize; };
         if (files0_given && files0_from == "-") { width = 1usize; };
         if (total_mode == "only") { width = 1usize; };
         if (total_mode != "only") {
