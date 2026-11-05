@@ -37,7 +37,9 @@ class Suite:
     def case(self, utility: str, args: list[str], *, stdin: bytes = b"") -> None:
         self.count += 1
         zov = self._run([str(self.zovutils), utility, *args], stdin)
-        gnu = self._run([str(self.gnu_dir / utility), *args], stdin)
+        gnu_env = self.env.copy()
+        gnu_env["PATH"] = str(self.gnu_dir) + os.pathsep + gnu_env.get("PATH", "")
+        gnu = self._run([utility, *args], stdin, env=gnu_env)
         if zov != gnu:
             label = f"{utility} {' '.join(args)}".rstrip()
             details = [f"parity failed: {label}", f"statuses: zov={zov[0]} gnu={gnu[0]}"]
@@ -57,14 +59,16 @@ class Suite:
                         details.extend(line.rstrip("\n") for line in diff)
             raise ParityFailure("\n".join(details))
 
-    def _run(self, command: list[str], stdin: bytes) -> tuple[int, bytes, bytes]:
+    def _run(
+        self, command: list[str], stdin: bytes, *, env: dict[str, str] | None = None
+    ) -> tuple[int, bytes, bytes]:
         try:
             result = subprocess.run(
                 command,
                 input=stdin,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                env=self.env,
+                env=env or self.env,
                 timeout=15,
                 check=False,
             )
