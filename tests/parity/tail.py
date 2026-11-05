@@ -253,6 +253,15 @@ def run(s: Suite) -> None:
         s.case("tail", ["--lines=" + value, lines])
         s.case("tail", ["--bytes=" + value, lines])
 
+    # Lowercase k/m are supported, while lowercase giga-and-larger multipliers
+    # are rejected. The iB spelling also accepts lowercase k/m prefixes.
+    for value in ("1k", "1m", "1mB", "1kiB", "1miB"):
+        for flag in ("-n", "-c"):
+            s.case("tail", [flag, value, lines])
+    for value in ("1g", "1z", "1q", "1gB", "1zB", "1qB", "1gib"):
+        for flag in ("-n", "-c"):
+            s.case("tail", [flag, value, lines])
+
     for args in (
         ["--help"],
         ["--hel"],
