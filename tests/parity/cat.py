@@ -304,6 +304,50 @@ ssize_t read(int fd, void *buffer, size_t count) {
         if safe_same_results[0] != safe_same_results[1]:
             raise AssertionError(f"cat safe same-file no-op behavior differs: {safe_same_results!r}")
 
+    append_results = []
+    for command in (
+        [str(s.zovutils), "cat", same_path],
+        [str(s.gnu_dir / "cat"), same_path],
+    ):
+        with open(same_path, "wb") as fixture:
+            fixture.write(b"append-self\n")
+        with open(same_path, "ab") as output:
+            proc = subprocess.run(
+                command,
+                stdout=output,
+                stderr=subprocess.PIPE,
+                env=s.env,
+                timeout=5,
+                check=False,
+            )
+        append_results.append((proc.returncode, proc.stderr, open(same_path, "rb").read()))
+    s.count += 1
+    if append_results[0] != append_results[1]:
+        raise AssertionError(f"cat append-mode same-file handling differs: {append_results!r}")
+
+    append_eof_results = []
+    for command in (
+        [str(s.zovutils), "cat", "-"],
+        [str(s.gnu_dir / "cat"), "-"],
+    ):
+        with open(same_path, "wb") as fixture:
+            fixture.write(b"append-at-eof\n")
+        with open(same_path, "rb") as source, open(same_path, "ab") as output:
+            source.seek(0, os.SEEK_END)
+            proc = subprocess.run(
+                command,
+                stdin=source,
+                stdout=output,
+                stderr=subprocess.PIPE,
+                env=s.env,
+                timeout=5,
+                check=False,
+            )
+        append_eof_results.append((proc.returncode, proc.stderr, open(same_path, "rb").read()))
+    s.count += 1
+    if append_eof_results[0] != append_eof_results[1]:
+        raise AssertionError(f"cat append-mode EOF handling differs: {append_eof_results!r}")
+
     for input_offset in (0, 2, 6):
         for output_offset in (0, 2, 6):
             outcomes = []

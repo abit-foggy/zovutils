@@ -211,8 +211,17 @@ fn process(fp: *c::FILE, number_all: bool, number_nonblank: bool, squeeze: bool,
 
 fn samefileaction(input: *c::FILE, output: *c::FILE) i32 = {
     let input_position: i64 = c::ftell(input);
+    if (input_position < 0i64) { return -1i32; };
+    if (stream::appendfile(output)) {
+        if (c::fseek(input, 0i64, c::SEEK_END) != 0) { return -1i32; };
+        let end_position: i64 = c::ftell(input);
+        if (end_position < 0i64 || c::fseek(input, input_position, c::SEEK_SET) != 0
+            || !stream::seekdescriptor(input, input_position)) { return -1i32; };
+        if (input_position >= end_position) { return 1i32; };
+        return -1i32;
+    };
     let output_position: i64 = c::ftell(output);
-    if (input_position < 0i64 || output_position < 0i64) { return -1i32; };
+    if (output_position < 0i64) { return -1i32; };
     if (output_position > input_position) { return -1i32; };
     return 1i32;
 };
@@ -274,8 +283,8 @@ export fn run(start: usize, argc: usize) i32 = {
         if (longprefix(arg, "--show-tabs")) { show_tabs = true; i += 1usize; continue; };
         if (longprefix(arg, "--show-nonprinting")) { show_nonprinting = true; i += 1usize; continue; };
         if (arg == "--help" || longprefix(arg, "--help")) { help(); if (!stream::finishoutput("cat")) { return 1; }; return 0; };
-        if (longprefix(arg, "--version")) { io::println("cat (zovutils) 0.1.82"); if (!stream::finishoutput("cat")) { return 1; }; return 0; };
-        if (arg == "--version") { io::println("cat (zovutils) 0.1.82"); if (!stream::finishoutput("cat")) { return 1; }; return 0; };
+        if (longprefix(arg, "--version")) { io::println("cat (zovutils) 0.1.83"); if (!stream::finishoutput("cat")) { return 1; }; return 0; };
+        if (arg == "--version") { io::println("cat (zovutils) 0.1.83"); if (!stream::finishoutput("cat")) { return 1; }; return 0; };
         if (arg.len >= 2usize && arg[0usize..2usize] == "--" && badlongargument(arg)) { return 1; };
         if (arg.len < 2usize || arg.data[1usize] != 45u8) {
             for (let j in 1usize..arg.len) {

@@ -33,6 +33,10 @@ export fn characterfile(fp: *c::FILE) bool = {
     return platform_stat::zov_file_is_character(c::fileno(fp)) != 0;
 };
 
+export fn appendfile(fp: *c::FILE) bool = {
+    return platform_stat::zov_file_is_append(c::fileno(fp)) != 0;
+};
+
 export fn wcnewlinebackend() i32 = {
     return wc_backend::zov_wc_newline_backend();
 };
