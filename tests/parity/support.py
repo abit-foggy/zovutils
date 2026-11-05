@@ -124,6 +124,17 @@ class Suite:
         if results[0] != results[1]:
             raise ParityFailure(f"{utility} output-write failure differs: {results!r}")
 
+    def symlink_dispatch(self, utility: str, args: list[str]) -> None:
+        alias = self.root / utility
+        alias.symlink_to(self.zovutils)
+        zov = self._run([str(alias), *args], b"")
+        gnu_env = self.env.copy()
+        gnu_env["PATH"] = str(self.gnu_dir) + os.pathsep + gnu_env.get("PATH", "")
+        gnu = self._run([utility, *args], b"", env=gnu_env)
+        self.count += 1
+        if zov != gnu:
+            raise ParityFailure(f"{utility} argv[0] symlink dispatch differs: {zov!r} != {gnu!r}")
+
 
 def require_executables(suite: Suite) -> None:
     if not suite.zovutils.is_file() or not os.access(suite.zovutils, os.X_OK):

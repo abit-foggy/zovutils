@@ -25,6 +25,7 @@ def run(s: Suite) -> None:
     s.write_failure("wc", [text])
     s.write_failure("wc", ["--help"])
     s.write_failure("wc", ["--version"])
+    s.symlink_dispatch("wc", ["-l", text])
 
     for mask in range(1 << 5):
         flags = "".join(flag for bit, flag in enumerate("lwmcL") if mask & (1 << bit))
