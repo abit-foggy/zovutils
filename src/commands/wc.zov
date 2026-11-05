@@ -22,6 +22,9 @@ fn scan(fp: *c::FILE, out: &mut Counts) bool = {
                 out.lines += 1usize;
                 if (linebytes > out.maxline) { out.maxline = linebytes; };
                 linebytes = 0usize;
+            } else if (b == 13u8) {
+                if (linebytes > out.maxline) { out.maxline = linebytes; };
+                linebytes = 0usize;
             } else if (b == 9u8) { linebytes += 8usize - (linebytes % 8usize); }
             else if (b >= 32u8 && b != 127u8) { linebytes += 1usize; };
             if (ct::isspace(b as i32) != 0) { inword = false; }
@@ -59,6 +62,16 @@ fn digits(n: usize) usize = {
     return width;
 };
 
+fn columns(lines: bool, words: bool, chars: bool, bytes: bool, maxline: bool) usize = {
+    let mut count: usize = 0usize;
+    if (lines) { count += 1usize; };
+    if (words) { count += 1usize; };
+    if (chars) { count += 1usize; };
+    if (bytes) { count += 1usize; };
+    if (maxline) { count += 1usize; };
+    return count;
+};
+
 fn print_counts(v: Counts, lines: bool, words: bool, chars: bool, bytes: bool, maxline: bool, name: str, hasname: bool, width: usize) void = {
     let mut first: bool = true;
     if (lines) { c::fprintf(c::stdout, "%*zu", width as i32, v.lines); first = false; };
@@ -68,6 +81,66 @@ fn print_counts(v: Counts, lines: bool, words: bool, chars: bool, bytes: bool, m
     if (maxline) { if (!first) { c::putchar(32); }; c::fprintf(c::stdout, "%*zu", width as i32, v.maxline); first = false; };
     if (hasname) { c::fprintf(c::stdout, " %s", name); };
     c::putchar(10);
+};
+
+fn longmatch(arg: str, option: str) bool = {
+    return arg.len > 2usize && arg.len <= option.len && arg == option[0usize..arg.len];
+};
+
+fn badargument(option: str) void = {
+    c::fprintf(c::stderr, "wc: option '%s' doesn't allow an argument\nTry 'wc --help' for more information.\n", option);
+};
+
+fn badlong(arg: str) void = {
+    c::fprintf(c::stderr, "wc: unrecognized option '%s'\nTry 'wc --help' for more information.\n", arg);
+};
+
+fn badshort(opt: u8) void = {
+    c::fprintf(c::stderr, "wc: invalid option -- '%c'\nTry 'wc --help' for more information.\n", opt as i32);
+};
+
+fn badtotal(value: str) void = {
+    c::fprintf(c::stderr, "wc: invalid argument '%s' for '--total'\nValid arguments are:\n  - 'auto'\n  - 'always'\n  - 'only'\n  - 'never'\nTry 'wc --help' for more information.\n", value);
+};
+
+fn missingargument(option: str) void = {
+    c::fprintf(c::stderr, "wc: option '%s' requires an argument\nTry 'wc --help' for more information.\n", option);
+};
+
+fn ambiguous_total() void = {
+    c::fprintf(c::stderr, "wc: ambiguous argument '' for '--total'\nValid arguments are:\n  - 'auto'\n  - 'always'\n  - 'only'\n  - 'never'\nTry 'wc --help' for more information.\n");
+};
+
+fn help() void = {
+    io::print("Usage: wc [OPTION]... [FILE]...\n");
+    io::print("  or:  wc [OPTION]... --files0-from=F\n");
+    io::print("Print newline, word, and byte counts for each FILE, and a total line if\n");
+    io::print("more than one FILE is specified.  A word is a nonempty sequence of non white\n");
+    io::print("space delimited by white space characters or by start or end of input.\n\n");
+    io::print("With no FILE, or when FILE is -, read standard input.\n\n");
+    io::print("The options below may be used to select which counts are printed, always in\n");
+    io::print("the following order: newline, word, character, byte, maximum line length.\n");
+    io::print("  -c, --bytes\n         print the byte counts\n");
+    io::print("  -m, --chars\n         print the character counts\n");
+    io::print("  -l, --lines\n         print the newline counts\n");
+    io::print("      --debug\n         indicate what line count acceleration is used\n");
+    io::print("      --files0-from=F\n");
+    io::print("         read input from the files specified by\n");
+    io::print("         NUL-terminated names in file F;\n");
+    io::print("         If F is -, read names from standard input\n");
+    io::print("  -L, --max-line-length\n         print the maximum display width\n");
+    io::print("  -w, --words\n         print the word counts\n");
+    io::print("      --total=WHEN\n");
+    io::print("         when to print a line with total counts;\n");
+    io::print("         WHEN can be: auto, always, only, never\n");
+    io::print("      --help\n         display this help and exit\n");
+    io::print("      --version\n         output version information and exit\n\n");
+    io::print("Report bugs to: bug-coreutils@gnu.org\n");
+    io::print("GNU coreutils home page: <https://www.gnu.org/software/coreutils/>\n");
+    io::print("General help using GNU software: <https://www.gnu.org/gethelp/>\n");
+    io::print("Report any translation bugs to <https://translationproject.org/team/>\n");
+    io::print("Full documentation <https://www.gnu.org/software/coreutils/wc>\n");
+    io::print("or available locally via: info '(coreutils) wc invocation'\n");
 };
 
 export fn run(start: usize, argc: usize) i32 = {
@@ -89,28 +162,65 @@ export fn run(start: usize, argc: usize) i32 = {
         if (operands || arg == "-" || arg.len == 0usize || arg.data[0usize] != 45u8) {
             files.push(arg); i += 1usize; continue;
         };
-        if (arg == "--help") { io::println("Usage: wc [OPTION]... [FILE]..."); return 0; };
-        if (arg == "--version") { io::println("wc (zovutils) 0.1.0"); return 0; };
-        if (arg.len > 8usize && arg[0usize..8usize] == "--total=") {
-            total_mode = arg[8usize..arg.len];
-            if (total_mode != "auto" && total_mode != "always" && total_mode != "only" && total_mode != "never") {
-                c::fprintf(c::stderr, "wc: invalid argument %s for %s\n", total_mode, "--total"); return 1;
+        if (arg.len >= 2usize && arg[0usize..2usize] == "--") {
+            let mut eq: usize = arg.len;
+            for (let j in 2usize..arg.len) { if (arg.data[j] == 61u8) { eq = j; break; }; };
+            let key: str = arg[0usize..eq];
+            let has_value: bool = eq < arg.len;
+            let mut matches: usize = 0usize;
+            if (longmatch(key, "--lines")) { matches += 1usize; };
+            if (longmatch(key, "--words")) { matches += 1usize; };
+            if (longmatch(key, "--chars")) { matches += 1usize; };
+            if (longmatch(key, "--bytes")) { matches += 1usize; };
+            if (longmatch(key, "--max-line-length")) { matches += 1usize; };
+            if (longmatch(key, "--debug")) { matches += 1usize; };
+            if (longmatch(key, "--help")) { matches += 1usize; };
+            if (longmatch(key, "--version")) { matches += 1usize; };
+            if (longmatch(key, "--total")) { matches += 1usize; };
+            if (longmatch(key, "--files0-from")) { matches += 1usize; };
+            if (matches == 0usize) { badlong(arg); return 1; };
+            if (longmatch(key, "--total")) {
+                if (has_value) { total_mode = arg[eq + 1usize..arg.len]; }
+                else {
+                    if (i + 1usize >= argc) { missingargument("--total"); return 1; };
+                    total_mode = env::argat(i + 1usize);
+                    i += 1usize;
+                };
+                if (total_mode == "") { ambiguous_total(); return 1; };
+                if (total_mode != "auto" && total_mode != "always" && total_mode != "only" && total_mode != "never") { badtotal(total_mode); return 1; };
+                i += 1usize; continue;
             };
+            if (longmatch(key, "--files0-from")) {
+                if (has_value) { files0_from = arg[eq + 1usize..arg.len]; }
+                else {
+                    if (i + 1usize >= argc) { missingargument("--files0-from"); return 1; };
+                    files0_from = env::argat(i + 1usize);
+                    i += 1usize;
+                };
+                files0_given = true; i += 1usize; continue;
+            };
+            if (has_value) {
+                if (longmatch(key, "--lines")) { badargument("--lines"); }
+                else if (longmatch(key, "--words")) { badargument("--words"); }
+                else if (longmatch(key, "--chars")) { badargument("--chars"); }
+                else if (longmatch(key, "--bytes")) { badargument("--bytes"); }
+                else if (longmatch(key, "--max-line-length")) { badargument("--max-line-length"); }
+                else if (longmatch(key, "--debug")) { badargument("--debug"); }
+                else if (longmatch(key, "--help")) { badargument("--help"); }
+                else { badargument("--version"); };
+                return 1;
+            };
+            if (longmatch(key, "--lines")) { lines = true; }
+            else if (longmatch(key, "--words")) { words = true; }
+            else if (longmatch(key, "--chars")) { chars = true; }
+            else if (longmatch(key, "--bytes")) { bytes = true; }
+            else if (longmatch(key, "--max-line-length")) { maxline = true; }
+            else if (longmatch(key, "--debug")) { }
+            else if (longmatch(key, "--help")) { help(); return 0; }
+            else if (longmatch(key, "--version")) { io::println("wc (zovutils) 0.1.0"); return 0; };
             i += 1usize; continue;
         };
-        if (arg.len > 14usize && arg[0usize..14usize] == "--files0-from=") {
-            files0_from = arg[14usize..arg.len]; files0_given = true; i += 1usize; continue;
-        };
-        if (arg == "--files0-from") {
-            if (i + 1usize >= argc) { c::fprintf(c::stderr, "wc: option '%s' requires an argument\n", arg); return 1; };
-            files0_from = env::argat(i + 1usize); files0_given = true; i += 2usize; continue;
-        };
-        if (arg == "--lines") { lines = true; }
-        else if (arg == "--words") { words = true; }
-        else if (arg == "--chars") { chars = true; }
-        else if (arg == "--bytes") { bytes = true; }
-        else if (arg == "--max-line-length") { maxline = true; }
-        else if (arg.len >= 2usize && arg.data[1usize] != 45u8) {
+        if (arg.len >= 2usize && arg.data[1usize] != 45u8) {
             for (let j in 1usize..arg.len) {
                 let ch: u8 = arg.data[j];
                 if (ch == 108u8) { lines = true; }
@@ -118,20 +228,23 @@ export fn run(start: usize, argc: usize) i32 = {
                 else if (ch == 109u8) { chars = true; }
                 else if (ch == 99u8) { bytes = true; }
                 else if (ch == 76u8) { maxline = true; }
-                else { c::fprintf(c::stderr, "wc: invalid option -- '%c'\n", ch as i32); return 1; };
+                else { badshort(ch); return 1; };
             };
-        } else { c::fprintf(c::stderr, "wc: unrecognized option '%s'\n", arg); return 1; };
+        } else { badlong(arg); return 1; };
         i += 1usize;
     };
     if (!lines && !words && !chars && !bytes && !maxline) { lines = true; words = true; bytes = true; };
     let mut file_list: String = String::new();
     if (files0_given) {
-        if (files.len() > 0usize) { c::fprintf(c::stderr, "wc: cannot specify files with --files0-from\n"); return 1; };
+        if (files.len() > 0usize) {
+            c::fprintf(c::stderr, "wc: extra operand '%s'\nfile operands cannot be combined with --files0-from\nTry 'wc --help' for more information.\n", files.get(0));
+            return 1;
+        };
         let mut listfp: *c::FILE = c::stdin;
         let mut list_owned: bool = false;
         if (files0_from != "-") {
             let raw: nullable *c::FILE = stream::openread(files0_from);
-            if (raw == null) { stream::errorprefix("wc", files0_from); return 1; };
+            if (raw == null) { stream::erroropen("wc", files0_from); return 1; };
             listfp = raw!; list_owned = true;
         };
         if (!readlist(listfp, &mut file_list)) { stream::errorprefix("wc", files0_from); if (list_owned) { stream::closefile(listfp); }; return 1; };
@@ -147,6 +260,7 @@ export fn run(start: usize, argc: usize) i32 = {
         };
         if (begin < list_view.len) { files.push(list_view[begin..list_view.len]); };
     };
+    if (files0_given && files.len() == 0usize) { return 0; };
 
     let mut total: Counts = Counts{ lines = 0usize, words = 0usize, bytes = 0usize, maxline = 0usize };
     let mut status: i32 = 0;
@@ -166,6 +280,7 @@ export fn run(start: usize, argc: usize) i32 = {
             if (words && digits(v.words) > width) { width = digits(v.words); };
             if ((chars || bytes) && digits(v.bytes) > width) { width = digits(v.bytes); };
             if (maxline && digits(v.maxline) > width) { width = digits(v.maxline); };
+            if (columns(lines, words, chars, bytes, maxline) > 1usize && digits(v.bytes) > width) { width = digits(v.bytes); };
         } else {
             let mut columns: usize = 0usize;
             if (lines) { columns += 1usize; };
@@ -207,19 +322,21 @@ export fn run(start: usize, argc: usize) i32 = {
             if (words && digits(v.words) > width) { width = digits(v.words); };
             if ((chars || bytes) && digits(v.bytes) > width) { width = digits(v.bytes); };
             if (maxline && digits(v.maxline) > width) { width = digits(v.maxline); };
+            if (columns(lines, words, chars, bytes, maxline) > 1usize && digits(v.bytes) > width) { width = digits(v.bytes); };
         };
         if (nfiles > 1usize || total_mode == "always") {
             if (lines && digits(total.lines) > width) { width = digits(total.lines); };
             if (words && digits(total.words) > width) { width = digits(total.words); };
             if ((chars || bytes) && digits(total.bytes) > width) { width = digits(total.bytes); };
             if (maxline && digits(total.maxline) > width) { width = digits(total.maxline); };
+            if (columns(lines, words, chars, bytes, maxline) > 1usize && digits(total.bytes) > width) { width = digits(total.bytes); };
         };
         if (files0_given && files0_from == "-") { width = 1usize; };
         if (total_mode == "only") { width = 1usize; };
         if (total_mode != "only") {
             for (let k in 0..counts.len()) { print_counts(counts.get(k), lines, words, chars, bytes, maxline, names.get(k), true, width); };
         };
-        if (nfiles > 1usize || total_mode == "always" || total_mode == "only") {
+        if ((nfiles > 1usize && total_mode != "never") || total_mode == "always" || total_mode == "only") {
             let mut total_name: str = "total";
             let mut total_hasname: bool = true;
             if (total_mode == "only") { total_name = ""; total_hasname = false; };

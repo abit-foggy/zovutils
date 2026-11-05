@@ -10,10 +10,28 @@ def run(s: Suite) -> None:
     no_final_newline = s.fixture("wc-no-final-newline", b"no-final-newline")
     binary = s.fixture("wc-binary", b"a\0b\n\xffz")
     tabs = s.fixture("wc-tabs", b"a\tb\n")
+    controls = s.fixture("wc-controls", b"a\rb\v\f\x7f\n")
     large = s.fixture("wc-large", b"streaming-row\n" * 25000)
     missing = s.path("wc-missing")
     files0 = s.fixture("wc-files0", (text + "\0" + binary + "\0").encode())
     zero_name = s.fixture("wc-zero-name", b"\0")
+    empty_files0 = s.fixture("wc-files0-empty", b"")
+    unterminated_files0 = s.fixture("wc-files0-unterminated", (text + "\0" + binary).encode())
+
+    for mask in range(1 << 5):
+        flags = "".join(flag for bit, flag in enumerate("lwmcL") if mask & (1 << bit))
+        args = (["-" + flags] if flags else []) + [text]
+        for fixture in (text, binary, tabs, controls):
+            s.case("wc", [*args[:-1], fixture])
+
+    for option in ("--lines", "--words", "--chars", "--bytes", "--max-line-length", "--total", "--files0-from"):
+        for length in range(3, len(option) + 1):
+            if option == "--total":
+                s.case("wc", [option[:length] + "=always", text])
+            elif option == "--files0-from":
+                s.case("wc", [option[:length] + "=" + files0])
+            else:
+                s.case("wc", [option[:length], text])
 
     for args in (
         [text],
@@ -33,9 +51,33 @@ def run(s: Suite) -> None:
         ["--files0-from=" + files0],
         ["--files0-from", files0],
         ["--files0-from=-"],
+        ["--files0-from=" + empty_files0],
+        ["--files0-from=" + unterminated_files0],
         ["--files0-from=" + zero_name],
         [missing],
         [empty, text],
+        ["--", "-l"],
+        [text, "-c"],
+        ["--total=auto", text, binary],
+        ["--total=always", text, binary],
+        ["--total=only", text, binary],
+        ["--total=never", text, binary],
+        ["--total=invalid", text],
+        ["--total=", text],
+        ["--total", "always", text],
+        ["--debug", text],
+        ["--help"],
+        ["--total"],
+        ["--bytes=1"],
+        ["--lines=1"],
+        ["--words=1"],
+        ["--chars=1"],
+        ["--max-line-length=1"],
+        ["--files0-from"],
+        ["--files0-from", missing],
+        ["--files0-from=" + files0, text],
+        ["-x"],
+        ["--bogus"],
     ):
         stdin = b""
         if args == ["--files0-from=-"]:
