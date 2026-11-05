@@ -1,5 +1,6 @@
 """Deterministic randomized byte and option parity coverage."""
 
+import itertools
 import random
 
 from support import Suite
@@ -69,6 +70,14 @@ def run(s: Suite) -> None:
             if utility == "tail" and suffix == "f":
                 continue
             s.case(utility, [prefix + suffix, suffix_fixture])
+
+    # Cover the multi-character historical tail suffix parser, including
+    # suffix orders that must remain invalid rather than being cluster-parsed.
+    for width in (1, 2, 3):
+        for suffix_tuple in itertools.product("bcl", repeat=width):
+            suffix = "".join(suffix_tuple)
+            for option in ("-" + suffix, "-2" + suffix):
+                s.case("tail", [option, suffix_fixture])
 
     for codepoint in (*range(1, 128), ord("é")):
         value = "x" + chr(codepoint)
