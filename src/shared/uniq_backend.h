@@ -105,7 +105,7 @@ static inline int zov_uniq_emit(FILE *out, const zov_uniq_line *line,
     return fwrite(&term, 1, 1, out) == 1;
 }
 
-static inline int zov_uniq_run(size_t file_count, const char *const *paths,
+static inline int zov_uniq_run(size_t file_count, signed char *const *paths,
                                const char *output_path, int has_output_path,
                                int count_mode,
                                int duplicates, int only_unique, int all_repeated,

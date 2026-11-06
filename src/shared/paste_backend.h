@@ -75,7 +75,7 @@ static inline int zov_paste_delimiter(const unsigned char *delims, size_t n,
     return zov_paste_write(&c, 1);
 }
 
-static inline int zov_paste_run(size_t count, const char *const *paths,
+static inline int zov_paste_run(size_t count, signed char *const *paths,
                                 const char *delimiter_text, int serial,
                                 int zero_terminated) {
     size_t delimiter_count = 0;

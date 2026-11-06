@@ -248,7 +248,7 @@ static inline int zov_sort_read(FILE *fp, unsigned char term,
     return 0;
 }
 
-static inline int zov_sort_run(size_t file_count, const char *const *paths,
+static inline int zov_sort_run(size_t file_count, signed char *const *paths,
                                int reverse, int unique, int ignore_blanks,
                                int dictionary, int fold, int numeric,
                                int general_numeric, int month, int stable,
@@ -282,7 +282,7 @@ static inline int zov_sort_run(size_t file_count, const char *const *paths,
         if (close_fp) fclose(fp);
     }
     free(buffer);
-    qsort(lines, count, sizeof(*lines), zov_sort_compare);
+    if (count > 1) qsort(lines, count, sizeof(*lines), zov_sort_compare);
     for (size_t i = 0; i < count; ++i) {
         if (zov_sort_unique && i > 0 && zov_sort_primary(&lines[i - 1], &lines[i]) == 0) continue;
         if (lines[i].length && fwrite(lines[i].data, 1, lines[i].length, stdout) != lines[i].length) { status = 2; break; }
