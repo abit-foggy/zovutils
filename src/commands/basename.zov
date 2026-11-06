@@ -1,0 +1,195 @@
+use std::env;
+use std::io;
+use std::vec as vec;
+use <stdio.h> as c;
+use shared::io as stream;
+
+fn longprefix(arg: str, option: str) bool = {
+    let mut end: usize = arg.len;
+    for (let i in 0usize..arg.len) {
+        if (arg.data[i] == 61u8) { end = i; break; };
+    };
+    let key: str = arg[0usize..end];
+    return key == option || (key.len > 2usize && key.len < option.len && key == option[0usize..key.len]);
+};
+
+fn longhasvalue(arg: str) bool = {
+    for (let i in 0usize..arg.len) { if (arg.data[i] == 61u8) { return true; }; };
+    return false;
+};
+
+fn longvalue(arg: str) str = {
+    for (let i in 0usize..arg.len) { if (arg.data[i] == 61u8) { return arg[i + 1usize..arg.len]; }; };
+    return "";
+};
+
+fn help() void = {
+    io::print("Usage: basename NAME [SUFFIX]\n");
+    io::print("  or:  basename OPTION... NAME...\n");
+    io::print("Print NAME with any leading directory components removed.\n");
+    io::print("If specified, also remove a trailing SUFFIX.\n\n");
+    io::print("Mandatory arguments to long options are mandatory for short options too.\n");
+    io::print("  -a, --multiple\n");
+    io::print("         support multiple arguments and treat each as a NAME\n");
+    io::print("  -s, --suffix=SUFFIX\n");
+    io::print("         remove a trailing SUFFIX; implies -a\n");
+    io::print("  -z, --zero\n");
+    io::print("         end each output line with NUL, not newline\n");
+    io::print("      --help\n");
+    io::print("         display this help and exit\n");
+    io::print("      --version\n");
+    io::print("         output version information and exit\n\n");
+    io::print("Examples:\n");
+    io::print("  basename /usr/bin/sort          -> \"sort\"\n");
+    io::print("  basename include/stdio.h .h     -> \"stdio\"\n");
+    io::print("  basename -s .h include/stdio.h  -> \"stdio\"\n");
+    io::print("  basename -a any/str1 any/str2   -> \"str1\" followed by \"str2\"\n\n");
+    io::print("Report bugs to: bug-coreutils@gnu.org\n");
+    io::print("GNU coreutils home page: <https://www.gnu.org/software/coreutils/>\n");
+    io::print("General help using GNU software: <https://www.gnu.org/gethelp/>\n");
+    io::print("Report any translation bugs to <https://translationproject.org/team/>\n");
+    io::print("Full documentation <https://www.gnu.org/software/coreutils/basename>\n");
+    io::print("or available locally via: info '(coreutils) basename invocation'\n");
+};
+
+fn tryhelp() void = {
+    c::fprintf(c::stderr, "Try 'basename --help' for more information.\n");
+};
+
+fn missingoperand() void = {
+    c::fprintf(c::stderr, "basename: missing operand\n");
+    tryhelp();
+};
+
+fn badshort(option: u8) void = {
+    c::fprintf(c::stderr, "basename: invalid option -- '%c'\n", option as i32);
+    tryhelp();
+};
+
+fn badlong(option: str) void = {
+    c::fprintf(c::stderr, "basename: unrecognized option '%s'\n", option);
+    tryhelp();
+};
+
+fn badlongargument(option: str) void = {
+    c::fprintf(c::stderr, "basename: option '%s' doesn't allow an argument\n", option);
+    tryhelp();
+};
+
+fn missinglongargument(option: str) void = {
+    c::fprintf(c::stderr, "basename: option '%s' requires an argument\n", option);
+    tryhelp();
+};
+
+fn missing_short_suffix() void = {
+    c::fprintf(c::stderr, "basename: option requires an argument -- 's'\n");
+    tryhelp();
+};
+
+fn basename(path: str) str = {
+    if (path.len == 0usize) { return ""; };
+    let mut end: usize = path.len;
+    while (end > 0usize && path.data[end - 1usize] == 47u8) { end -= 1usize; };
+    if (end == 0usize) { return "/"; };
+    let mut start: usize = end;
+    while (start > 0usize && path.data[start - 1usize] != 47u8) { start -= 1usize; };
+    return path[start..end];
+};
+
+fn remove_suffix(name: str, suffix: str) str = {
+    if (suffix.len == 0usize || suffix.len >= name.len) { return name; };
+    let start: usize = name.len - suffix.len;
+    if (name[start..name.len] == suffix) { return name[0usize..start]; };
+    return name;
+};
+
+fn output_name(name: str, zero: bool) bool = {
+    if (name.len > 0usize && !stream::writebytes(c::stdout, name.data as *u8, name.len)) { return false; };
+    if (zero) { return stream::putbyte(c::stdout, 0u8); };
+    return stream::putbyte(c::stdout, 10u8);
+};
+
+export fn run(start: usize, argc: usize) i32 = {
+    let mut multiple: bool = false;
+    let mut zero: bool = false;
+    let mut suffix: str = "";
+    let mut suffix_given: bool = false;
+    let mut operands = vec::new[str]();
+    defer operands.free();
+
+    let mut option_end: bool = false;
+    let mut i: usize = start;
+    while (i < argc) {
+        let arg: str = env::argat(i);
+        if (!option_end && arg == "--") { option_end = true; i += 1usize; continue; };
+        if (option_end || arg == "-" || arg.len == 0usize || arg.data[0usize] != 45u8) {
+            option_end = true;
+            operands.push(arg); i += 1usize; continue;
+        };
+        if (arg.len >= 2usize && arg[0usize..2usize] == "--") {
+            if (longprefix(arg, "--multiple")) {
+                if (longhasvalue(arg)) { badlongargument("--multiple"); return 1; };
+                multiple = true; i += 1usize; continue;
+            };
+            if (longprefix(arg, "--suffix")) {
+                if (longhasvalue(arg)) { suffix = longvalue(arg); }
+                else {
+                    if (i + 1usize >= argc) { missinglongargument("--suffix"); return 1; };
+                    i += 1usize; suffix = env::argat(i);
+                };
+                suffix_given = true; multiple = true; i += 1usize; continue;
+            };
+            if (longprefix(arg, "--zero")) {
+                if (longhasvalue(arg)) { badlongargument("--zero"); return 1; };
+                zero = true; i += 1usize; continue;
+            };
+            if (longprefix(arg, "--help")) {
+                if (longhasvalue(arg)) { badlongargument("--help"); return 1; };
+                help(); if (!stream::finishoutput("basename")) { return 1; }; return 0;
+            };
+            if (longprefix(arg, "--version")) {
+                if (longhasvalue(arg)) { badlongargument("--version"); return 1; };
+                io::println("basename (zovutils) 0.1.172");
+                if (!stream::finishoutput("basename")) { return 1; };
+                return 0;
+            };
+            badlong(arg); return 1;
+        };
+        let mut j: usize = 1usize;
+        while (j < arg.len) {
+            let option: u8 = arg.data[j];
+            if (option == 97u8) { multiple = true; j += 1usize; continue; };
+            if (option == 122u8) { zero = true; j += 1usize; continue; };
+            if (option == 115u8) {
+                if (j + 1usize < arg.len) { suffix = arg[j + 1usize..arg.len]; }
+                else {
+                    if (i + 1usize >= argc) { missing_short_suffix(); return 1; };
+                    i += 1usize; suffix = env::argat(i);
+                };
+                suffix_given = true; multiple = true; j = arg.len; continue;
+            };
+            badshort(option); return 1;
+        };
+        i += 1usize;
+    };
+
+    if (operands.len() == 0usize) { missingoperand(); return 1; };
+    if (!multiple && operands.len() > 2usize) {
+        c::fprintf(c::stderr, "basename: extra operand '%s'\n", operands.get(2usize));
+        tryhelp(); return 1;
+    };
+    let mut status: i32 = 0;
+    if (!multiple) {
+        let mut name: str = basename(operands.get(0usize));
+        if (operands.len() == 2usize) { name = remove_suffix(name, operands.get(1usize)); };
+        if (!output_name(name, zero)) { status = 1; };
+    } else {
+        for (let k in 0..operands.len()) {
+            let mut name: str = basename(operands.get(k));
+            if (suffix_given) { name = remove_suffix(name, suffix); };
+            if (!output_name(name, zero)) { status = 1; break; };
+        };
+    };
+    if (!stream::finishoutput("basename")) { status = 1; };
+    return status;
+};
