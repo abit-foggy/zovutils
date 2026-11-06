@@ -136,8 +136,32 @@ static inline int zov_join_write_output(const zov_join_record *a,
                                         const char *format, int delimiter,
                                         unsigned char separator, unsigned char terminator,
                                         const char *empty_replacement,
-                                        int use_empty, int matched) {
+                                        int use_empty, int matched,
+                                        size_t auto_count_a, size_t auto_count_b) {
     int first = 1;
+    if (format != NULL && strcmp(format, "auto") == 0) {
+        const zov_join_record *key_record = a != NULL ? a : b;
+        const zov_join_field *key_fields = a != NULL ? af : bf;
+        size_t key_count = a != NULL ? ac : bc;
+        size_t key_number = a != NULL ? field1 : field2;
+        if (!zov_join_write_field(key_record, key_fields, key_count, key_number,
+                                  empty_replacement, use_empty)) return 0;
+        for (size_t field = 1; field <= auto_count_a; ++field) if (field != field1) {
+            if (fputc(separator, stdout) == EOF) return 0;
+            if (a == NULL) {
+                if (use_empty && *empty_replacement != '\0' &&
+                    fwrite(empty_replacement, 1, strlen(empty_replacement), stdout) != strlen(empty_replacement)) return 0;
+            } else if (!zov_join_write_field(a, af, ac, field, empty_replacement, use_empty)) return 0;
+        }
+        for (size_t field = 1; field <= auto_count_b; ++field) if (field != field2) {
+            if (fputc(separator, stdout) == EOF) return 0;
+            if (b == NULL) {
+                if (use_empty && *empty_replacement != '\0' &&
+                    fwrite(empty_replacement, 1, strlen(empty_replacement), stdout) != strlen(empty_replacement)) return 0;
+            } else if (!zov_join_write_field(b, bf, bc, field, empty_replacement, use_empty)) return 0;
+        }
+        return fputc(terminator, stdout) != EOF;
+    }
     if (format != NULL) {
         size_t p = 0, n = strlen(format);
         while (p < n) {
@@ -219,13 +243,23 @@ static inline int zov_join_run(const char *path1, const char *path2,
 
     int status = 0;
     size_t start_a = 0, start_b = 0;
+    size_t auto_count_a = 0, auto_count_b = 0;
+    if (format != NULL && strcmp(format, "auto") == 0) {
+        zov_join_field first_fields_a[4096], first_fields_b[4096];
+        if (a.count != 0) auto_count_a = zov_join_fields(&a.records[0], delimiter, first_fields_a, 4096);
+        if (b.count != 0) auto_count_b = zov_join_fields(&b.records[0], delimiter, first_fields_b, 4096);
+        if (auto_count_a > 4096 || auto_count_b > 4096) {
+            fprintf(stderr, "join: too many fields in input\n");
+            zov_join_free(&a); zov_join_free(&b); return 1;
+        }
+    }
     if (header && a.count != 0 && b.count != 0) {
         zov_join_field af[4096], bf[4096];
         size_t ac = zov_join_fields(&a.records[0], delimiter, af, 4096);
         size_t bc = zov_join_fields(&b.records[0], delimiter, bf, 4096);
         if (!zov_join_write_output(&a.records[0], af, ac, &b.records[0], bf, bc,
                 field1, field2, format, delimiter, separator, terminator,
-                empty_replacement, *empty_replacement != '\0', 1)) status = 1;
+                empty_replacement, *empty_replacement != '\0', 1, auto_count_a, auto_count_b)) status = 1;
         start_a = 1; start_b = 1;
     }
     size_t i = start_a, j = start_b;
@@ -264,13 +298,13 @@ static inline int zov_join_run(const char *path1, const char *path2,
         if (cmp < 0) {
             if (unpaired1 && !zov_join_write_output(ra, fields_a, ac, NULL, NULL, 0,
                     field1, field2, format, delimiter, separator, terminator, empty_replacement,
-                    *empty_replacement != '\0', 0)) status = 1;
+                    *empty_replacement != '\0', 0, auto_count_a, auto_count_b)) status = 1;
             ++i; continue;
         }
         if (cmp > 0) {
             if (unpaired2 && !zov_join_write_output(NULL, NULL, 0, rb, fields_b, bc,
                     field1, field2, format, delimiter, separator, terminator, empty_replacement,
-                    *empty_replacement != '\0', 0)) status = 1;
+                    *empty_replacement != '\0', 0, auto_count_a, auto_count_b)) status = 1;
             ++j; continue;
         }
         size_t end_a = i + 1, end_b = j + 1;
@@ -292,7 +326,7 @@ static inline int zov_join_run(const char *path1, const char *path2,
             size_t yc = zov_join_fields(&b.records[y], delimiter, yf, 4096);
             if (!zov_join_write_output(&a.records[x], xf, xc, &b.records[y], yf, yc,
                     field1, field2, format, delimiter, separator, terminator,
-                    empty_replacement, *empty_replacement != '\0', 1)) status = 1;
+                    empty_replacement, *empty_replacement != '\0', 1, auto_count_a, auto_count_b)) status = 1;
         }
         i = end_a; j = end_b;
     }
@@ -300,14 +334,14 @@ static inline int zov_join_run(const char *path1, const char *path2,
         size_t ac = zov_join_fields(&a.records[i], delimiter, fields_a, 4096);
         if (unpaired1 && !zov_join_write_output(&a.records[i], fields_a, ac, NULL, NULL, 0,
                 field1, field2, format, delimiter, separator, terminator, empty_replacement,
-                *empty_replacement != '\0', 0)) status = 1;
+                *empty_replacement != '\0', 0, auto_count_a, auto_count_b)) status = 1;
         ++i;
     }
     while (j < b.count) {
         size_t bc = zov_join_fields(&b.records[j], delimiter, fields_b, 4096);
         if (unpaired2 && !zov_join_write_output(NULL, NULL, 0, &b.records[j], fields_b, bc,
                 field1, field2, format, delimiter, separator, terminator, empty_replacement,
-                *empty_replacement != '\0', 0)) status = 1;
+                *empty_replacement != '\0', 0, auto_count_a, auto_count_b)) status = 1;
         ++j;
     }
     free(fields_a); free(fields_b);
