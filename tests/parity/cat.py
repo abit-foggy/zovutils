@@ -293,6 +293,8 @@ def run(s: Suite) -> None:
         [directory],
         [s.path("missing")],
         [missing_unusual],
+        [""],
+        [text, ""],
         [missing_quote_control],
         [missing_control_quote],
         *[["--", path] for path in missing_shell_meta],

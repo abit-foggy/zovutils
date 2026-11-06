@@ -203,7 +203,7 @@ export fn printquoted(fp: *c::FILE, text: str, force: bool) void = {
         if (b == 92u8) { backslash = true; };
         if (b == 32u8 || shellmeta(b)) { needs_shell_quote = true; };
     };
-    if (!force && !nonprint && !apostrophe && !backslash && !needs_shell_quote) {
+    if (!force && text.len > 0usize && !nonprint && !apostrophe && !backslash && !needs_shell_quote) {
         for (let i in 0..text.len) { c::fputc(text.data[i] as i32, fp); };
         return;
     };
