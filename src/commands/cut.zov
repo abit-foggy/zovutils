@@ -22,17 +22,32 @@ fn is_prefix(value: str, full: str) bool = {
 fn help() void = {
     io::print("Usage: cut OPTION... [FILE]...\n");
     io::print("Print selected parts of lines from each FILE to standard output.\n\n");
-    io::print("  -b, --bytes=LIST        select only these bytes\n");
-    io::print("  -c, --characters=LIST   select only these characters\n");
-    io::print("  -d, --delimiter=DELIM   use DELIM instead of TAB for fields\n");
-    io::print("  -f, --fields=LIST       select only these fields\n");
-    io::print("  -n                      (ignored)\n");
-    io::print("      --complement        complement the set of selected bytes, characters or fields\n");
-    io::print("  -s, --only-delimited    do not print lines not containing delimiters\n");
-    io::print("      --output-delimiter=STRING  use STRING as the output delimiter\n");
-    io::print("  -z, --zero-terminated   line delimiter is NUL, not newline\n");
-    io::print("      --help     display this help and exit\n");
-    io::print("      --version  output version information and exit\n");
+    io::print("With no FILE, or when FILE is -, read standard input.\n\n");
+    io::print("Mandatory arguments to long options are mandatory for short options too.\n");
+    io::print("  -b, --bytes=LIST\n         select only these byte positions\n");
+    io::print("  -c, --characters=LIST\n         select only these character positions\n");
+    io::print("      --complement\n         complement the set of selected bytes, characters or fields\n");
+    io::print("  -d, --delimiter=DELIM\n         use DELIM instead of TAB for field delimiter\n");
+    io::print("  -f, --fields=LIST\n         select only these fields;  also print any line that contains\n         no delimiter character, unless the -s option is specified\n");
+    io::print("  -F LIST\n         like -f, but also implies -w and -O ' '\n");
+    io::print("  -n, --no-partial\n         with -b, don't output partial multi-byte characters\n");
+    io::print("  -O, --output-delimiter=STRING\n         use STRING as the output delimiter;\n         the default is to use the input delimiter\n");
+    io::print("  -s, --only-delimited\n         do not print lines not containing delimiters\n");
+    io::print("  -w, --whitespace-delimited[=trimmed]\n         use a run of blank characters as the field delimiter;\n         with 'trimmed', ignore leading and trailing blanks\n");
+    io::print("  -z, --zero-terminated\n         line delimiter is NUL, not newline\n");
+    io::print("      --help\n         display this help and exit\n");
+    io::print("      --version\n         output version information and exit\n\n");
+    io::print("Use one, and only one of -b, -c, -f or -F.  Each LIST is made up of one\nrange, or many ranges separated by commas.  Selected input is written\nin the same order that it is read, and is written exactly once.\nEach range is one of:\n\n");
+    io::print("  N     N'th byte, character or field, counted from 1\n");
+    io::print("  N-    from N'th byte, character or field, to end of line\n");
+    io::print("  N-M   from N'th to M'th (included) byte, character or field\n");
+    io::print("  -M    from first to M'th (included) byte, character or field\n\n");
+    io::print("Report bugs to: bug-coreutils@gnu.org\n");
+    io::print("GNU coreutils home page: <https://www.gnu.org/software/coreutils/>\n");
+    io::print("General help using GNU software: <https://www.gnu.org/gethelp/>\n");
+    io::print("Report any translation bugs to <https://translationproject.org/team/>\n");
+    io::print("Full documentation <https://www.gnu.org/software/coreutils/cut>\n");
+    io::print("or available locally via: info '(coreutils) cut invocation'\n");
 };
 
 export fn run(start: usize, argc: usize) i32 = {
@@ -41,8 +56,12 @@ export fn run(start: usize, argc: usize) i32 = {
     let mut list_count: usize = 0usize;
     let mut delimiter: i32 = 9i32;
     let mut has_delimiter: bool = false;
+    let mut whitespace: bool = false;
+    let mut whitespace_trimmed: bool = false;
+    let mut force_space_fields: bool = false;
     let mut output_delimiter: *i8 = list.data as *i8;
-    let mut has_output_delimiter: bool = false;
+    let mut has_output_delimiter: i32 = 0i32;
+    let mut explicit_output_delimiter: bool = false;
     let mut complement: bool = false;
     let mut no_partial: bool = false;
     let mut suppress: bool = false;
@@ -75,7 +94,11 @@ export fn run(start: usize, argc: usize) i32 = {
                 let mut value: str = "";
                 if (arg.len > key.len) { value = arg[key.len + 1usize..arg.len]; i += 1usize; }
                 else { value = args::argat(i + 1usize); i += 2usize; };
-                list = value; mode = 2i32; list_count += 1usize; continue;
+                list = value;
+                if (whitespace_trimmed) { mode = 5i32; }
+                else if (whitespace) { mode = 4i32; }
+                else { mode = 2i32; };
+                list_count += 1usize; continue;
             };
             if (key == "--delimiter" || is_prefix(key, "--delimiter")) {
                 if (arg.len == key.len && i + 1usize >= argc) { c::fprintf(c::stderr, "cut: option '--delimiter' requires an argument\n"); usage_error(); return 1; };
@@ -90,14 +113,26 @@ export fn run(start: usize, argc: usize) i32 = {
                 let mut value: str = "";
                 if (arg.len > key.len) { value = arg[key.len + 1usize..arg.len]; i += 1usize; }
                 else { value = args::argat(i + 1usize); i += 2usize; };
-                output_delimiter = value.data as *i8; has_output_delimiter = true; continue;
+                output_delimiter = value.data as *i8; has_output_delimiter = 1i32; explicit_output_delimiter = true; continue;
+            };
+            if (key == "--whitespace-delimited" || is_prefix(key, "--whitespace-delimited")) {
+                if (arg.len > key.len) {
+                    let value: str = arg[key.len + 1usize..arg.len];
+                    if (value != "trimmed") {
+                        c::fprintf(c::stderr, "cut: invalid argument '%s' for '--whitespace-delimited'\n", value);
+                        c::fprintf(c::stderr, "Valid arguments are:\n  - 'trimmed'\n");
+                        usage_error(); return 1;
+                    };
+                    mode = 5i32; whitespace = true; whitespace_trimmed = true;
+                } else { mode = 4i32; whitespace = true; };
+                i += 1usize; continue;
             };
             if (key == "--complement" || is_prefix(key, "--complement")) { complement = true; i += 1usize; continue; };
             if (key == "--no-partial" || is_prefix(key, "--no-partial")) { no_partial = true; i += 1usize; continue; };
             if (key == "--only-delimited" || is_prefix(key, "--only-delimited")) { suppress = true; i += 1usize; continue; };
             if (key == "--zero-terminated" || is_prefix(key, "--zero-terminated")) { zero_terminated = true; i += 1usize; continue; };
             if (key == "--help" || is_prefix(key, "--help")) { help(); stream::finishoutput("cut"); return 0; };
-            if (key == "--version" || is_prefix(key, "--version")) { io::println("cut (zovutils) 0.1.189"); stream::finishoutput("cut"); return 0; };
+            if (key == "--version" || is_prefix(key, "--version")) { io::println("cut (zovutils) 0.1.190"); stream::finishoutput("cut"); return 0; };
             c::fprintf(c::stderr, "cut: unrecognized option '%s'\n", arg); usage_error(); return 1;
         };
         if (!options_done && arg.len > 1usize && arg.data[0usize] == 45u8) {
@@ -107,18 +142,29 @@ export fn run(start: usize, argc: usize) i32 = {
                 if (option == 110u8) { no_partial = true; j += 1usize; continue; };
                 if (option == 115u8) { suppress = true; j += 1usize; continue; };
                 if (option == 122u8) { zero_terminated = true; j += 1usize; continue; };
-                if (option == 98u8 || option == 99u8 || option == 102u8 || option == 100u8) {
+                if (option == 119u8) { mode = 4i32; whitespace = true; j += 1usize; continue; };
+                if (option == 98u8 || option == 99u8 || option == 102u8 || option == 100u8 || option == 70u8 || option == 79u8) {
                     let mut value: str = "";
                     if (j + 1usize < arg.len) { value = arg[j + 1usize..arg.len]; }
                     else if (i + 1usize < argc) { i += 1usize; value = args::argat(i); }
                     else {
                         c::fprintf(c::stderr, "cut: option requires an argument -- '%c'\n", option as i32); usage_error(); return 1;
                     };
-                    if (option == 100u8) {
+                    if (option == 79u8) {
+                        output_delimiter = value.data as *i8; has_output_delimiter = 1i32; explicit_output_delimiter = true;
+                    } else if (option == 100u8) {
                         if (value.len != 1usize) { c::fprintf(c::stderr, "cut: the delimiter must be a single character\n"); return 1; };
                         delimiter = value.data[0usize] as i32; has_delimiter = true;
                     } else {
-                        if (option == 102u8) { mode = 2i32; }
+                        if (option == 70u8) {
+                            mode = 4i32; whitespace = true; force_space_fields = true;
+                            if (!explicit_output_delimiter) { output_delimiter = list.data as *i8; has_output_delimiter = 2i32; };
+                        }
+                        else if (option == 102u8) {
+                            if (whitespace_trimmed) { mode = 5i32; }
+                            else if (whitespace) { mode = 4i32; }
+                            else { mode = 2i32; };
+                        }
                         else if (option == 99u8) { mode = 3i32; }
                         else { mode = 1i32; };
                         list = value; list_count += 1usize;
@@ -134,8 +180,12 @@ export fn run(start: usize, argc: usize) i32 = {
     };
     if (list_count == 0usize) { c::fprintf(c::stderr, "cut: you must specify a list of bytes, characters, or fields\n"); usage_error(); return 1; };
     if (list_count > 1usize) { c::fprintf(c::stderr, "cut: only one list may be specified\n"); usage_error(); return 1; };
-    if (has_delimiter && mode != 2i32) { c::fprintf(c::stderr, "cut: an input delimiter makes sense\n\tonly when operating on fields\n"); usage_error(); return 1; };
-    if (suppress && mode != 2i32) { c::fprintf(c::stderr, "cut: suppressing non-delimited lines makes sense\n\tonly when operating on fields\n"); usage_error(); return 1; };
+    if (force_space_fields && has_delimiter) { mode = 2i32; whitespace = false; };
+    let is_field_mode: bool = mode == 2i32 || mode == 4i32 || mode == 5i32;
+    if (whitespace && !force_space_fields && !is_field_mode) { c::fprintf(c::stderr, "cut: an input delimiter makes sense\n\tonly when operating on fields\n"); usage_error(); return 1; };
+    if (has_delimiter && whitespace && !force_space_fields) { c::fprintf(c::stderr, "cut: -d and -w are mutually exclusive\n"); usage_error(); return 1; };
+    if (has_delimiter && mode != 2i32 && !force_space_fields) { c::fprintf(c::stderr, "cut: an input delimiter makes sense\n\tonly when operating on fields\n"); usage_error(); return 1; };
+    if (suppress && !is_field_mode) { c::fprintf(c::stderr, "cut: suppressing non-delimited lines makes sense\n\tonly when operating on fields\n"); usage_error(); return 1; };
     let list_status: i32 = backend::zov_cut_validate_list(list.data as *i8);
     if (list_status == 2i32) {
         if (mode == 2i32) { c::fprintf(c::stderr, "cut: fields are numbered from 1\n"); }
@@ -144,10 +194,10 @@ export fn run(start: usize, argc: usize) i32 = {
     };
     if (list_status == 3i32) { c::fprintf(c::stderr, "cut: invalid decreasing range\n"); usage_error(); return 1; };
     if (list_status != 1i32) { c::fprintf(c::stderr, "cut: invalid range with no endpoint: -\n"); usage_error(); return 1; };
-    if (file_count == 0usize) { return backend::zov_cut_process("-", list.data as *i8, mode, delimiter, output_delimiter, has_output_delimiter as i32, no_partial as i32, complement as i32, suppress as i32, zero_terminated as i32); };
+    if (file_count == 0usize) { return backend::zov_cut_process("-", list.data as *i8, mode, delimiter, output_delimiter, has_output_delimiter, no_partial as i32, complement as i32, suppress as i32, zero_terminated as i32); };
     let mut status: i32 = 0i32;
     for (let fi in 0usize..file_count) {
-        let result: i32 = backend::zov_cut_process(files[fi].data as *i8, list.data as *i8, mode, delimiter, output_delimiter, has_output_delimiter as i32, no_partial as i32, complement as i32, suppress as i32, zero_terminated as i32);
+        let result: i32 = backend::zov_cut_process(files[fi].data as *i8, list.data as *i8, mode, delimiter, output_delimiter, has_output_delimiter, no_partial as i32, complement as i32, suppress as i32, zero_terminated as i32);
         if (result != 0i32) { status = 1i32; };
     };
     return status;

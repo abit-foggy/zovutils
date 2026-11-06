@@ -4,6 +4,7 @@
 #include <errno.h>
 #include <stdint.h>
 #include <locale.h>
+#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -72,6 +73,33 @@ static inline int zov_cut_write(FILE *out, const void *data, size_t length) {
     return length == 0 || fwrite(data, 1, length, out) == length;
 }
 
+static inline int zov_cut_emit_field(FILE *out, const unsigned char *line,
+                                     size_t start, size_t end, uint64_t index,
+                                     const char *list, int complement,
+                                     unsigned char delimiter,
+                                     const char *output_delimiter,
+                                     int has_output_delimiter, int *wrote) {
+    int selected = zov_cut_selected(list, index);
+    if (complement) selected = !selected;
+    if (!selected) return 1;
+    if (*wrote) {
+        if (has_output_delimiter == 2) {
+            if (!zov_cut_write(out, " ", 1)) return 0;
+        } else if (has_output_delimiter) {
+            if (!zov_cut_write(out, output_delimiter, strlen(output_delimiter))) return 0;
+        } else if (!zov_cut_write(out, &delimiter, 1)) return 0;
+    }
+    if (!zov_cut_write(out, line + start, end - start)) return 0;
+    *wrote = 1;
+    return 1;
+}
+
+static inline int zov_cut_is_separator(int mode, unsigned char c,
+                                       unsigned char delimiter) {
+    if (mode == 2) return c == delimiter;
+    return c == ' ' || c == '\t';
+}
+
 static inline int zov_cut_emit_line(FILE *out, const unsigned char *line,
                                     size_t length, int has_terminator,
                                     unsigned char terminator, const char *list,
@@ -108,31 +136,51 @@ static inline int zov_cut_emit_line(FILE *out, const unsigned char *line,
             position += mode == 1 ? width : 1;
         }
     } else {
-        size_t fields = 1;
-        for (size_t i = 0; i < length; ++i) if (line[i] == delimiter) ++fields;
-        int has_delimiter = fields > 1;
+        int has_delimiter = 0;
+        for (size_t i = 0; i < length; ++i)
+            if (zov_cut_is_separator(mode, line[i], delimiter)) has_delimiter = 1;
         if (!has_delimiter) {
             if (suppress) return 1;
             if (!zov_cut_write(out, line, length)) return 0;
             wrote = !suppress;
         } else {
             size_t start = 0;
+            size_t i = 0;
             uint64_t index = 1;
-            for (size_t i = 0; i <= length; ++i) {
-                if (i != length && line[i] != delimiter) continue;
-                int selected = zov_cut_selected(list, index);
-                if (complement) selected = !selected;
-                if (selected) {
-                    if (wrote) {
-                        if (has_output_delimiter) {
-                            if (!zov_cut_write(out, output_delimiter, strlen(output_delimiter))) return 0;
-                        } else if (!zov_cut_write(out, &delimiter, 1)) return 0;
-                    }
-                    if (!zov_cut_write(out, line + start, i - start)) return 0;
-                    wrote = 1;
-                }
-                start = i + 1;
+            int whitespace_mode = mode == 4 || mode == 5;
+            int trimmed = mode == 5;
+            if (trimmed) while (start < length && zov_cut_is_separator(mode, line[start], delimiter)) ++start;
+            i = start;
+            while (i < length) {
+                if (!zov_cut_is_separator(mode, line[i], delimiter)) { ++i; continue; }
+                if (!zov_cut_emit_field(out, line, start, i, index, list,
+                                        complement, whitespace_mode ? '\t' : delimiter,
+                                        output_delimiter, has_output_delimiter,
+                                        &wrote)) return 0;
                 ++index;
+                if (whitespace_mode) {
+                    while (i < length && zov_cut_is_separator(mode, line[i], delimiter)) ++i;
+                } else {
+                    ++i;
+                }
+                start = i;
+            }
+            if (!trimmed || start < length) {
+                if (!zov_cut_emit_field(out, line, start, length, index, list,
+                                        complement, whitespace_mode ? '\t' : delimiter,
+                                        output_delimiter, has_output_delimiter,
+                                        &wrote)) return 0;
+            } else if (start == length && !trimmed) {
+                if (!zov_cut_emit_field(out, line, start, length, index, list,
+                                        complement, whitespace_mode ? '\t' : delimiter,
+                                        output_delimiter, has_output_delimiter,
+                                        &wrote)) return 0;
+            }
+            if (!trimmed && length == 0) {
+                if (!zov_cut_emit_field(out, line, 0, 0, index, list, complement,
+                                        whitespace_mode ? '\t' : delimiter,
+                                        output_delimiter, has_output_delimiter,
+                                        &wrote)) return 0;
             }
         }
     }
