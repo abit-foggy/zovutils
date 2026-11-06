@@ -1,0 +1,70 @@
+use std::env as args;
+use std::io;
+use <stdio.h> as c;
+use <comm_backend.h> as backend;
+use shared::io as stream;
+
+fn key(arg: str) str = {
+    for (let i in 0usize..arg.len) { if (arg.data[i] == 61u8) { return arg[0usize..i]; }; };
+    return arg;
+};
+
+fn prefix(value: str, full: str) bool = {
+    return value.len > 2usize && value.len <= full.len && value == full[0usize..value.len];
+};
+
+fn help() void = {
+    io::print("Usage: comm [OPTION]... FILE1 FILE2\nCompare sorted files FILE1 and FILE2 line by line.\n\nWhen FILE1 or FILE2 (not both) is -, read standard input.\n\nWith no options, produce three-column output.  Column one contains\nlines unique to FILE1, column two contains lines unique to FILE2,\nand column three contains lines common to both files.\n  -1     suppress column 1 (lines unique to FILE1)\n  -2     suppress column 2 (lines unique to FILE2)\n  -3     suppress column 3 (lines that appear in both files)\n      --check-order\n         check that the input is correctly sorted,\n         even if all input lines are pairable\n      --nocheck-order\n         do not check that the input is correctly sorted\n      --output-delimiter=STR\n         separate columns with STR\n      --total\n         output a summary\n  -z, --zero-terminated\n         line delimiter is NUL, not newline\n      --help\n         display this help and exit\n      --version\n         output version information and exit\n\nComparisons honor the rules specified by 'LC_COLLATE'.\n\nExamples:\n  comm -12 file1 file2  Print only lines present in both file1 and file2.\n  comm -3 file1 file2  Print lines in file1 not in file2, and vice versa.\n\nReport bugs to: bug-coreutils@gnu.org\nGNU coreutils home page: <https://www.gnu.org/software/coreutils/>\nGeneral help using GNU software: <https://www.gnu.org/gethelp/>\nReport any translation bugs to <https://translationproject.org/team/>\nFull documentation <https://www.gnu.org/software/coreutils/comm>\nor available locally via: info '(coreutils) comm invocation'\n");
+};
+
+export fn run(start: usize, argc: usize) i32 = {
+    let mut col1: bool = true;
+    let mut col2: bool = true;
+    let mut col3: bool = true;
+    let mut check_order: bool = false;
+    let mut total: bool = false;
+    let mut delimiter: str = "\t";
+    let mut terminator: u8 = 10u8;
+    let mut files: [3]str;
+    let mut count: usize = 0usize;
+    let mut i: usize = start;
+    let mut options_done: bool = false;
+    while (i < argc) {
+        let arg: str = args::argat(i);
+        if (!options_done && arg == "--") { options_done = true; i += 1usize; continue; };
+        if (!options_done && arg.len > 2usize && arg[0usize..2usize] == "--") {
+            let option: str = key(arg);
+            if (option == "--help" || prefix(option, "--help")) { help(); stream::finishoutput("comm"); return 0; };
+            if (option == "--version" || prefix(option, "--version")) { io::println("comm (zovutils) 0.1.204"); stream::finishoutput("comm"); return 0; };
+            if (option == "--check-order" || prefix(option, "--check-order")) { check_order = true; i += 1usize; continue; };
+            if (option == "--nocheck-order" || prefix(option, "--nocheck-order")) { check_order = false; i += 1usize; continue; };
+            if (option == "--total" || prefix(option, "--total")) { total = true; i += 1usize; continue; };
+            if (option == "--zero-terminated" || prefix(option, "--zero-terminated")) { terminator = 0u8; i += 1usize; continue; };
+            if (option == "--output-delimiter" || prefix(option, "--output-delimiter")) {
+                if (arg.len > option.len) { delimiter = arg[option.len + 1usize..arg.len]; i += 1usize; }
+                else if (i + 1usize < argc) { delimiter = args::argat(i + 1usize); i += 2usize; }
+                else { c::fprintf(c::stderr, "comm: option '%s' requires an argument\n", option.data as *i8); return 1; };
+                continue;
+            };
+            c::fprintf(c::stderr, "comm: unrecognized option '%s'\nTry 'comm --help' for more information.\n", arg.data as *i8); return 1;
+        };
+        if (!options_done && arg.len > 1usize && arg.data[0usize] == 45u8) {
+            let mut j: usize = 1usize;
+            while (j < arg.len) {
+                if (arg.data[j] == 49u8) { col1 = false; }
+                else if (arg.data[j] == 50u8) { col2 = false; }
+                else if (arg.data[j] == 51u8) { col3 = false; }
+                else if (arg.data[j] == 122u8) { terminator = 0u8; }
+                else { c::fprintf(c::stderr, "comm: invalid option -- '%c'\nTry 'comm --help' for more information.\n", arg.data[j] as i32); return 1; };
+                j += 1usize;
+            };
+            i += 1usize; continue;
+        };
+        if (count >= 2usize) { c::fprintf(c::stderr, "comm: extra operand '%s'\nTry 'comm --help' for more information.\n", arg.data as *i8); return 1; };
+        files[count] = arg; count += 1usize; i += 1usize;
+    };
+    if (count != 2usize) { c::fprintf(c::stderr, "comm: missing operand\nTry 'comm --help' for more information.\n"); return 1; };
+    return backend::zov_comm_run(files[0usize].data as *i8, files[1usize].data as *i8,
+        col1 as i32, col2 as i32, col3 as i32, delimiter.data as *i8,
+        terminator, check_order as i32, total as i32);
+};
