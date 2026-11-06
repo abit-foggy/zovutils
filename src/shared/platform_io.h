@@ -28,63 +28,39 @@ static inline int zov_write_output(FILE *output, const void *buffer, size_t leng
     if (flags >= 0 && (flags & O_DIRECT)) {
         const unsigned char *bytes = (const unsigned char *) buffer;
         size_t written = 0;
-        int restore_direct = length < 65536;
-        if (restore_direct && fcntl(fileno(output), F_SETFL, flags & ~O_DIRECT) != 0) {
-            return 0;
-        }
-        if (restore_direct) {
-            int updated_flags = fcntl(fileno(output), F_GETFL);
-            if (updated_flags >= 0 && (updated_flags & O_DIRECT)) {
-                char descriptor_path[64];
-                (void) snprintf(descriptor_path, sizeof descriptor_path,
-                                "/proc/self/fd/%d", fileno(output));
-                int fallback_flags = O_WRONLY | (flags & O_APPEND);
-                int fallback_fd = open(descriptor_path, fallback_flags);
-                off_t position = lseek(fileno(output), 0, SEEK_CUR);
-                if (fallback_fd < 0 || position < 0 ||
-                    lseek(fallback_fd, position, SEEK_SET) < 0) {
-                    if (fallback_fd >= 0) {
-                        (void) close(fallback_fd);
-                    }
-                    return 0;
+        int fallback_fd = fileno(output);
+        int close_fallback = 0;
+        if (length < 65536) {
+            char descriptor_path[64];
+            (void) snprintf(descriptor_path, sizeof descriptor_path,
+                            "/proc/self/fd/%d", fileno(output));
+            fallback_fd = open(descriptor_path, O_WRONLY | (flags & O_APPEND));
+            off_t position = lseek(fileno(output), 0, SEEK_CUR);
+            if (fallback_fd < 0 || position < 0 ||
+                lseek(fallback_fd, position, SEEK_SET) < 0) {
+                if (fallback_fd >= 0) {
+                    (void) close(fallback_fd);
                 }
-                while (written < length) {
-                    ssize_t count = write(fallback_fd, bytes + written, length - written);
-                    if (count < 0 && errno == EINTR) {
-                        continue;
-                    }
-                    if (count <= 0) {
-                        (void) close(fallback_fd);
-                        return 0;
-                    }
-                    written += (size_t) count;
-                }
-                return close(fallback_fd) == 0;
+                return 0;
             }
+            close_fallback = 1;
         }
         while (written < length) {
-            ssize_t count = write(fileno(output), bytes + written, length - written);
+            ssize_t count = write(fallback_fd, bytes + written, length - written);
             if (count < 0) {
                 if (errno == EINTR) {
                     continue;
                 }
-                if (restore_direct) {
-                    (void) fcntl(fileno(output), F_SETFL, flags);
-                }
+                if (close_fallback) (void) close(fallback_fd);
                 return 0;
             }
             if (count == 0) {
-                if (restore_direct) {
-                    (void) fcntl(fileno(output), F_SETFL, flags);
-                }
+                if (close_fallback) (void) close(fallback_fd);
                 return 0;
             }
             written += (size_t) count;
         }
-        if (restore_direct && fcntl(fileno(output), F_SETFL, flags) != 0) {
-            return 0;
-        }
-        return 1;
+        return !close_fallback || close(fallback_fd) == 0;
     }
 #endif
     return fwrite(buffer, 1, length, output) == length;
