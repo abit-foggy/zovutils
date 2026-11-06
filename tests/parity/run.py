@@ -11,6 +11,7 @@ from pathlib import Path
 import basename
 import cat
 import comm_util
+import csplit_util
 import cut_util
 import dirname
 import echo
@@ -53,7 +54,7 @@ def main() -> int:
     suite = Suite(args.zovutils.resolve(), args.gnu_dir.resolve())
     try:
         require_executables(suite)
-        for module in (basename, cat, comm_util, cut_util, dirname, echo, expand_util, env, false, fold_util, fmt_util, head, join_util, nl_util, paste_util, printenv, printf, pwd_util, seq_util, sleep_util, sort_util, test_util, tail, tr_util, true, uniq_util, unexpand_util, wc, yes_util, fuzz):
+        for module in (basename, cat, comm_util, csplit_util, cut_util, dirname, echo, expand_util, env, false, fold_util, fmt_util, head, join_util, nl_util, paste_util, printenv, printf, pwd_util, seq_util, sleep_util, sort_util, test_util, tail, tr_util, true, uniq_util, unexpand_util, wc, yes_util, fuzz):
             start = suite.count
             module.run(suite)
             print(f"[PASS] {module.__name__}: {suite.count - start} parity cases")

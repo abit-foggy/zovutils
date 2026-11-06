@@ -1,0 +1,101 @@
+use std::env as args;
+use std::io;
+use <stdio.h> as c;
+use <csplit_backend.h> as backend;
+use shared::io as stream;
+
+fn key(arg: str) str = {
+    for (let i in 0usize..arg.len) { if (arg.data[i] == 61u8) { return arg[0usize..i]; }; };
+    return arg;
+};
+
+fn prefix(value: str, full: str) bool = {
+    return value.len > 2usize && value.len <= full.len && value == full[0usize..value.len];
+};
+
+fn decimal(value: str) usize = {
+    if (value.len == 0usize) { return 0usize; };
+    let mut n: usize = 0usize;
+    for (let i in 0usize..value.len) {
+        let ch: u8 = value.data[i];
+        if (ch < 48u8 || ch > 57u8) { return 0usize; };
+        let d: usize = (ch - 48u8) as usize;
+        if (n > (18446744073709551615usize - d) / 10usize) { return 0usize; };
+        n = n * 10usize + d;
+    };
+    return n;
+};
+
+fn help() void = {
+    io::print("Usage: csplit [OPTION]... FILE PATTERN...\nOutput pieces of FILE separated by PATTERN(s) to files 'xx00', 'xx01', ...,\nand output byte counts of each piece to standard output.\n\nRead standard input if FILE is -\n\nMandatory arguments to long options are mandatory for short options too.\n  -b, --suffix-format=FORMAT\n         use sprintf FORMAT instead of %02d\n  -f, --prefix=PREFIX\n         use PREFIX instead of 'xx'\n  -k, --keep-files\n         do not remove output files on errors\n      --suppress-matched\n         suppress the lines matching PATTERN\n  -n, --digits=DIGITS\n         use specified number of digits instead of 2\n  -s, --quiet, --silent\n         do not print counts of output file sizes\n  -z, --elide-empty-files\n         suppress empty output files\n      --help\n         display this help and exit\n      --version\n         output version information and exit\n\nEach PATTERN may be:\n  INTEGER            copy up to but not including specified line number\n  /REGEXP/[OFFSET]   copy up to but not including a matching line\n  %REGEXP%[OFFSET]   skip to, but not including a matching line\n  ") ; c::putchar(123); io::print("INTEGER"); c::putchar(125); io::print("          repeat the previous pattern specified number of times\n  "); c::putchar(123); c::putchar(42); c::putchar(125); io::print("                repeat the previous pattern as many times as possible\n\nA line OFFSET is an integer optionally preceded by '+' or '-'\n\nReport bugs to: bug-coreutils@gnu.org\nGNU coreutils home page: <https://www.gnu.org/software/coreutils/>\nGeneral help using GNU software: <https://www.gnu.org/gethelp/>\nReport any translation bugs to <https://translationproject.org/team/>\nFull documentation <https://www.gnu.org/software/coreutils/csplit>\nor available locally via: info '(coreutils) csplit invocation'\n");
+};
+
+export fn run(start: usize, argc: usize) i32 = {
+    let mut prefix_value: str = "xx";
+    let mut suffix_format: str = "";
+    let mut digits: usize = 2usize;
+    let mut keep_files: bool = false;
+    let mut silent: bool = false;
+    let mut suppress_matched: bool = false;
+    let mut elide_empty: bool = false;
+    let mut terminator: u8 = 10u8;
+    let mut operands: [258]str;
+    let mut count: usize = 0usize;
+    let mut i: usize = start;
+    let mut options_done: bool = false;
+    while (i < argc) {
+        let arg: str = args::argat(i);
+        if (!options_done && arg == "--") { options_done = true; i += 1usize; continue; };
+        if (!options_done && arg.len > 2usize && arg[0usize..2usize] == "--") {
+            let option: str = key(arg);
+            if (option == "--help" || prefix(option, "--help")) { help(); stream::finishoutput("csplit"); return 0; };
+            if (option == "--version" || prefix(option, "--version")) { io::println("csplit (zovutils) 0.1.205"); stream::finishoutput("csplit"); return 0; };
+            if (option == "--keep-files" || prefix(option, "--keep-files")) { keep_files = true; i += 1usize; continue; };
+            if (option == "--suppress-matched" || prefix(option, "--suppress-matched")) { suppress_matched = true; i += 1usize; continue; };
+            if (option == "--elide-empty-files" || prefix(option, "--elide-empty-files")) { elide_empty = true; i += 1usize; continue; };
+            if (option == "--quiet" || option == "--silent" || prefix(option, "--quiet") || prefix(option, "--silent")) { silent = true; i += 1usize; continue; };
+            if (option == "--prefix" || option == "--suffix-format" || option == "--digits" || prefix(option, "--prefix") || prefix(option, "--suffix-format") || prefix(option, "--digits")) {
+                let mut value: str = "";
+                if (arg.len > option.len) { value = arg[option.len + 1usize..arg.len]; i += 1usize; }
+                else if (i + 1usize < argc) { value = args::argat(i + 1usize); i += 2usize; }
+                else { c::fprintf(c::stderr, "csplit: option '%s' requires an argument\n", option.data as *i8); return 1; };
+                if (option == "--prefix" || prefix(option, "--prefix")) { prefix_value = value; }
+                else if (option == "--suffix-format" || prefix(option, "--suffix-format")) { suffix_format = value; }
+                else { digits = decimal(value); if (digits == 0usize || digits > 100usize) { c::fprintf(c::stderr, "csplit: invalid number of digits: '%s'\n", value.data as *i8); return 1; }; };
+                continue;
+            };
+            if (option == "--zero-terminated" || prefix(option, "--zero-terminated")) { terminator = 0u8; i += 1usize; continue; };
+            c::fprintf(c::stderr, "csplit: unrecognized option '%s'\nTry 'csplit --help' for more information.\n", arg.data as *i8); return 1;
+        };
+        if (!options_done && arg.len > 1usize && arg.data[0usize] == 45u8) {
+            let mut j: usize = 1usize;
+            while (j < arg.len) {
+                let opt: u8 = arg.data[j];
+                if (opt == 107u8) { keep_files = true; j += 1usize; continue; };
+                if (opt == 115u8) { silent = true; j += 1usize; continue; };
+                if (opt == 122u8) { elide_empty = true; j += 1usize; continue; };
+                if (opt == 102u8 || opt == 98u8 || opt == 110u8) {
+                    let mut value: str = "";
+                    if (j + 1usize < arg.len) { value = arg[j + 1usize..arg.len]; j = arg.len; }
+                    else if (i + 1usize < argc) { i += 1usize; value = args::argat(i); j = arg.len; }
+                    else { c::fprintf(c::stderr, "csplit: option requires an argument -- '%c'\n", opt as i32); return 1; };
+                    if (opt == 102u8) { prefix_value = value; }
+                    else if (opt == 98u8) { suffix_format = value; }
+                    else { digits = decimal(value); if (digits == 0usize || digits > 100usize) { c::fprintf(c::stderr, "csplit: invalid number of digits: '%s'\n", value.data as *i8); return 1; }; };
+                    break;
+                };
+                c::fprintf(c::stderr, "csplit: invalid option -- '%c'\nTry 'csplit --help' for more information.\n", opt as i32); return 1;
+            };
+            i += 1usize; continue;
+        };
+        if (count >= 258usize) { c::fprintf(c::stderr, "csplit: too many operands\n"); return 1; };
+        operands[count] = arg; count += 1usize; i += 1usize;
+    };
+    if (count < 2usize) { c::fprintf(c::stderr, "csplit: missing operand\nTry 'csplit --help' for more information.\n"); return 1; };
+    let mut patterns: [256]*i8;
+    for (let pi in 1usize..count) { patterns[pi - 1usize] = operands[pi].data as *i8; };
+    return backend::zov_csplit_run(operands[0usize].data as *i8, prefix_value.data as *i8,
+        suffix_format.data as *i8, digits as u32,
+        keep_files as i32, silent as i32, suppress_matched as i32, elide_empty as i32,
+        terminator, ((&patterns[0usize]) as *void), count - 1usize);
+};
