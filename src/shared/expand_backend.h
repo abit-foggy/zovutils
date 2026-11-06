@@ -82,6 +82,15 @@ static inline size_t zov_expand_next_tab(const zov_expand_tabs *tabs, size_t col
     return last + steps * tabs->repeat;
 }
 
+static inline void zov_expand_report_tab_error(const char *utility,
+                                               const char *tab_text,
+                                               int error_code) {
+    if (error_code == 2) fprintf(stderr, "%s: tab size cannot be 0\n", utility);
+    else if (error_code == 4) fprintf(stderr, "%s: tab sizes must be ascending\n", utility);
+    else if (error_code == 5) fprintf(stderr, "%s: tab size too large\n", utility);
+    else fprintf(stderr, "%s: tab size contains invalid character(s): '%s'\n", utility, tab_text);
+}
+
 static inline int zov_expand_write_unit(FILE *out, const unsigned char *bytes, size_t n) {
     return n == 0 || fwrite(bytes, 1, n, out) == n;
 }
@@ -110,6 +119,18 @@ static inline size_t zov_expand_read_unit(FILE *fp, unsigned char bytes[MB_LEN_M
     return MB_LEN_MAX;
 }
 
+static inline int zov_expand_unit_width(const unsigned char *unit, size_t n) {
+    if (unit[0] == '\0') return 0;
+    if (unit[0] < 0x80 || MB_CUR_MAX <= 1) return 1;
+    mbstate_t state;
+    memset(&state, 0, sizeof(state));
+    wchar_t wc;
+    size_t rc = mbrtowc(&wc, (const char *)unit, n, &state);
+    if (rc == (size_t)-1 || rc == (size_t)-2 || rc == 0) return 1;
+    int width = wcwidth(wc);
+    return width < 0 ? 1 : width;
+}
+
 static inline int zov_expand_stream(FILE *fp, const zov_expand_tabs *tabs,
                                     int initial_only) {
     size_t column = 0;
@@ -117,17 +138,7 @@ static inline int zov_expand_stream(FILE *fp, const zov_expand_tabs *tabs,
     unsigned char unit[MB_LEN_MAX];
     size_t next;
     while ((next = zov_expand_read_unit(fp, unit)) != 0) {
-        int width = 1;
-        if (unit[0] >= 0x80 && MB_CUR_MAX > 1) {
-            mbstate_t state;
-            memset(&state, 0, sizeof(state));
-            wchar_t wc;
-            size_t rc = mbrtowc(&wc, (const char *)unit, next, &state);
-            if (rc != (size_t)-1 && rc != (size_t)-2 && rc != 0) {
-                int w = wcwidth(wc);
-                width = w < 0 ? 1 : w;
-            }
-        }
+        int width = zov_expand_unit_width(unit, next);
         if (unit[0] == '\t' && (!initial_only || at_line_start)) {
             size_t stop = zov_expand_next_tab(tabs, column);
             size_t spaces = stop == SIZE_MAX ? tabs->repeat : stop - column;
@@ -138,8 +149,8 @@ static inline int zov_expand_stream(FILE *fp, const zov_expand_tabs *tabs,
         }
         if (!zov_expand_write_unit(stdout, unit, next)) return 1;
         if (unit[0] == '\n') { column = 0; at_line_start = 1; }
+        else if (unit[0] == '\b') { if (column != 0) --column; at_line_start = 0; }
         else {
-            if (unit[0] == '\b' || unit[0] == '\0') width = 0;
             if (width > 0 && column <= SIZE_MAX - (size_t)width) column += (size_t)width;
             if (!initial_only || !isblank(unit[0])) at_line_start = 0;
         }
@@ -153,10 +164,7 @@ static inline int zov_expand_run(size_t file_count, signed char *const *paths,
     zov_expand_tabs tabs;
     int tabs_error = 0;
     if (!zov_expand_parse_tabs(tab_text, &tabs, &tabs_error)) {
-        if (tabs_error == 2) fprintf(stderr, "expand: tab size cannot be 0\n");
-        else if (tabs_error == 4) fprintf(stderr, "expand: tab sizes must be ascending\n");
-        else if (tabs_error == 5) fprintf(stderr, "expand: tab size too large\n");
-        else fprintf(stderr, "expand: tab size contains invalid character(s): '%s'\n", tab_text);
+        zov_expand_report_tab_error("expand", tab_text, tabs_error);
         return 1;
     }
     int status = 0;

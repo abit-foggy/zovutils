@@ -1,0 +1,92 @@
+use std::env as args;
+use std::io;
+use <stdio.h> as c;
+use <unexpand_backend.h> as backend;
+use shared::io as stream;
+
+fn usage_error() void = { c::fprintf(c::stderr, "Try 'unexpand --help' for more information.\n"); };
+
+fn longkey(arg: str) str = {
+    for (let i in 0usize..arg.len) { if (arg.data[i] == 61u8) { return arg[0usize..i]; }; };
+    return arg;
+};
+
+fn is_prefix(value: str, full: str) bool = {
+    return value.len > 2usize && value.len <= full.len && value == full[0usize..value.len];
+};
+
+fn help() void = {
+    io::print("Usage: unexpand [OPTION]... [FILE]...\n");
+    io::print("Convert blanks in each FILE to tabs, writing to standard output.\n\n");
+    io::print("With no FILE, or when FILE is -, read standard input.\n\n");
+    io::print("Mandatory arguments to long options are mandatory for short options too.\n");
+    io::print("  -a, --all\n         convert all blanks, instead of just initial blanks\n");
+    io::print("      --first-only\n         convert only leading sequences of blanks (overrides -a)\n");
+    io::print("  -t, --tabs=N\n         have tabs N characters apart instead of 8 (enables -a)\n");
+    io::print("  -t, --tabs=LIST\n         use comma separated list of tab positions.\n");
+    io::print("         The last specified position can be prefixed with '/'\n");
+    io::print("         to specify a tab size to use after the last\n");
+    io::print("         explicitly specified tab stop.  Also a prefix of '+'\n");
+    io::print("         can be used to align remaining tab stops relative to\n");
+    io::print("         the last specified tab stop instead of the first column\n");
+    io::print("      --help\n         display this help and exit\n");
+    io::print("      --version\n         output version information and exit\n\n");
+    io::print("Report bugs to: bug-coreutils@gnu.org\n");
+    io::print("GNU coreutils home page: <https://www.gnu.org/software/coreutils/>\n");
+    io::print("General help using GNU software: <https://www.gnu.org/gethelp/>\n");
+    io::print("Report any translation bugs to <https://translationproject.org/team/>\n");
+    io::print("Full documentation <https://www.gnu.org/software/coreutils/unexpand>\n");
+    io::print("or available locally via: info '(coreutils) unexpand invocation'\n");
+};
+
+export fn run(start: usize, argc: usize) i32 = {
+    let mut tabs: str = "8";
+    let mut all_blanks: bool = false;
+    let mut first_only: bool = false;
+    let mut files: [256]str;
+    let mut file_count: usize = 0usize;
+    let mut i: usize = start;
+    let mut options_done: bool = false;
+    while (i < argc) {
+        let arg: str = args::argat(i);
+        if (!options_done && arg == "--") { options_done = true; i += 1usize; continue; };
+        if (!options_done && arg.len > 2usize && arg[0usize..2usize] == "--") {
+            let key: str = longkey(arg);
+            if (key == "--tabs" || is_prefix(key, "--tabs")) {
+                if (arg.len > key.len) { tabs = arg[key.len + 1usize..arg.len]; i += 1usize; }
+                else if (i + 1usize < argc) { tabs = args::argat(i + 1usize); i += 2usize; }
+                else { c::fprintf(c::stderr, "unexpand: option '--tabs' requires an argument\n"); usage_error(); return 1; };
+                all_blanks = true;
+                continue;
+            };
+            if (key == "--all" || is_prefix(key, "--all")) { all_blanks = true; i += 1usize; continue; };
+            if (key == "--first-only" || is_prefix(key, "--first-only")) { first_only = true; i += 1usize; continue; };
+            if (key == "--help" || is_prefix(key, "--help")) { help(); stream::finishoutput("unexpand"); return 0; };
+            if (key == "--version" || is_prefix(key, "--version")) { io::println("unexpand (zovutils) 0.1.197"); stream::finishoutput("unexpand"); return 0; };
+            c::fprintf(c::stderr, "unexpand: unrecognized option '%s'\n", arg); usage_error(); return 1;
+        };
+        if (!options_done && arg.len > 1usize && arg.data[0usize] == 45u8) {
+            let mut j: usize = 1usize;
+            while (j < arg.len) {
+                let option: u8 = arg.data[j];
+                if (option == 97u8) { all_blanks = true; j += 1usize; continue; };
+                if (option == 116u8) {
+                    if (j + 1usize < arg.len) { tabs = arg[j + 1usize..arg.len]; }
+                    else if (i + 1usize < argc) { i += 1usize; tabs = args::argat(i); }
+                    else { c::fprintf(c::stderr, "unexpand: option requires an argument -- 't'\n"); usage_error(); return 1; };
+                    all_blanks = true;
+                    j = arg.len; continue;
+                };
+                c::fprintf(c::stderr, "unexpand: invalid option -- '%c'\n", option as i32); usage_error(); return 1;
+            };
+            i += 1usize; continue;
+        };
+        if (file_count >= 256usize) { c::fprintf(c::stderr, "unexpand: too many input files\n"); return 1; };
+        files[file_count] = arg; file_count += 1usize; i += 1usize;
+    };
+    if (file_count == 0usize) { files[0usize] = "-"; file_count = 1usize; };
+    if (first_only) { all_blanks = false; };
+    let mut paths: [256]*i8;
+    for (let fi in 0usize..file_count) { paths[fi] = files[fi].data as *i8; };
+    return backend::zov_unexpand_run(file_count, ((&paths[0usize]) as **i8), tabs.data as *i8, all_blanks as i32);
+};
