@@ -7,6 +7,11 @@
 #include <stdlib.h>
 #include <unistd.h>
 
+/* glibc hides O_DIRECT under strict POSIX feature-test macros. */
+#if defined(__linux__) && !defined(O_DIRECT)
+#define O_DIRECT 040000
+#endif
+
 static inline void *zov_alloc_read_buffer(void) {
     void *buffer = NULL;
     /* Direct-I/O descriptors can require both the address and size aligned. */
