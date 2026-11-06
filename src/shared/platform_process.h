@@ -17,7 +17,35 @@
 extern char **environ;
 
 static inline int zov_env_assign(const char *assignment) {
-    return putenv((char *)assignment);
+    const char *separator = strchr(assignment, '=');
+    if (separator == NULL || separator == assignment) return -1;
+    size_t name_length = (size_t)(separator - assignment);
+    int existed = 0;
+    for (char **entry = environ; entry != NULL && *entry != NULL; ++entry) {
+        if (strncmp(*entry, assignment, name_length) == 0 && (*entry)[name_length] == '=') {
+            existed = 1;
+            break;
+        }
+    }
+    int result = putenv((char *)assignment);
+#ifdef __APPLE__
+    if (result == 0 && !existed) {
+        size_t index = 0;
+        while (environ[index] != NULL) {
+            if (strncmp(environ[index], assignment, name_length) == 0 &&
+                environ[index][name_length] == '=') break;
+            ++index;
+        }
+        if (environ[index] != NULL && index > 0) {
+            char *inserted = environ[index];
+            memmove(environ + 1, environ, index * sizeof *environ);
+            environ[0] = inserted;
+        }
+    }
+#else
+    (void)existed;
+#endif
+    return result;
 }
 
 static inline int zov_get_errno(void) {
