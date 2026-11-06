@@ -37,7 +37,7 @@ jobs:
         uses: actions/checkout@v7.0.1
         with:
           repository: abit-foggy/zov
-          ref: 33cfabb772b328f23afc9a4b77726747deb268d3
+          ref: cdf451a3065311f78f21463df2f9638c8b9b4db8
           path: zov
           submodules: recursive
 
