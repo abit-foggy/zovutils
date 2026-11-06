@@ -221,7 +221,7 @@ export fn printquotedargument(fp: *c::FILE, text: str) void = {
     else { c::fputc(39, fp); };
     for (let i in 0..text.len) {
         let b: u8 = text.data[i];
-        if (b == 39u8 || b == 92u8) {
+        if (b == 92u8 || (b == 39u8 && !unicode_quotes)) {
             c::fputc(92, fp);
             c::fputc(b as i32, fp);
         } else if (b == 7u8) { c::fputs("\\a", fp); }
