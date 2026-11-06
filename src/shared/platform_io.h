@@ -7,9 +7,13 @@
 #include <stdlib.h>
 #include <unistd.h>
 
-/* glibc hides O_DIRECT under strict POSIX feature-test macros. */
+/* libc hides O_DIRECT under strict POSIX feature-test macros. */
 #if defined(__linux__) && !defined(O_DIRECT)
+#if defined(__aarch64__)
+#define O_DIRECT 0200000
+#else
 #define O_DIRECT 040000
+#endif
 #endif
 
 static inline void *zov_alloc_read_buffer(void) {
