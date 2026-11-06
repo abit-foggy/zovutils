@@ -17,6 +17,7 @@ use commands::sleep as sleeper;
 use commands::test_cmd as testcmd;
 use commands::tail;
 use commands::true_cmd;
+use commands::yes as yescmd;
 use commands::wc;
 
 fn program_name(path: str) str = {
@@ -34,6 +35,7 @@ fn dispatch(name: str, start: usize, argc: usize) i32 = {
     if (name == "env") { return environment::run(start, argc); };
     if (name == "false") { return false_cmd::run(start, argc); };
     if (name == "true") { return true_cmd::run(start, argc); };
+    if (name == "yes") { return yescmd::run(start, argc); };
     if (name == "cat") { return cat::run(start, argc); };
     if (name == "head") { return head::run(start, argc); };
     if (name == "printenv") { return printenv::run(start, argc); };
@@ -60,16 +62,16 @@ export fn main() i32 = {
     };
     if (argc < 2usize) {
         io::println("usage: zovutils <utility> [arguments...]");
-        io::println("utilities: [ basename cat dirname echo env false head printenv printf pwd seq sleep tail test true wc");
+        io::println("utilities: [ basename cat dirname echo env false head printenv printf pwd seq sleep tail test true wc yes");
         return 1;
     };
     if (env::argat(1usize) == "--help" || env::argat(1usize) == "-h") {
         io::println("usage: zovutils <utility> [arguments...]");
-        io::println("utilities: [ basename cat dirname echo env false head printenv printf pwd seq sleep tail test true wc");
+        io::println("utilities: [ basename cat dirname echo env false head printenv printf pwd seq sleep tail test true wc yes");
         return 0;
     };
     if (argc >= 2usize && (env::argat(1usize) == "--version" || env::argat(1usize) == "-V")) {
-        io::println("zovutils 0.1.186 (GNU Coreutils 9.11 compatibility target)");
+        io::println("zovutils 0.1.187 (GNU Coreutils 9.11 compatibility target)");
         return 0;
     };
     return dispatch(env::argat(1usize), 2usize, argc);

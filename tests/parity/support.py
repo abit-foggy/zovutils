@@ -6,6 +6,7 @@ import difflib
 import os
 import pty
 import re
+import select
 import signal
 import subprocess
 import sys
@@ -211,6 +212,50 @@ class Suite:
         self.count += 1
         if results[0] != results[1]:
             raise ParityFailure(f"{utility} broken-pipe behavior differs: {results!r}")
+
+    def prefix_case(
+        self, utility: str, args: list[str], *, size: int = 4096, symlink: bool = False
+    ) -> None:
+        """Compare a fixed output prefix from commands that do not terminate."""
+        gnu_env = self.env.copy()
+        gnu_env["PATH"] = str(self.gnu_dir) + os.pathsep + gnu_env.get("PATH", "")
+        zov_command = [str(self.zovutils), utility, *args]
+        if symlink:
+            alias = self.root / utility
+            alias.symlink_to(self.zovutils)
+            zov_command = [str(alias), *args]
+        results = []
+        for command, env in (
+            (zov_command, self.env),
+            ([utility, *args], gnu_env),
+        ):
+            proc = subprocess.Popen(
+                command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                env=env,
+            )
+            assert proc.stdout is not None
+            output = bytearray()
+            try:
+                while len(output) < size:
+                    ready, _, _ = select.select([proc.stdout], [], [], 10)
+                    if not ready:
+                        raise ParityFailure(f"{utility} produced fewer than {size} bytes in 10 seconds")
+                    chunk = os.read(proc.stdout.fileno(), size - len(output))
+                    if not chunk:
+                        break
+                    output.extend(chunk)
+            finally:
+                proc.kill()
+                proc.wait(timeout=5)
+                proc.stdout.close()
+                if proc.stderr is not None:
+                    proc.stderr.close()
+            results.append(bytes(output))
+        self.count += 1
+        if results[0] != results[1]:
+            raise ParityFailure(f"{utility} output prefix differs: {results[0]!r} != {results[1]!r}")
 
     def interrupted_read_case(
         self,
