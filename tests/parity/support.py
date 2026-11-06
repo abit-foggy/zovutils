@@ -205,7 +205,13 @@ class Suite:
         if results[0] != results[1]:
             raise ParityFailure(f"{utility} broken-pipe behavior differs: {results!r}")
 
-    def interrupted_read_case(self, utility: str, args: list[str]) -> None:
+    def interrupted_read_case(
+        self,
+        utility: str,
+        args: list[str],
+        *,
+        extra_env: dict[str, str] | None = None,
+    ) -> None:
         """Compare how the utility reports EINTR from its first stdin read."""
         if sys.platform != "linux":
             return
@@ -232,6 +238,8 @@ ssize_t read(int fd, void *buffer, size_t count) {
             timeout=15,
         )
         env = self.env.copy()
+        if extra_env:
+            env.update(extra_env)
         env["LD_PRELOAD"] = str(library)
         results = [
             self._run([str(self.zovutils), utility, *args], b"interrupted input\n", env=env),

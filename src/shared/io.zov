@@ -2,6 +2,7 @@ use <stdio.h> as c;
 use <platform_errno.h> as platform_errno;
 use <unistd.h> as posix;
 use <platform_stat.h> as platform_stat;
+use <platform_locale.h> as platform_locale;
 use <wc_backend.h> as wc_backend;
 
 export type StreamError = !i32;
@@ -215,7 +216,9 @@ export fn printquoted(fp: *c::FILE, text: str, force: bool) void = {
 };
 
 export fn printquotedargument(fp: *c::FILE, text: str) void = {
-    c::fputc(39, fp);
+    let unicode_quotes: bool = platform_locale::zov_locale_uses_unicode_quotes() != 0i32;
+    if (unicode_quotes) { c::fputs("‘", fp); }
+    else { c::fputc(39, fp); };
     for (let i in 0..text.len) {
         let b: u8 = text.data[i];
         if (b == 39u8 || b == 92u8) {
@@ -231,7 +234,8 @@ export fn printquotedargument(fp: *c::FILE, text: str) void = {
         else if (b < 32u8 || b >= 127u8) { c::fprintf(fp, "\\%03o", b as i32); }
         else { c::fputc(b as i32, fp); };
     };
-    c::fputc(39, fp);
+    if (unicode_quotes) { c::fputs("’", fp); }
+    else { c::fputc(39, fp); };
 };
 
 export fn outputfailed() bool = {

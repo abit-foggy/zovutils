@@ -66,7 +66,13 @@ fn scan(fp: *c::FILE, out: &mut Counts, singlebyte_c: bool, line_fast: bool,
     strc::memset((&mut state[0usize]) as *void, 0, 256usize);
     let buf: [65536]u8;
     while (true) {
-        let read_count: i64 = stream::readonce(fp, ((&buf[0usize]) as *u8), 65536usize);
+        let mut read_count: i64 = 0i64;
+        // GNU wc retries EINTR in multibyte locales but exposes it in C mode.
+        if (singlebyte_c) {
+            read_count = stream::readonce(fp, ((&buf[0usize]) as *u8), 65536usize);
+        } else {
+            read_count = stream::readchunk(fp, ((&buf[0usize]) as *u8), 65536usize);
+        };
         if (read_count == 0i64) { break; };
         if (read_count < 0i64) {
             if (linebytes > out.maxline) { out.maxline = linebytes; };
@@ -260,10 +266,27 @@ fn badshort(opt: u8) void = {
     c::fprintf(c::stderr, "wc: invalid option -- '%c'\nTry 'wc --help' for more information.\n", opt as i32);
 };
 
+fn totalvalue(value: str) void = {
+    c::fprintf(c::stderr, "  - ");
+    stream::printquotedargument(c::stderr, value);
+    c::fputc(10, c::stderr);
+};
+
+fn totalargumentending() void = {
+    c::fprintf(c::stderr, " for ");
+    stream::printquotedargument(c::stderr, "--total");
+    c::fprintf(c::stderr, "\nValid arguments are:\n");
+    totalvalue("auto");
+    totalvalue("always");
+    totalvalue("only");
+    totalvalue("never");
+    c::fprintf(c::stderr, "Try 'wc --help' for more information.\n");
+};
+
 fn badtotal(value: str) void = {
     c::fprintf(c::stderr, "wc: invalid argument ");
     stream::printquotedargument(c::stderr, value);
-    c::fprintf(c::stderr, " for '--total'\nValid arguments are:\n  - 'auto'\n  - 'always'\n  - 'only'\n  - 'never'\nTry 'wc --help' for more information.\n");
+    totalargumentending();
 };
 
 fn missingargument(option: str) void = {
@@ -273,7 +296,7 @@ fn missingargument(option: str) void = {
 fn ambiguous_total(value: str) void = {
     c::fprintf(c::stderr, "wc: ambiguous argument ");
     stream::printquotedargument(c::stderr, value);
-    c::fprintf(c::stderr, " for '--total'\nValid arguments are:\n  - 'auto'\n  - 'always'\n  - 'only'\n  - 'never'\nTry 'wc --help' for more information.\n");
+    totalargumentending();
 };
 
 fn help() void = {
@@ -400,7 +423,7 @@ export fn run(start: usize, argc: usize) i32 = {
             else if (longmatch(key, "--max-line-length")) { maxline = true; }
             else if (longmatch(key, "--debug")) { debug = true; }
             else if (longmatch(key, "--help")) { help(); if (!stream::finishoutputbrief("wc")) { return 1; }; return 0; }
-            else if (longmatch(key, "--version")) { io::println("wc (zovutils) 0.1.128"); if (!stream::finishoutputbrief("wc")) { return 1; }; return 0; };
+            else if (longmatch(key, "--version")) { io::println("wc (zovutils) 0.1.129"); if (!stream::finishoutputbrief("wc")) { return 1; }; return 0; };
             i += 1usize; continue;
         };
         if (arg.len >= 2usize && arg.data[1usize] != 45u8) {

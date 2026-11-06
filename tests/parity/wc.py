@@ -502,6 +502,10 @@ def run(s: Suite) -> None:
             "LANG": utf8_locale,
         }
         _nonblocking_utf8_input_cases(s, utf8)
+        s.interrupted_read_case("wc", [], extra_env=utf8)
+        s.case("head", ["-n", "bad"], extra_env=utf8)
+        s.case("tail", ["-n", "bad"], extra_env=utf8)
+        s.case("wc", ["--total=bad"], extra_env=utf8)
         utf8_fixtures = (
             s.fixture("wc-utf8-mixed", "é\u3000中\n".encode()),
             s.fixture("wc-utf8-combining", "e\u0301x\n".encode()),
