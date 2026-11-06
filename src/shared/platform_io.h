@@ -15,6 +15,10 @@ static inline void *zov_alloc_read_buffer(void) {
     return buffer;
 }
 
+static inline void *zov_alloc_write_buffer(void) {
+    return zov_alloc_read_buffer();
+}
+
 static inline void zov_free_read_buffer(void *buffer) {
     free(buffer);
 }
