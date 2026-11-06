@@ -1,0 +1,242 @@
+use std::env as args;
+use std::io;
+use std::mem as mem;
+use <stdio.h> as c;
+use <seq_backend.h> as backend;
+use shared::io as stream;
+
+fn usage_error() void = {
+    c::fprintf(c::stderr, "Try 'seq --help' for more information.\n");
+};
+
+fn help() void = {
+    io::print("Usage: seq [OPTION]... LAST\n");
+    io::print("  or:  seq [OPTION]... FIRST LAST\n");
+    io::print("  or:  seq [OPTION]... FIRST INCREMENT LAST\n");
+    io::print("Print numbers from FIRST to LAST, in steps of INCREMENT.\n\n");
+    io::print("Mandatory arguments to long options are mandatory for short options too.\n");
+    io::print("  -f, --format=FORMAT\n");
+    io::print("         use printf style floating-point FORMAT\n");
+    io::print("  -s, --separator=STRING\n");
+    io::print("         use STRING to separate numbers (default: \\n)\n");
+    io::print("  -w, --equal-width\n");
+    io::print("         equalize width by padding with leading zeroes\n");
+    io::print("      --help\n");
+    io::print("         display this help and exit\n");
+    io::print("      --version\n");
+    io::print("         output version information and exit\n\n");
+    io::print("If FIRST or INCREMENT is omitted, it defaults to 1.  That is, an\n");
+    io::print("omitted INCREMENT defaults to 1 even when LAST is smaller than FIRST.\n");
+    io::print("The sequence of numbers ends when the sum of the current number and\n");
+    io::print("INCREMENT would become greater than LAST.\n");
+    io::print("FIRST, INCREMENT, and LAST are interpreted as floating point values.\n");
+    io::print("INCREMENT is usually positive if FIRST is smaller than LAST, and\n");
+    io::print("INCREMENT is usually negative if FIRST is greater than LAST.\n");
+    io::print("INCREMENT must not be 0; none of FIRST, INCREMENT and LAST may be NaN.\n");
+    io::print("FORMAT must be suitable for printing one argument of type 'double';\n");
+    io::print("it defaults to %.PRECf if FIRST, INCREMENT, and LAST are all fixed point\n");
+    io::print("decimal numbers with maximum precision PREC, and to %g otherwise.\n\n");
+    io::print("Report bugs to: bug-coreutils@gnu.org\n");
+    io::print("GNU coreutils home page: <https://www.gnu.org/software/coreutils/>\n");
+    io::print("General help using GNU software: <https://www.gnu.org/gethelp/>\n");
+    io::print("Report any translation bugs to <https://translationproject.org/team/>\n");
+    io::print("Full documentation <https://www.gnu.org/software/coreutils/seq>\n");
+    io::print("or available locally via: info '(coreutils) seq invocation'\n");
+};
+
+fn longkey(arg: str) str = {
+    for (let i in 0usize..arg.len) {
+        if (arg.data[i] == 61u8) { return arg[0usize..i]; };
+    };
+    return arg;
+};
+
+fn is_prefix(value: str, full: str) bool = {
+    return value.len > 2usize && value.len <= full.len && value == full[0usize..value.len];
+};
+
+fn number_status(value: str, output: &mut f64) i32 = {
+    return backend::zov_seq_parse_number(value.data as *i8, output);
+};
+
+fn looks_numeric(value: str) bool = {
+    let mut parsed: f64 = 0.0f64;
+    return number_status(value, &mut parsed) != 1i32;
+};
+
+fn numeric_error(value: str, kind: i32) void = {
+    if (kind == 1i32) { c::fprintf(c::stderr, "seq: invalid floating point argument: '%s'\n", value); }
+    else if (kind == 2i32) { c::fprintf(c::stderr, "seq: invalid 'not-a-number' argument: '%s'\n", value); }
+    else { c::fprintf(c::stderr, "seq: invalid floating point argument: '%s'\n", value); };
+    usage_error();
+};
+
+fn fixed_precision(value: str, fixed: &mut bool) i32 = {
+    let mut after_dot: bool = false;
+    let mut precision: i32 = 0i32;
+    for (let i in 0usize..value.len) {
+        let ch: u8 = value.data[i];
+        if (ch == 101u8 || ch == 69u8) { *fixed = false; };
+        if (ch == 46u8) { after_dot = true; }
+        else if (after_dot && ch >= 48u8 && ch <= 57u8) { precision += 1i32; };
+    };
+    return precision;
+};
+
+export fn run(start: usize, argc: usize) i32 = {
+    let mut format: str = "";
+    let mut has_format: bool = false;
+    let mut separator: str = "\n";
+    let mut equal_width: bool = false;
+    let mut operands: [3]str;
+    let mut operand_count: usize = 0usize;
+    let mut i: usize = start;
+    let mut options_done: bool = false;
+    while (i < argc) {
+        let arg: str = args::argat(i);
+        if (!options_done && arg == "--") { options_done = true; i += 1usize; continue; };
+        if (!options_done && arg.len > 2usize && arg[0usize..2usize] == "--") {
+            let key: str = longkey(arg);
+            if (key == "--format" || is_prefix(key, "--format")) {
+                if (arg.len == key.len && i + 1usize >= argc) {
+                    c::fprintf(c::stderr, "seq: option '--format' requires an argument\n"); usage_error(); return 1;
+                };
+                if (arg.len > key.len) { format = arg[key.len + 1usize..arg.len]; i += 1usize; }
+                else { format = args::argat(i + 1usize); i += 2usize; };
+                has_format = true; continue;
+            };
+            if (key == "--separator" || is_prefix(key, "--separator")) {
+                if (arg.len == key.len && i + 1usize >= argc) {
+                    c::fprintf(c::stderr, "seq: option '--separator' requires an argument\n"); usage_error(); return 1;
+                };
+                if (arg.len > key.len) { separator = arg[key.len + 1usize..arg.len]; i += 1usize; }
+                else { separator = args::argat(i + 1usize); i += 2usize; };
+                continue;
+            };
+            if (key == "--equal-width" || is_prefix(key, "--equal-width")) {
+                if (arg.len != key.len) { c::fprintf(c::stderr, "seq: option '--equal-width' doesn't allow an argument\n"); usage_error(); return 1; };
+                equal_width = true; i += 1usize; continue;
+            };
+            if (key == "--help" || is_prefix(key, "--help")) {
+                if (arg.len != key.len) { c::fprintf(c::stderr, "seq: option '--help' doesn't allow an argument\n"); usage_error(); return 1; };
+                help(); stream::finishoutput("seq"); return 0;
+            };
+            if (key == "--version" || is_prefix(key, "--version")) {
+                if (arg.len != key.len) { c::fprintf(c::stderr, "seq: option '--version' doesn't allow an argument\n"); usage_error(); return 1; };
+                io::println("seq (zovutils) 0.1.184"); stream::finishoutput("seq"); return 0;
+            };
+            c::fprintf(c::stderr, "seq: unrecognized option '%s'\n", arg); usage_error(); return 1;
+        };
+        if (!options_done && arg.len > 1usize && arg.data[0usize] == 45u8 && !looks_numeric(arg)) {
+            let mut j: usize = 1usize;
+            while (j < arg.len) {
+                if (arg.data[j] == 119u8) { equal_width = true; j += 1usize; continue; };
+                if (arg.data[j] == 102u8 || arg.data[j] == 115u8) {
+                    let option: u8 = arg.data[j];
+                    let mut value: str = "";
+                    if (j + 1usize < arg.len) { value = arg[j + 1usize..arg.len]; }
+                    else if (i + 1usize < argc) { i += 1usize; value = args::argat(i); }
+                    else {
+                        c::fprintf(c::stderr, "seq: option requires an argument -- '%c'\n", option as i32);
+                        usage_error(); return 1;
+                    };
+                    if (option == 102u8) { format = value; has_format = true; }
+                    else { separator = value; };
+                    j = arg.len; continue;
+                };
+                c::fprintf(c::stderr, "seq: invalid option -- '%c'\n", arg.data[j] as i32);
+                usage_error(); return 1;
+            };
+            i += 1usize; continue;
+        };
+        if (operand_count >= 3usize) {
+            c::fprintf(c::stderr, "seq: extra operand '%s'\n", arg); usage_error(); return 1;
+        };
+        operands[operand_count] = arg;
+        operand_count += 1usize;
+        i += 1usize;
+    };
+    if (operand_count == 0usize) {
+        c::fprintf(c::stderr, "seq: missing operand\n"); usage_error(); return 1;
+    };
+    if (has_format && equal_width) {
+        c::fprintf(c::stderr, "seq: format string may not be specified when printing equal width strings\n");
+        usage_error(); return 1;
+    };
+
+    let mut first_text: str = "1";
+    let mut increment_text: str = "1";
+    let mut last_text: str = "";
+    if (operand_count == 1usize) { last_text = operands[0usize]; }
+    else if (operand_count == 2usize) { first_text = operands[0usize]; last_text = operands[1usize]; }
+    else { first_text = operands[0usize]; increment_text = operands[1usize]; last_text = operands[2usize]; };
+
+    let mut first: f64 = 0.0f64;
+    let mut increment: f64 = 1.0f64;
+    let mut last: f64 = 0.0f64;
+    let first_status: i32 = number_status(first_text, &mut first);
+    if (first_status != 0i32) { numeric_error(first_text, first_status); return 1; };
+    let increment_status: i32 = number_status(increment_text, &mut increment);
+    if (increment_status != 0i32) { numeric_error(increment_text, increment_status); return 1; };
+    let last_status: i32 = number_status(last_text, &mut last);
+    if (last_status != 0i32) { numeric_error(last_text, last_status); return 1; };
+    if (increment == 0.0f64) {
+        c::fprintf(c::stderr, "seq: invalid Zero increment value: '%s'\n", increment_text); usage_error(); return 1;
+    };
+
+    let mut fixed: bool = true;
+    let mut precision: i32 = 0i32;
+    let first_precision: i32 = fixed_precision(first_text, &mut fixed);
+    let increment_precision: i32 = fixed_precision(increment_text, &mut fixed);
+    let last_precision: i32 = fixed_precision(last_text, &mut fixed);
+    precision = first_precision;
+    if (increment_precision > precision) { precision = increment_precision; };
+    if (last_precision > precision) { precision = last_precision; };
+    if (!fixed) { precision = 6i32; };
+
+    let mut normalized_format: nullable *i8 = null;
+    if (has_format) {
+        let mut bad_conversion: i32 = 0i32;
+        let format_status: i32 = backend::zov_seq_validate_format(format.data as *i8, &mut bad_conversion);
+        if (format_status == 1i32) {
+            c::fprintf(c::stderr, "seq: format '%s' has no %% directive\n", format); return 1;
+        };
+        if (format_status == 2i32) {
+            if (bad_conversion == 0i32) { c::fprintf(c::stderr, "seq: format '%%' has unknown %% directive\n"); }
+            else { c::fprintf(c::stderr, "seq: format '%s' has unknown %%%c directive\n", format, bad_conversion); };
+            return 1;
+        };
+        if (format_status == 3i32) { c::fprintf(c::stderr, "seq: format '%s' has too many %% directives\n", format); return 1; };
+        if (format_status == 4i32) { c::fprintf(c::stderr, "seq: format '%s' ends in %%\n", format); return 1; };
+        normalized_format = backend::zov_seq_normalize_format(format.data as *i8);
+    };
+    let mut format_ptr: *i8 = format.data as *i8;
+    match (normalized_format) { case let ptr: *i8 => { format_ptr = ptr; }, case null => {} };
+    let mut width: i32 = 0i32;
+    if (equal_width) { width = backend::zov_seq_default_width(first, last, fixed as i32, precision); };
+
+    let mut current: f64 = first;
+    let mut printed: bool = false;
+    let mut status: i32 = 0i32;
+    while ((increment > 0.0f64 && current <= last) || (increment < 0.0f64 && current >= last)) {
+        if (printed && !stream::putstr(c::stdout, separator)) { status = 1; break; };
+        let mut rendered: nullable *i8 = null;
+        if (has_format) { rendered = backend::zov_seq_render_format(format_ptr, current); }
+        else { rendered = backend::zov_seq_render_default(current, fixed as i32, precision, width); };
+        match (rendered) {
+            case let value: *i8 => {
+                c::fputs(value, c::stdout);
+                mem::freeptr[u8](value as *u8);
+            },
+            case null => { status = 1; break; },
+        };
+        printed = true;
+        let next: f64 = current + increment;
+        if (next == current) { break; };
+        current = next;
+    };
+    if (printed && !stream::putbyte(c::stdout, 10u8)) { status = 1; };
+    if (normalized_format != null) { mem::freeptr[u8](format_ptr as *u8); };
+    if (!stream::finishoutput("seq")) { return 1; };
+    return status;
+};
