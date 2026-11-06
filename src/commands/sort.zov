@@ -1,0 +1,198 @@
+use std::env as args;
+use std::io;
+use <stdio.h> as c;
+use <sort_backend.h> as backend;
+use shared::io as stream;
+
+fn usage_error() void = {
+    c::fprintf(c::stderr, "Try 'sort --help' for more information.\n");
+};
+
+fn longkey(arg: str) str = {
+    for (let i in 0usize..arg.len) { if (arg.data[i] == 61u8) { return arg[0usize..i]; }; };
+    return arg;
+};
+
+fn is_prefix(value: str, full: str) bool = {
+    return value.len > 2usize && value.len <= full.len && value == full[0usize..value.len];
+};
+
+fn apply_key_options(key: str, reverse: &mut bool, ignore_blanks: &mut bool,
+                     dictionary: &mut bool, fold: &mut bool,
+                     numeric: &mut bool, general_numeric: &mut bool,
+                     month: &mut bool, ignore_nonprinting: &mut bool) void = {
+    for (let i in 0usize..key.len) {
+        let ch: u8 = key.data[i];
+        if (ch == 114u8) { *reverse = true; }
+        else if (ch == 98u8) { *ignore_blanks = true; }
+        else if (ch == 100u8) { *dictionary = true; }
+        else if (ch == 102u8) { *fold = true; }
+        else if (ch == 110u8) { *numeric = true; }
+        else if (ch == 103u8) { *general_numeric = true; }
+        else if (ch == 77u8) { *month = true; }
+        else if (ch == 105u8) { *ignore_nonprinting = true; };
+    };
+};
+
+fn help() void = {
+    io::print("Usage: sort [OPTION]... [FILE]...\n");
+    io::print("  or:  sort [OPTION]... --files0-from=F\n");
+    io::print("Write sorted concatenation of all FILE(s) to standard output.\n\n");
+    io::print("With no FILE, or when FILE is -, read standard input.\n\n");
+    io::print("Mandatory arguments to long options are mandatory for short options too.\n");
+    io::print("Ordering options:\n\n");
+    io::print("  -b, --ignore-leading-blanks\n         ignore leading blanks when finding sort keys in each line\n");
+    io::print("  -d, --dictionary-order\n         consider only blanks and alphanumeric characters\n");
+    io::print("  -f, --ignore-case\n         fold lower case to upper case characters\n");
+    io::print("  -g, --general-numeric-sort\n         compare according to general numerical value\n");
+    io::print("  -i, --ignore-nonprinting\n         consider only printable characters\n");
+    io::print("  -M, --month-sort\n         compare (unknown) < 'JAN' < ... < 'DEC'\n");
+    io::print("  -h, --human-numeric-sort\n         compare human readable numbers (e.g., 2K 1G)\n");
+    io::print("  -n, --numeric-sort\n         compare according to string numerical value;\n         see full documentation for supported strings\n");
+    io::print("  -R, --random-sort\n         shuffle, but group identical keys.  See also shuf(1)\n");
+    io::print("      --random-source=FILE\n         get random bytes from FILE\n");
+    io::print("  -r, --reverse\n         reverse the result of comparisons\n");
+    io::print("      --sort=WORD\n         sort according to WORD:\n           general-numeric -g, human-numeric -h, month -M,\n           numeric -n, random -R, version -V\n");
+    io::print("  -V, --version-sort\n         natural sort of (version) numbers within text\n\n");
+    io::print("Other options:\n\n");
+    io::print("      --batch-size=NMERGE\n         merge at most NMERGE inputs at once; for more use temp files\n");
+    io::print("  -c, --check, --check=diagnose-first\n         check for sorted input; do not sort\n");
+    io::print("  -C, --check=quiet, --check=silent\n         like -c, but do not report first bad line\n");
+    io::print("      --compress-program=PROG\n         compress temporaries with PROG; decompress them with PROG -d\n");
+    io::print("      --debug\n         annotate the part of the line used to sort,\n         and warn about questionable usage to standard error\n");
+    io::print("      --files0-from=F\n         read input from the files specified by NUL-terminated names in file F;\n         If F is -, read names from standard input\n");
+    io::print("  -k, --key=KEYDEF\n         sort via a key; KEYDEF gives location and type\n");
+    io::print("  -m, --merge\n         merge already sorted files; do not sort\n");
+    io::print("  -o, --output=FILE\n         write result to FILE instead of standard output\n");
+    io::print("  -s, --stable\n         stabilize sort by disabling last-resort comparison\n");
+    io::print("  -S, --buffer-size=SIZE\n         use SIZE for main memory buffer\n");
+    io::print("  -t, --field-separator=SEP\n         use SEP instead of non-blank to blank transition\n");
+    io::print("  -T, --temporary-directory=DIR\n         use DIR for temporaries, not $TMPDIR or /tmp;\n         multiple options specify multiple directories\n");
+    io::print("      --parallel=N\n         change the number of sorts run concurrently to N\n");
+    io::print("  -u, --unique\n         output only the first of lines with equal keys;\n         with -c, check for strict ordering\n");
+    io::print("  -z, --zero-terminated\n         line delimiter is NUL, not newline\n");
+    io::print("      --help\n         display this help and exit\n");
+    io::print("      --version\n         output version information and exit\n\n");
+    io::print("KEYDEF is F[.C][OPTS][,F[.C][OPTS]] for start and stop position, where F is a\nfield number and C a character position in the field; both are origin 1, and\nthe stop position defaults to the line's end.  If neither -t nor -b is in\neffect, characters in a field are counted from the beginning of the preceding\nwhitespace.  OPTS is one or more single-letter ordering options [bdfgiMhnRrV],\nwhich override global ordering options for that key.  If no key is given, use\nthe entire line as the key.  Use --debug to diagnose incorrect key usage.\n\n");
+    io::print("SIZE may be followed by the following multiplicative suffixes:\n% 1% of memory, b 1, K 1024 (default), and so on for M, G, T, P, E, Z, Y, R, Q.\n\n");
+    io::print("*** WARNING ***\nThe locale specified by the environment affects sort order.\nSet LC_ALL=C to get the traditional sort order that uses\nnative byte values.\n\n");
+    io::print("Report bugs to: bug-coreutils@gnu.org\n");
+    io::print("GNU coreutils home page: <https://www.gnu.org/software/coreutils/>\n");
+    io::print("General help using GNU software: <https://www.gnu.org/gethelp/>\n");
+    io::print("Report any translation bugs to <https://translationproject.org/team/>\n");
+    io::print("Full documentation <https://www.gnu.org/software/coreutils/sort>\n");
+    io::print("or available locally via: info '(coreutils) sort invocation'\n");
+};
+
+export fn run(start: usize, argc: usize) i32 = {
+    let mut reverse: bool = false;
+    let mut unique: bool = false;
+    let mut ignore_blanks: bool = false;
+    let mut dictionary: bool = false;
+    let mut fold: bool = false;
+    let mut numeric: bool = false;
+    let mut general_numeric: bool = false;
+    let mut month: bool = false;
+    let mut stable: bool = false;
+    let mut zero_terminated: bool = false;
+    let mut ignore_nonprinting: bool = false;
+    let mut keydef: str = "";
+    let mut field_separator: i32 = 0i32;
+    let mut files: [256]str;
+    let mut file_count: usize = 0usize;
+    let mut i: usize = start;
+    let mut options_done: bool = false;
+    while (i < argc) {
+        let arg: str = args::argat(i);
+        if (!options_done && arg == "--") { options_done = true; i += 1usize; continue; };
+        if (!options_done && arg.len > 2usize && arg[0usize..2usize] == "--") {
+            let key: str = longkey(arg);
+            if (key == "--reverse" || is_prefix(key, "--reverse")) { reverse = true; i += 1usize; continue; };
+            if (key == "--unique" || is_prefix(key, "--unique")) { unique = true; i += 1usize; continue; };
+            if (key == "--ignore-leading-blanks" || is_prefix(key, "--ignore-leading-blanks")) { ignore_blanks = true; i += 1usize; continue; };
+            if (key == "--dictionary-order" || is_prefix(key, "--dictionary-order")) { dictionary = true; i += 1usize; continue; };
+            if (key == "--ignore-case" || is_prefix(key, "--ignore-case")) { fold = true; i += 1usize; continue; };
+            if (key == "--ignore-nonprinting" || is_prefix(key, "--ignore-nonprinting")) { ignore_nonprinting = true; i += 1usize; continue; };
+            if (key == "--numeric-sort" || is_prefix(key, "--numeric-sort")) { numeric = true; i += 1usize; continue; };
+            if (key == "--general-numeric-sort" || is_prefix(key, "--general-numeric-sort")) { general_numeric = true; i += 1usize; continue; };
+            if (key == "--month-sort" || is_prefix(key, "--month-sort")) { month = true; i += 1usize; continue; };
+            if (key == "--stable" || is_prefix(key, "--stable")) { stable = true; i += 1usize; continue; };
+            if (key == "--zero-terminated" || is_prefix(key, "--zero-terminated")) { zero_terminated = true; i += 1usize; continue; };
+            if (key == "--key" || is_prefix(key, "--key")) {
+                if (arg.len == key.len && i + 1usize >= argc) { c::fprintf(c::stderr, "sort: option '--key' requires an argument\n"); usage_error(); return 2; };
+                if (arg.len > key.len) { keydef = arg[key.len + 1usize..arg.len]; i += 1usize; }
+                else { keydef = args::argat(i + 1usize); i += 2usize; };
+                apply_key_options(key, &mut reverse, &mut ignore_blanks, &mut dictionary,
+                    &mut fold, &mut numeric, &mut general_numeric, &mut month, &mut ignore_nonprinting);
+                continue;
+            };
+            if (key == "--field-separator" || is_prefix(key, "--field-separator")) {
+                if (arg.len == key.len && i + 1usize >= argc) { c::fprintf(c::stderr, "sort: option '--field-separator' requires an argument\n"); usage_error(); return 2; };
+                let mut sep: str = "";
+                if (arg.len > key.len) { sep = arg[key.len + 1usize..arg.len]; i += 1usize; }
+                else { sep = args::argat(i + 1usize); i += 2usize; };
+                if (sep.len != 1usize) { c::fprintf(c::stderr, "sort: field separator must be a single character\n"); usage_error(); return 2; };
+                field_separator = sep.data[0usize] as i32; continue;
+            };
+            if (key == "--sort") {
+                if (arg.len == key.len && i + 1usize < argc) { i += 1usize; }
+                else if (arg.len == key.len) { c::fprintf(c::stderr, "sort: option '--sort' requires an argument\n"); usage_error(); return 2; };
+                let mut value: str = args::argat(i);
+                if (arg.len > key.len) { value = arg[key.len + 1usize..arg.len]; };
+                if (value == "numeric") { numeric = true; }
+                else if (value == "general-numeric") { general_numeric = true; }
+                else if (value == "month") { month = true; }
+                else { c::fprintf(c::stderr, "sort: invalid argument '%s' for '--sort'\n", value); usage_error(); return 2; };
+                i += 1usize; continue;
+            };
+            if (key == "--help" || is_prefix(key, "--help")) { help(); stream::finishoutput("sort"); return 0; };
+            if (key == "--version" || is_prefix(key, "--version")) { io::println("sort (zovutils) 0.1.192"); stream::finishoutput("sort"); return 0; };
+            c::fprintf(c::stderr, "sort: unrecognized option '%s'\n", arg); usage_error(); return 2;
+        };
+        if (!options_done && arg.len > 1usize && arg.data[0usize] == 45u8) {
+            let mut j: usize = 1usize;
+            while (j < arg.len) {
+                let option: u8 = arg.data[j];
+                if (option == 114u8) { reverse = true; }
+                else if (option == 117u8) { unique = true; }
+                else if (option == 98u8) { ignore_blanks = true; }
+                else if (option == 100u8) { dictionary = true; }
+                else if (option == 102u8) { fold = true; }
+                else if (option == 110u8) { numeric = true; }
+                else if (option == 103u8) { general_numeric = true; }
+                else if (option == 77u8) { month = true; }
+                else if (option == 115u8) { stable = true; }
+                else if (option == 122u8) { zero_terminated = true; }
+                else if (option == 105u8) { ignore_nonprinting = true; }
+                else if (option == 107u8 || option == 116u8) {
+                    let mut value: str = "";
+                    if (j + 1usize < arg.len) { value = arg[j + 1usize..arg.len]; }
+                    else if (i + 1usize < argc) { i += 1usize; value = args::argat(i); }
+                    else { c::fprintf(c::stderr, "sort: option requires an argument -- '%c'\n", option as i32); usage_error(); return 2; };
+                    if (option == 107u8) {
+                        keydef = value;
+                        apply_key_options(value, &mut reverse, &mut ignore_blanks, &mut dictionary,
+                            &mut fold, &mut numeric, &mut general_numeric, &mut month, &mut ignore_nonprinting);
+                    }
+                    else {
+                        if (value.len != 1usize) { c::fprintf(c::stderr, "sort: field separator must be a single character\n"); usage_error(); return 2; };
+                        field_separator = value.data[0usize] as i32;
+                    };
+                    j = arg.len; continue;
+                }
+                else { c::fprintf(c::stderr, "sort: invalid option -- '%c'\n", option as i32); usage_error(); return 2; };
+                j += 1usize;
+            };
+            i += 1usize; continue;
+        };
+        if (file_count >= 256usize) { c::fprintf(c::stderr, "sort: too many input files\n"); return 2; };
+        files[file_count] = arg; file_count += 1usize; i += 1usize;
+    };
+    if (file_count == 0usize) { files[0usize] = "-"; file_count = 1usize; };
+    let mut paths: [256]*i8;
+    for (let fi in 0usize..file_count) { paths[fi] = files[fi].data as *i8; };
+    return backend::zov_sort_run(file_count, ((&paths[0usize]) as **i8), reverse as i32,
+        unique as i32, ignore_blanks as i32, dictionary as i32, fold as i32,
+        numeric as i32, general_numeric as i32, month as i32, stable as i32,
+        zero_terminated as i32, keydef.data as *i8, field_separator, ignore_nonprinting as i32);
+};

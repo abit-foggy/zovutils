@@ -16,6 +16,7 @@ use commands::printf;
 use commands::pwd;
 use commands::seq as sequence;
 use commands::sleep as sleeper;
+use commands::sort;
 use commands::test_cmd as testcmd;
 use commands::tail;
 use commands::true_cmd;
@@ -47,6 +48,7 @@ fn dispatch(name: str, start: usize, argc: usize) i32 = {
     if (name == "pwd") { return pwd::run(start, argc); };
     if (name == "seq") { return sequence::run(start, argc); };
     if (name == "sleep") { return sleeper::run(start, argc); };
+    if (name == "sort") { return sort::run(start, argc); };
     if (name == "test") { return testcmd::run(start, argc, false); };
     if (name == "[") { return testcmd::run(start, argc, true); };
     if (name == "tail") { return tail::run(start, argc); };
@@ -66,16 +68,16 @@ export fn main() i32 = {
     };
     if (argc < 2usize) {
         io::println("usage: zovutils <utility> [arguments...]");
-        io::println("utilities: [ basename cat cut dirname echo env false head paste printenv printf pwd seq sleep tail test true wc yes");
+        io::println("utilities: [ basename cat cut dirname echo env false head paste printenv printf pwd seq sleep sort tail test true wc yes");
         return 1;
     };
     if (env::argat(1usize) == "--help" || env::argat(1usize) == "-h") {
         io::println("usage: zovutils <utility> [arguments...]");
-        io::println("utilities: [ basename cat cut dirname echo env false head paste printenv printf pwd seq sleep tail test true wc yes");
+        io::println("utilities: [ basename cat cut dirname echo env false head paste printenv printf pwd seq sleep sort tail test true wc yes");
         return 0;
     };
     if (argc >= 2usize && (env::argat(1usize) == "--version" || env::argat(1usize) == "-V")) {
-        io::println("zovutils 0.1.191 (GNU Coreutils 9.11 compatibility target)");
+        io::println("zovutils 0.1.192 (GNU Coreutils 9.11 compatibility target)");
         return 0;
     };
     return dispatch(env::argat(1usize), 2usize, argc);

@@ -23,6 +23,7 @@ import printf
 import pwd_util
 import seq_util
 import sleep_util
+import sort_util
 import test_util
 import yes_util
 import tail
@@ -43,7 +44,7 @@ def main() -> int:
     suite = Suite(args.zovutils.resolve(), args.gnu_dir.resolve())
     try:
         require_executables(suite)
-        for module in (basename, cat, cut_util, dirname, echo, env, false, head, paste_util, printenv, printf, pwd_util, seq_util, sleep_util, test_util, tail, true, wc, yes_util, fuzz):
+        for module in (basename, cat, cut_util, dirname, echo, env, false, head, paste_util, printenv, printf, pwd_util, seq_util, sleep_util, sort_util, test_util, tail, true, wc, yes_util, fuzz):
             start = suite.count
             module.run(suite)
             print(f"[PASS] {module.__name__}: {suite.count - start} parity cases")
