@@ -32,6 +32,36 @@ static inline int zov_write_output(FILE *output, const void *buffer, size_t leng
         if (restore_direct && fcntl(fileno(output), F_SETFL, flags & ~O_DIRECT) != 0) {
             return 0;
         }
+        if (restore_direct) {
+            int updated_flags = fcntl(fileno(output), F_GETFL);
+            if (updated_flags >= 0 && (updated_flags & O_DIRECT)) {
+                char descriptor_path[64];
+                (void) snprintf(descriptor_path, sizeof descriptor_path,
+                                "/proc/self/fd/%d", fileno(output));
+                int fallback_flags = O_WRONLY | (flags & O_APPEND);
+                int fallback_fd = open(descriptor_path, fallback_flags);
+                off_t position = lseek(fileno(output), 0, SEEK_CUR);
+                if (fallback_fd < 0 || position < 0 ||
+                    lseek(fallback_fd, position, SEEK_SET) < 0) {
+                    if (fallback_fd >= 0) {
+                        (void) close(fallback_fd);
+                    }
+                    return 0;
+                }
+                while (written < length) {
+                    ssize_t count = write(fallback_fd, bytes + written, length - written);
+                    if (count < 0 && errno == EINTR) {
+                        continue;
+                    }
+                    if (count <= 0) {
+                        (void) close(fallback_fd);
+                        return 0;
+                    }
+                    written += (size_t) count;
+                }
+                return close(fallback_fd) == 0;
+            }
+        }
         while (written < length) {
             ssize_t count = write(fileno(output), bytes + written, length - written);
             if (count < 0) {
