@@ -30,6 +30,7 @@ def _follow(
     quiet: bool = False,
     verbose: bool = False,
     count_zero: bool = False,
+    disable_inotify: bool = False,
 ) -> None:
     path = s.path(f"tail-follow-{mode}")
     if not initial_missing:
@@ -60,6 +61,8 @@ def _follow(
         args.append("--quiet")
     if verbose:
         args.append("--verbose")
+    if disable_inotify:
+        args.append("---disable-inotify")
     if initial_missing:
         args.append("--retry")
     child: subprocess.Popen[bytes] | None = None
@@ -171,7 +174,8 @@ def _debug_report(s: Suite) -> None:
     os.symlink(path, alias)
     scenarios = (("descriptor", ["-f"], path, b"initial\n"),
                  ("name", ["--follow=name"], path, b"initial\n"),
-                 ("symlink", ["-f"], alias, b"initial\n"))
+                 ("symlink", ["-f"], alias, b"initial\n"),
+                 ("polling", ["---disable-inotify", "--follow=descriptor"], path, b"initial\n"))
     if Path("/dev/null").exists():
         scenarios += (("character-device", ["-f"], "/dev/null", b""),)
     for label, follow_options, source, expected_output in scenarios:
@@ -633,6 +637,7 @@ def run(s: Suite) -> None:
                     )
 
     _follow(s, "descriptor")
+    _follow(s, "descriptor-polling", disable_inotify=True)
     _follow(s, "descriptor-zero", count_zero=True)
     _follow(s, "descriptor-truncate", truncation=True)
     _follow(s, "descriptor-multi", multi_file=True)
@@ -645,6 +650,7 @@ def run(s: Suite) -> None:
     _follow(s, "name")
     _follow(s, "name-abbrev")
     _follow(s, "name-rotation", rotation=True)
+    _follow(s, "name-polling-rotation", rotation=True, disable_inotify=True)
     _follow(s, "F-rotation", rotation=True)
     _follow(s, "name-retry", initial_missing=True)
     _follow(s, "descriptor-pid", pid_bound=True)
