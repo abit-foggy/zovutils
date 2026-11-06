@@ -3,12 +3,76 @@
 import locale
 import os
 import random
+import select
 import subprocess
+import time
+from pathlib import Path
 
 from support import Suite
 
 
+def _parallel_output_case(s: Suite) -> None:
+    groups: list[list[str]] = [[], []]
+    for group, prefix in enumerate(("wc-parallel-a", "wc-parallel-b")):
+        for index in range(600):
+            path = s.path(f"{prefix}-{index:04d}-" + "x" * 100)
+            Path(path).touch()
+            groups[group].append(path)
+
+    outcomes = []
+    for command in (
+        [str(s.zovutils), "wc", "--total=never"],
+        [str(s.gnu_dir / "wc"), "--total=never"],
+    ):
+        read_fd, write_fd = os.pipe()
+        processes = [
+            subprocess.Popen(
+                [*command, *paths],
+                stdout=write_fd,
+                stderr=subprocess.PIPE,
+                env=s.env,
+            )
+            for paths in groups
+        ]
+        os.close(write_fd)
+        data = bytearray()
+        deadline = time.monotonic() + 15
+        try:
+            while True:
+                ready, _, _ = select.select([read_fd], [], [], max(0, deadline - time.monotonic()))
+                if not ready:
+                    raise AssertionError("wc parallel output timed out")
+                chunk = os.read(read_fd, 65536)
+                if not chunk:
+                    break
+                data.extend(chunk)
+        finally:
+            os.close(read_fd)
+        results = []
+        for process in processes:
+            try:
+                _, stderr = process.communicate(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                _, stderr = process.communicate()
+                raise AssertionError("wc parallel writer did not exit")
+            results.append((process.returncode, stderr))
+        records = data.splitlines()
+        malformed = [line for line in records if len(line.split()) != 4 or line.split()[:3] != [b"0", b"0", b"0"]]
+        expected_paths = {os.fsencode(path) for paths in groups for path in paths}
+        actual_paths = {bytes(line.split()[-1]) for line in records if len(line.split()) == 4}
+        if any(status != 0 or stderr for status, stderr in results):
+            raise AssertionError(f"wc parallel writers failed: {results!r}")
+        if malformed or len(records) != 1200 or actual_paths != expected_paths:
+            raise AssertionError(f"wc parallel output was interleaved: {len(records)} records, {malformed[:3]!r}")
+        outcomes.append(sorted(records))
+    s.count += 1
+    if outcomes[0] != outcomes[1]:
+        raise AssertionError("wc parallel output records differ from GNU")
+
+
 def run(s: Suite) -> None:
+    _parallel_output_case(s)
     posixly_file = s.fixture("wc-posixly", b"one\ntwo\n")
     s.case("wc", ["-l", posixly_file], extra_env={"POSIXLY_CORRECT": "1"})
     s.case("wc", [posixly_file, "-l"], extra_env={"POSIXLY_CORRECT": ""})

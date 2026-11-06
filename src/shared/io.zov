@@ -79,6 +79,22 @@ export fn writebytes(fp: *c::FILE, buf: *u8, len: usize) bool = {
     return true;
 };
 
+// Write short records through one descriptor write so concurrent writers to
+// a pipe cannot interleave records that fit within POSIX's minimum PIPE_BUF.
+export fn writeatomic(fp: *c::FILE, buf: *u8, len: usize) bool = {
+    let mut done: usize = 0usize;
+    while (done < len) {
+        let count: i64 = posix::write(c::fileno(fp), ((&buf[done]) as *void), len - done) as i64;
+        if (count < 0i64) {
+            if (platform_errno::zov_errno_interrupted() != 0i32) { continue; };
+            return false;
+        };
+        if (count == 0i64) { return false; };
+        done += count as usize;
+    };
+    return true;
+};
+
 export fn putbyte(fp: *c::FILE, b: u8) bool = {
     return c::fputc(b as i32, fp) != -1;
 };
