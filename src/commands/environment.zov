@@ -129,7 +129,7 @@ fn assignment(arg: str) bool = {
 fn assign(arg: str) bool = {
     for (let j in 0usize..arg.len) {
         if (arg.data[j] == 61u8) {
-            if (j == 0usize || process::zov_env_assign(arg.data as *i8, j) != 0i32) { return false; };
+            if (j == 0usize || process::zov_env_assign(arg.data as *i8) != 0i32) { return false; };
             return true;
         };
     };
@@ -334,7 +334,7 @@ export fn run(start: usize, argc: usize) i32 = {
             };
             if (longprefix(arg, "--version")) {
                 if (longhasvalue(arg)) { badlongargument("--version"); return 125; };
-                io::println("env (zovutils) 0.1.176");
+                io::println("env (zovutils) 0.1.177");
                 if (!stream::finishoutput("env")) { return 125; };
                 return 0;
             };

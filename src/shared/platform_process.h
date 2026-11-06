@@ -16,16 +16,8 @@
 
 extern char **environ;
 
-static inline int zov_env_assign(const char *assignment, size_t equal) {
-    char *name = (char *)malloc(equal + 1);
-    if (name == NULL) {
-        return -1;
-    }
-    memcpy(name, assignment, equal);
-    name[equal] = '\0';
-    int result = setenv(name, assignment + equal + 1, 1);
-    free(name);
-    return result;
+static inline int zov_env_assign(const char *assignment) {
+    return putenv((char *)assignment);
 }
 
 static inline int zov_get_errno(void) {
