@@ -22,19 +22,29 @@ static inline void *zov_alloc_write_buffer(void) {
     return zov_alloc_read_buffer();
 }
 
-static inline int zov_prepare_direct_output(FILE *output) {
+static inline int zov_write_output(FILE *output, const void *buffer, size_t length) {
 #ifdef O_DIRECT
     int flags = fcntl(fileno(output), F_GETFL);
     if (flags >= 0 && (flags & O_DIRECT)) {
-        if (fflush(output) != 0) {
-            return 0;
+        const unsigned char *bytes = (const unsigned char *) buffer;
+        size_t written = 0;
+        while (written < length) {
+            ssize_t count = write(fileno(output), bytes + written, length - written);
+            if (count < 0) {
+                if (errno == EINTR) {
+                    continue;
+                }
+                return 0;
+            }
+            if (count == 0) {
+                return 0;
+            }
+            written += (size_t) count;
         }
-        return setvbuf(output, NULL, _IONBF, 0) == 0;
+        return 1;
     }
-#else
-    (void) output;
 #endif
-    return 1;
+    return fwrite(buffer, 1, length, output) == length;
 }
 
 static inline void zov_free_read_buffer(void *buffer) {
