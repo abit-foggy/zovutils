@@ -28,18 +28,31 @@ static inline int zov_write_output(FILE *output, const void *buffer, size_t leng
     if (flags >= 0 && (flags & O_DIRECT)) {
         const unsigned char *bytes = (const unsigned char *) buffer;
         size_t written = 0;
+        int restore_direct = length < 65536;
+        if (restore_direct && fcntl(fileno(output), F_SETFL, flags & ~O_DIRECT) != 0) {
+            return 0;
+        }
         while (written < length) {
             ssize_t count = write(fileno(output), bytes + written, length - written);
             if (count < 0) {
                 if (errno == EINTR) {
                     continue;
                 }
+                if (restore_direct) {
+                    (void) fcntl(fileno(output), F_SETFL, flags);
+                }
                 return 0;
             }
             if (count == 0) {
+                if (restore_direct) {
+                    (void) fcntl(fileno(output), F_SETFL, flags);
+                }
                 return 0;
             }
             written += (size_t) count;
+        }
+        if (restore_direct && fcntl(fileno(output), F_SETFL, flags) != 0) {
+            return 0;
         }
         return 1;
     }

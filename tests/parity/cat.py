@@ -179,7 +179,7 @@ def run(s: Suite) -> None:
     split_lf = s.fixture("split-lf", b"\nend")
     split_blank = s.fixture("split-blank", b"\nlast\n")
     unusual_name = s.fixture("cat-line\nbreak", b"name with newline\n")
-    invalid_byte_name = s.fixture("cat-invalid-\udcff", b"name with invalid byte\n")
+    invalid_byte_name = s.byte_name_fixture("cat-invalid-\udcff", b"name with invalid byte\n")
     missing_unusual = s.path("cat-missing-line\nbreak")
     missing_quote_control = s.path("cat-missing-'line\nbreak")
     unreadable = s.fixture("cat-unreadable", b"unreadable\n")

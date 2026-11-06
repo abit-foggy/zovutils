@@ -77,7 +77,7 @@ def run(s: Suite) -> None:
         s.case("head", ["--lines=-" + str(count), line_boundary])
     missing = s.path("head-missing")
     unusual_name = s.fixture("head-line\nbreak", b"name with newline\n")
-    invalid_byte_name = s.fixture("head-invalid-\udcff", b"name with invalid byte\n")
+    invalid_byte_name = s.byte_name_fixture("head-invalid-\udcff", b"name with invalid byte\n")
     missing_unusual = s.path("head-missing-line\nbreak")
     missing_quote_control = s.path("head-missing-'line\nbreak")
     unreadable = s.fixture("head-unreadable", b"unreadable\n")

@@ -153,7 +153,7 @@ def run(s: Suite) -> None:
     empty_files0 = s.fixture("wc-files0-empty", b"")
     unterminated_files0 = s.fixture("wc-files0-unterminated", (text + "\0" + binary).encode())
     unusual_name = s.fixture("wc-line\nbreak", b"name with newline\n")
-    invalid_byte_name = s.fixture("wc-invalid-\udcff", b"name with invalid byte\n")
+    invalid_byte_name = s.byte_name_fixture("wc-invalid-\udcff", b"name with invalid byte\n")
     quote_control_name = s.fixture("wc-quote'\nbreak", b"name with newline\n")
     unusual_files0 = s.fixture("wc-files0-unusual", (unusual_name + "\0").encode())
     missing_unusual = s.path("wc-missing-line\nbreak")

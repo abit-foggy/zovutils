@@ -45,6 +45,13 @@ class Suite:
         path.write_bytes(data)
         return str(path)
 
+    def byte_name_fixture(self, name: str, data: bytes) -> str:
+        # macOS filesystems reject non-UTF-8 names, but the invalid-byte argv
+        # behavior can still be compared using a path that does not exist.
+        if sys.platform == "darwin":
+            return self.path(name)
+        return self.fixture(name, data)
+
     def case(
         self,
         utility: str,
