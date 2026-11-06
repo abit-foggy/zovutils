@@ -149,7 +149,7 @@ export fn run(start: usize, argc: usize) i32 = {
             };
             if (longprefix(arg, "--version")) {
                 if (longhasvalue(arg)) { badlongargument("--version"); return 1; };
-                io::println("basename (zovutils) 0.1.198");
+                io::println("basename (zovutils) 0.1.199");
                 if (!stream::finishoutput("basename")) { return 1; };
                 return 0;
             };

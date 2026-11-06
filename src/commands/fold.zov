@@ -1,0 +1,116 @@
+use std::env as args;
+use std::io;
+use <stdio.h> as c;
+use <fold_backend.h> as backend;
+use shared::io as stream;
+
+fn usage_error() void = { c::fprintf(c::stderr, "Try 'fold --help' for more information.\n"); };
+
+fn longkey(arg: str) str = {
+    for (let i in 0usize..arg.len) { if (arg.data[i] == 61u8) { return arg[0usize..i]; }; };
+    return arg;
+};
+
+fn is_prefix(value: str, full: str) bool = {
+    return value.len > 2usize && value.len <= full.len && value == full[0usize..value.len];
+};
+
+fn parse_width(value: str) usize = {
+    if (value.len == 0usize) { return 0usize; };
+    let mut n: usize = 0usize;
+    for (let i in 0usize..value.len) {
+        let c: u8 = value.data[i];
+        if (c < 48u8 || c > 57u8) { return 0usize; };
+        let digit: usize = (c - 48u8) as usize;
+        if (n > (18446744073709551615usize - digit) / 10usize) { return 0usize; };
+        n = n * 10usize + digit;
+    };
+    return n;
+};
+
+fn width_error(value: str) void = {
+    let parsed: usize = parse_width(value);
+    if (parsed == 0usize && value == "0") { c::fprintf(c::stderr, "fold: invalid number of columns: '%s': Numerical result out of range\n", value); }
+    else { c::fprintf(c::stderr, "fold: invalid number of columns: '%s'\n", value); };
+};
+
+fn help() void = {
+    io::print("Usage: fold [OPTION]... [FILE]...\nWrap input lines in each FILE, writing to standard output.\n\n");
+    io::print("With no FILE, or when FILE is -, read standard input.\n\n");
+    io::print("Mandatory arguments to long options are mandatory for short options too.\n");
+    io::print("  -b, --bytes\n         count bytes rather than columns\n");
+    io::print("  -c, --characters\n         count characters rather than columns\n");
+    io::print("  -s, --spaces\n         break after blanks, or in words greater than WIDTH\n");
+    io::print("  -w, --width=WIDTH\n         use WIDTH columns instead of 80\n");
+    io::print("      --help\n         display this help and exit\n");
+    io::print("      --version\n         output version information and exit\n\n");
+    io::print("Report bugs to: bug-coreutils@gnu.org\nGNU coreutils home page: <https://www.gnu.org/software/coreutils/>\n");
+    io::print("General help using GNU software: <https://www.gnu.org/gethelp/>\nReport any translation bugs to <https://translationproject.org/team/>\n");
+    io::print("Full documentation <https://www.gnu.org/software/coreutils/fold>\nor available locally via: info '(coreutils) fold invocation'\n");
+};
+
+export fn run(start: usize, argc: usize) i32 = {
+    let mut width: usize = 80usize;
+    let mut bytes: bool = false;
+    let mut characters: bool = false;
+    let mut spaces: bool = false;
+    let mut files: [256]str;
+    let mut file_count: usize = 0usize;
+    let mut i: usize = start;
+    let mut options_done: bool = false;
+    while (i < argc) {
+        let arg: str = args::argat(i);
+        if (!options_done && arg == "--") { options_done = true; i += 1usize; continue; };
+        if (!options_done && arg.len > 2usize && arg[0usize..2usize] == "--") {
+            let key: str = longkey(arg);
+            if (key == "--width" || is_prefix(key, "--width")) {
+                let mut value: str = "";
+                if (arg.len > key.len) { value = arg[key.len + 1usize..arg.len]; i += 1usize; }
+                else if (i + 1usize < argc) { value = args::argat(i + 1usize); i += 2usize; }
+                else { c::fprintf(c::stderr, "fold: option '--width' requires an argument\n"); usage_error(); return 1; };
+                width = parse_width(value); if (width == 0usize) { width_error(value); return 1; };
+                continue;
+            };
+            if (key == "--bytes" || is_prefix(key, "--bytes")) { bytes = true; characters = false; i += 1usize; continue; };
+            if (key == "--characters" || is_prefix(key, "--characters")) { characters = true; bytes = false; i += 1usize; continue; };
+            if (key == "--spaces" || is_prefix(key, "--spaces")) { spaces = true; i += 1usize; continue; };
+            if (key == "--help" || is_prefix(key, "--help")) { help(); stream::finishoutput("fold"); return 0; };
+            if (key == "--version" || is_prefix(key, "--version")) { io::println("fold (zovutils) 0.1.199"); stream::finishoutput("fold"); return 0; };
+            c::fprintf(c::stderr, "fold: unrecognized option '%s'\n", arg); usage_error(); return 1;
+        };
+        if (!options_done && arg.len > 1usize && arg.data[0usize] == 45u8) {
+            let mut j: usize = 1usize;
+            while (j < arg.len) {
+                let option: u8 = arg.data[j];
+                if (option == 98u8 || option == 99u8) {
+                    if (option == 98u8) { bytes = true; characters = false; } else { characters = true; bytes = false; };
+                    j += 1usize;
+                    if (j < arg.len && arg.data[j] >= 48u8 && arg.data[j] <= 57u8) {
+                        let value: str = arg[j..arg.len];
+                        width = parse_width(value); if (width == 0usize) { width_error(value); return 1; };
+                        j = arg.len;
+                    };
+                    continue;
+                };
+                if (option == 115u8) { spaces = true; j += 1usize; continue; };
+                if (option == 119u8) {
+                    let mut value: str = "";
+                    if (j + 1usize < arg.len) { value = arg[j + 1usize..arg.len]; }
+                    else if (i + 1usize < argc) { i += 1usize; value = args::argat(i); }
+                    else { c::fprintf(c::stderr, "fold: option requires an argument -- 'w'\n"); usage_error(); return 1; };
+                    width = parse_width(value); if (width == 0usize) { width_error(value); return 1; };
+                    j = arg.len; continue;
+                };
+                c::fprintf(c::stderr, "fold: invalid option -- '%c'\n", option as i32); usage_error(); return 1;
+            };
+            i += 1usize; continue;
+        };
+        if (file_count >= 256usize) { c::fprintf(c::stderr, "fold: too many input files\n"); return 1; };
+        files[file_count] = arg; file_count += 1usize; i += 1usize;
+    };
+    if (file_count == 0usize) { files[0usize] = "-"; file_count = 1usize; };
+    let mut paths: [256]*i8;
+    for (let fi in 0usize..file_count) { paths[fi] = files[fi].data as *i8; };
+    return backend::zov_fold_run(file_count, ((&paths[0usize]) as **i8), width,
+        bytes as i32, characters as i32, spaces as i32);
+};
