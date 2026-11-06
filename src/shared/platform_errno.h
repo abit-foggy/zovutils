@@ -5,6 +5,14 @@
 #include <stdio.h>
 #include <string.h>
 
+static inline int zov_platform_is_apple(void) {
+#ifdef __APPLE__
+    return 1;
+#else
+    return 0;
+#endif
+}
+
 static inline void zov_report_wc_write_error(void) {
     int error = errno;
     if (error == 0) {
