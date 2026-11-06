@@ -20,6 +20,14 @@ static inline void zov_report_wc_write_error(void) {
     }
 }
 
+static inline int zov_finish_wc_output(void) {
+    if (fflush(stdout) != 0 || ferror(stdout) != 0) {
+        zov_report_wc_write_error();
+        return 0;
+    }
+    return 1;
+}
+
 static inline int zov_errno_value(void) {
     return errno;
 }
