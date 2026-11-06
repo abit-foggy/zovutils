@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 import time
 import os
 import resource
@@ -192,6 +193,57 @@ def _debug_report(s: Suite) -> None:
         s.count += 1
         if results[0] != results[1] or results[0][0:2] != (0, expected_output):
             raise ParityFailure(f"tail --debug {label} backend report differs: {results!r}")
+
+
+def _pid_permission_case(s: Suite) -> None:
+    if sys.platform != "linux":
+        return
+    source = s.root / "tail-pid-permission.c"
+    library = s.root / "tail-pid-permission.so"
+    source.write_text(
+        """
+#define _GNU_SOURCE
+#include <dlfcn.h>
+#include <errno.h>
+#include <sys/types.h>
+static int calls;
+int kill(pid_t pid, int signal_number) {
+    static int (*next_kill)(pid_t, int);
+    if (!next_kill) next_kill = dlsym(RTLD_NEXT, "kill");
+    if (pid == 987654 && signal_number == 0) {
+        if (calls++ < 5) { errno = EPERM; return -1; }
+        errno = ESRCH;
+        return -1;
+    }
+    return next_kill(pid, signal_number);
+}
+"""
+    )
+    subprocess.run(
+        ["cc", "-shared", "-fPIC", str(source), "-ldl", "-o", str(library)],
+        check=True,
+        timeout=15,
+    )
+    env = s.env.copy()
+    env["LD_PRELOAD"] = str(library)
+    outcomes = []
+    for command in (
+        [str(s.zovutils), "tail"],
+        [str(s.gnu_dir / "tail")],
+    ):
+        start = time.monotonic()
+        proc = subprocess.run(
+            [*command, "--follow=descriptor", "--pid=987654", "--sleep-interval=0.04", "/dev/null"],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=env,
+            timeout=3,
+            check=False,
+        )
+        outcomes.append((proc.returncode, proc.stdout, proc.stderr, time.monotonic() - start))
+    s.count += 1
+    if outcomes[0][:3] != outcomes[1][:3] or any(result[3] < 0.12 for result in outcomes):
+        raise ParityFailure(f"tail --pid EPERM handling differs: {outcomes!r}")
 
 
 def _follow_write_failure(s: Suite) -> None:
@@ -598,3 +650,4 @@ def run(s: Suite) -> None:
     _follow(s, "descriptor-pid", pid_bound=True)
     _follow_write_failure(s)
     _debug_report(s)
+    _pid_permission_case(s)

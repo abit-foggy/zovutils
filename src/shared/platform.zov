@@ -1,8 +1,10 @@
 use std::time as time;
 use <signal.h> as signal;
+use <platform_errno.h> as platform_errno;
 
 export fn process_alive(pid: i32) bool = {
-    return signal::kill(pid, 0) == 0;
+    let result: i32 = signal::kill(pid, 0);
+    return result == 0i32 || platform_errno::zov_errno_permission_denied() != 0i32;
 };
 
 export fn sleep(seconds: f64) void = {
