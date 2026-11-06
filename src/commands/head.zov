@@ -106,7 +106,7 @@ fn copyhead(fp: *c::FILE, count: usize, bytes: bool, delim: u8, input_limit: i64
             if (left < want) { want = left; };
         };
         let mut read_count: i64 = 0i64;
-        if (input_limit >= 0i64) {
+        if (input_limit >= 0i64 || input_position >= 0i64) {
             read_count = stream::readbytes(fp, ((&buf[0usize]) as *u8), want) as i64;
         } else { read_count = stream::readonce(fp, ((&buf[0usize]) as *u8), want); };
         if (read_count == 0i64) {
@@ -258,7 +258,7 @@ export fn run(start: usize, argc: usize) i32 = {
             };
             if (longmatch(key, "--version")) {
                 if (has_equal) { badargument("--version"); return 1; };
-                io::println("head (zovutils) 0.1.140"); if (!stream::finishoutput("head")) { return 1; }; return 0;
+                io::println("head (zovutils) 0.1.141"); if (!stream::finishoutput("head")) { return 1; }; return 0;
             };
             badlong(arg); return 1;
         };
