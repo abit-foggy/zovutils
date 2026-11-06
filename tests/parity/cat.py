@@ -18,7 +18,48 @@ def _limit_output_file() -> None:
     signal.signal(signal.SIGXFSZ, signal.SIG_IGN)
 
 
+def _nonblocking_input_cases(s: Suite) -> None:
+    if sys.platform != "linux":
+        return
+
+    results = []
+    for command in (
+        [str(s.zovutils), "cat"],
+        [str(s.gnu_dir / "cat")],
+    ):
+        modes = []
+        for options in ((), ("-n",), ("-v",)):
+            read_fd, write_fd = os.pipe()
+            os.set_blocking(read_fd, False)
+            os.write(write_fd, b"available\nbytes\xff")
+            try:
+                proc = subprocess.Popen(
+                    [*command, *options],
+                    stdin=read_fd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    env=s.env,
+                )
+            finally:
+                os.close(read_fd)
+            try:
+                stdout, stderr = proc.communicate(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.communicate()
+                raise AssertionError("cat did not stop at EAGAIN")
+            finally:
+                os.close(write_fd)
+            modes.append((proc.returncode, stdout, stderr))
+        results.append(modes)
+
+    s.count += 3
+    if results[0] != results[1]:
+        raise AssertionError(f"cat nonblocking-input behavior differs: {results!r}")
+
+
 def run(s: Suite) -> None:
+    _nonblocking_input_cases(s)
     empty = s.fixture("empty", b"")
     text = s.fixture("text", b"alpha\nbeta\n\ngamma\n")
     lines = s.fixture("lines", b"one\ntwo\nthree\nfour\n")
