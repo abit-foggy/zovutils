@@ -113,6 +113,9 @@ def run(s: Suite) -> None:
     posixly_file = s.fixture("wc-posixly", b"one\ntwo\n")
     s.case("wc", ["-l", posixly_file], extra_env={"POSIXLY_CORRECT": "1"})
     s.case("wc", [posixly_file, "-l"], extra_env={"POSIXLY_CORRECT": ""})
+    posix_nonbreaking = s.fixture("wc-posix-nbsp", b"a\xa0b")
+    s.case("wc", ["-w", posix_nonbreaking])
+    s.case("wc", ["-w", posix_nonbreaking], extra_env={"POSIXLY_CORRECT": "1"})
     s.product_version("wc")
     empty = s.fixture("wc-empty", b"")
     text = s.fixture("wc-text", b"alpha\nbeta\n\ngamma\n")
@@ -509,6 +512,11 @@ def run(s: Suite) -> None:
         for fixture in utf8_fixtures:
             for flags in ("-m", "-w", "-L", "-wmL"):
                 s.case("wc", [flags, fixture], extra_env=utf8)
+        s.case(
+            "wc",
+            ["-w", utf8_fixtures[3]],
+            extra_env={**utf8, "POSIXLY_CORRECT": "1"},
+        )
         s.case("wc", ["-wmL", utf8_fixtures[0], utf8_fixtures[2]], extra_env=utf8)
         s.case(
             "wc",

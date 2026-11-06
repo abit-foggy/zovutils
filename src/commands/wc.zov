@@ -29,10 +29,12 @@ fn singlebyte_c_locale() bool = {
     return strc::strcmp(current!, "C") == 0 || strc::strcmp(current!, "POSIX") == 0;
 };
 
-fn consume(character: i32, out: &mut Counts, linebytes: &mut usize, inword: &mut bool) void = {
+fn consume(character: i32, out: &mut Counts, linebytes: &mut usize, inword: &mut bool,
+           posixly_correct: bool) void = {
     out.chars += 1usize;
-    if (wctype::iswspace(character as u32) != 0 || character == 160i32
-        || character == 8199i32 || character == 8239i32 || character == 8288i32) { *inword = false; }
+    if (wctype::iswspace(character as u32) != 0 || (!posixly_correct
+        && (character == 160i32 || character == 8199i32 || character == 8239i32
+            || character == 8288i32))) { *inword = false; }
     else if (!*inword) { out.words += 1usize; *inword = true; };
     if (character == 10i32) {
         out.lines += 1usize;
@@ -49,7 +51,7 @@ fn consume(character: i32, out: &mut Counts, linebytes: &mut usize, inword: &mut
 };
 
 fn scan(fp: *c::FILE, out: &mut Counts, singlebyte_c: bool, line_fast: bool,
-        chars: bool, debug: bool, backend_reported: &mut bool) bool = {
+        chars: bool, debug: bool, posixly_correct: bool, backend_reported: &mut bool) bool = {
     out.lines = 0usize; out.words = 0usize; out.chars = 0usize; out.bytes = 0usize; out.maxline = 0usize;
     if (debug && line_fast && !*backend_reported) {
         let backend: i32 = stream::wcnewlinebackend();
@@ -90,7 +92,7 @@ fn scan(fp: *c::FILE, out: &mut Counts, singlebyte_c: bool, line_fast: bool,
                     linebytes = 0usize;
                 } else if (b == 9u8) { linebytes += 8usize - (linebytes % 8usize); }
                 else if (b >= 32u8 && b < 128u8 && b != 127u8) { linebytes += 1usize; };
-                if (ct::isspace(b as i32) != 0 || b == 160u8) { inword = false; }
+                if (ct::isspace(b as i32) != 0 || (!posixly_correct && b == 160u8)) { inword = false; }
                 else if (!inword) { out.words += 1usize; inword = true; };
             };
             continue;
@@ -113,7 +115,7 @@ fn scan(fp: *c::FILE, out: &mut Counts, singlebyte_c: bool, line_fast: bool,
                 continue;
             };
             pending = 0usize;
-            consume(character, out, &mut linebytes, &mut inword);
+            consume(character, out, &mut linebytes, &mut inword, posixly_correct);
             i += 1usize;
         };
     };
@@ -398,7 +400,7 @@ export fn run(start: usize, argc: usize) i32 = {
             else if (longmatch(key, "--max-line-length")) { maxline = true; }
             else if (longmatch(key, "--debug")) { debug = true; }
             else if (longmatch(key, "--help")) { help(); if (!stream::finishoutputbrief("wc")) { return 1; }; return 0; }
-            else if (longmatch(key, "--version")) { io::println("wc (zovutils) 0.1.117"); if (!stream::finishoutputbrief("wc")) { return 1; }; return 0; };
+            else if (longmatch(key, "--version")) { io::println("wc (zovutils) 0.1.119"); if (!stream::finishoutputbrief("wc")) { return 1; }; return 0; };
             i += 1usize; continue;
         };
         if (arg.len >= 2usize && arg.data[1usize] != 45u8) {
@@ -504,8 +506,8 @@ export fn run(start: usize, argc: usize) i32 = {
         if (bytes && !lines && !words && !chars && !maxline) {
             let remaining: i64 = stream::regularbytesremaining(c::stdin);
             if (remaining >= 0i64) { v.bytes = remaining as usize; }
-            else { scanned = scan(c::stdin, &mut v, singlebyte_c, line_fast, chars, debug, &mut backend_reported); };
-        } else { scanned = scan(c::stdin, &mut v, singlebyte_c, line_fast, chars, debug, &mut backend_reported); };
+            else { scanned = scan(c::stdin, &mut v, singlebyte_c, line_fast, chars, debug, posixly_correct, &mut backend_reported); };
+        } else { scanned = scan(c::stdin, &mut v, singlebyte_c, line_fast, chars, debug, posixly_correct, &mut backend_reported); };
         if (!scanned) { stream::errorprefix("wc", "standard input"); status = 1; };
         let mut width: usize = 1usize;
         if (seekable) {
@@ -554,8 +556,8 @@ export fn run(start: usize, argc: usize) i32 = {
             if (bytes && !lines && !words && !chars && !maxline) {
                 let remaining: i64 = stream::regularbytesremaining(fp);
                 if (remaining >= 0i64) { v.bytes = remaining as usize; }
-                else { scanned = scan(fp, &mut v, singlebyte_c, line_fast, chars, debug, &mut backend_reported); };
-            } else { scanned = scan(fp, &mut v, singlebyte_c, line_fast, chars, debug, &mut backend_reported); };
+                else { scanned = scan(fp, &mut v, singlebyte_c, line_fast, chars, debug, posixly_correct, &mut backend_reported); };
+            } else { scanned = scan(fp, &mut v, singlebyte_c, line_fast, chars, debug, posixly_correct, &mut backend_reported); };
             if (scanned) {
                 counts.push(v); names.push(path);
                 if (saturating_add(&mut total.lines, v.lines)) { total_lines_overflow = true; };

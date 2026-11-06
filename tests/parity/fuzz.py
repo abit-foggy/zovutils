@@ -55,7 +55,8 @@ def run(s: Suite) -> None:
         for option in options:
             args.insert(rng.randrange(len(args) + 1), option)
         stdin = bytes(rng.randrange(256) for _ in range(rng.randrange(100)))
-        s.case("cat", args, stdin=stdin)
+        posix_env = rng.choice((None, {"POSIXLY_CORRECT": ""}, {"POSIXLY_CORRECT": "1"}))
+        s.case("cat", args, stdin=stdin, extra_env=posix_env)
 
     suffix_fixture = fixtures[0]
     for suffix in [*(chr(codepoint) for codepoint in range(1, 128)), "é"]:
@@ -119,4 +120,17 @@ def run(s: Suite) -> None:
             for option in options:
                 args.insert(rng.randrange(len(args) + 1), option)
             stdin = bytes(rng.randrange(256) for _ in range(rng.randrange(100)))
-            s.case(utility, args, stdin=stdin)
+            posix_env = rng.choice((None, {"POSIXLY_CORRECT": ""}, {"POSIXLY_CORRECT": "1"}))
+            s.case(utility, args, stdin=stdin, extra_env=posix_env)
+
+    wc_flags = (
+        "-l", "-w", "-m", "-c", "-L", "--total=auto", "--total=always", "--total=never"
+    )
+    for _ in range(300):
+        operands = rng.choices(fixtures, k=rng.randrange(1, 6))
+        options = rng.sample(wc_flags, rng.randrange(1, 5))
+        args = list(operands)
+        for option in options:
+            args.insert(rng.randrange(len(args) + 1), option)
+        posix_env = rng.choice((None, {"POSIXLY_CORRECT": ""}, {"POSIXLY_CORRECT": "1"}))
+        s.case("wc", args, extra_env=posix_env)
