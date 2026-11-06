@@ -71,6 +71,43 @@ def _parallel_output_case(s: Suite) -> None:
         raise AssertionError("wc parallel output records differ from GNU")
 
 
+def _nonblocking_utf8_input_cases(s: Suite, utf8: dict[str, str]) -> None:
+    results = []
+    for command in (
+        [str(s.zovutils), "wc"],
+        [str(s.gnu_dir / "wc")],
+    ):
+        modes = []
+        for options in (("-L",), ("-wmL",)):
+            read_fd, write_fd = os.pipe()
+            os.set_blocking(read_fd, False)
+            os.write(write_fd, "café".encode())
+            try:
+                proc = subprocess.Popen(
+                    [*command, *options],
+                    stdin=read_fd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    env={**s.env, **utf8},
+                )
+            finally:
+                os.close(read_fd)
+            try:
+                stdout, stderr = proc.communicate(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.communicate()
+                raise AssertionError("wc did not stop after nonblocking input")
+            finally:
+                os.close(write_fd)
+            modes.append((proc.returncode, stdout, stderr))
+        results.append(modes)
+
+    s.count += 2
+    if results[0] != results[1]:
+        raise AssertionError(f"wc nonblocking UTF-8 behavior differs: {results!r}")
+
+
 def run(s: Suite) -> None:
     _parallel_output_case(s)
     posixly_file = s.fixture("wc-posixly", b"one\ntwo\n")
@@ -455,6 +492,7 @@ def run(s: Suite) -> None:
             "LC_ALL": utf8_locale,
             "LANG": utf8_locale,
         }
+        _nonblocking_utf8_input_cases(s, utf8)
         utf8_fixtures = (
             s.fixture("wc-utf8-mixed", "é\u3000中\n".encode()),
             s.fixture("wc-utf8-combining", "e\u0301x\n".encode()),
