@@ -1,0 +1,134 @@
+use std::env as args;
+use std::io;
+use <stdio.h> as c;
+use <uniq_backend.h> as backend;
+use shared::io as stream;
+
+fn usage_error() void = { c::fprintf(c::stderr, "Try 'uniq --help' for more information.\n"); };
+
+fn longkey(arg: str) str = {
+    for (let i in 0usize..arg.len) { if (arg.data[i] == 61u8) { return arg[0usize..i]; }; };
+    return arg;
+};
+
+fn is_prefix(value: str, full: str) bool = {
+    return value.len > 2usize && value.len <= full.len && value == full[0usize..value.len];
+};
+
+fn parse_count(value: str, out: &mut usize) bool = {
+    return backend::zov_uniq_parse_count(value.data as *i8, out) == 0i32;
+};
+
+fn help() void = {
+    io::print("Usage: uniq [OPTION]... [INPUT [OUTPUT]]\n");
+    io::print("Filter adjacent matching lines from INPUT (or standard input),\nwriting to OUTPUT (or standard output).\n\n");
+    io::print("With no options, matching lines are merged to the first occurrence.\n\n");
+    io::print("Mandatory arguments to long options are mandatory for short options too.\n");
+    io::print("  -c, --count\n         prefix lines by the number of occurrences\n");
+    io::print("  -d, --repeated\n         only print duplicate lines, one for each group\n");
+    io::print("  -D\n         print all duplicate lines\n");
+    io::print("      --all-repeated[=METHOD]\n         like -D, but allow separating groups with an empty line;\n         METHOD=");
+    c::fputc(123i32, c::stdout); io::print("none(default),prepend,separate"); c::fputc(125i32, c::stdout); io::print("\n");
+    io::print("  -f, --skip-fields=N\n         avoid comparing the first N fields\n");
+    io::print("      --group[=METHOD]\n         show all items, separating groups with an empty line;\n         METHOD=");
+    c::fputc(123i32, c::stdout); io::print("separate(default),prepend,append,both"); c::fputc(125i32, c::stdout); io::print("\n");
+    io::print("  -i, --ignore-case\n         ignore differences in case when comparing\n");
+    io::print("  -s, --skip-chars=N\n         avoid comparing the first N characters\n");
+    io::print("  -u, --unique\n         only print unique lines\n");
+    io::print("  -z, --zero-terminated\n         line delimiter is NUL, not newline\n");
+    io::print("  -w, --check-chars=N\n         compare no more than N characters in lines\n");
+    io::print("      --help\n         display this help and exit\n");
+    io::print("      --version\n         output version information and exit\n\n");
+    io::print("A field is a run of blanks (usually spaces and/or TABs), then non-blank\ncharacters.  Fields are skipped before chars.\n\n");
+    io::print("'uniq' does not detect repeated lines unless they are adjacent.\n");
+    io::print("You may want to sort the input first, or use 'sort -u' without 'uniq'.\n\n");
+    io::print("Report bugs to: bug-coreutils@gnu.org\n");
+    io::print("GNU coreutils home page: <https://www.gnu.org/software/coreutils/>\n");
+    io::print("General help using GNU software: <https://www.gnu.org/gethelp/>\n");
+    io::print("Report any translation bugs to <https://translationproject.org/team/>\n");
+    io::print("Full documentation <https://www.gnu.org/software/coreutils/uniq>\n");
+    io::print("or available locally via: info '(coreutils) uniq invocation'\n");
+};
+
+export fn run(start: usize, argc: usize) i32 = {
+    let mut count_mode: bool = false;
+    let mut duplicates: bool = false;
+    let mut only_unique: bool = false;
+    let mut all_repeated: bool = false;
+    let mut ignore_case: bool = false;
+    let mut skip_fields: usize = 0usize;
+    let mut skip_chars: usize = 0usize;
+    let mut check_chars: usize = 0usize;
+    let mut zero_terminated: bool = false;
+    let mut files: [2]str;
+    let mut file_count: usize = 0usize;
+    let mut i: usize = start;
+    let mut options_done: bool = false;
+    while (i < argc) {
+        let arg: str = args::argat(i);
+        if (!options_done && arg == "--") { options_done = true; i += 1usize; continue; };
+        if (!options_done && arg.len > 2usize && arg[0usize..2usize] == "--") {
+            let key: str = longkey(arg);
+            if (key == "--count" || is_prefix(key, "--count")) { count_mode = true; i += 1usize; continue; };
+            if (key == "--repeated" || is_prefix(key, "--repeated")) { duplicates = true; i += 1usize; continue; };
+            if (key == "--unique" || is_prefix(key, "--unique")) { only_unique = true; i += 1usize; continue; };
+            if (key == "--all-repeated" || is_prefix(key, "--all-repeated")) { all_repeated = true; i += 1usize; continue; };
+            if (key == "--ignore-case" || is_prefix(key, "--ignore-case")) { ignore_case = true; i += 1usize; continue; };
+            if (key == "--zero-terminated" || is_prefix(key, "--zero-terminated")) { zero_terminated = true; i += 1usize; continue; };
+            if (key == "--skip-fields" || key == "--skip-chars" || key == "--check-chars") {
+                if (arg.len == key.len && i + 1usize >= argc) { c::fprintf(c::stderr, "uniq: option '%s' requires an argument\n", key); usage_error(); return 1; };
+                let mut value: str = "";
+                if (arg.len > key.len) { value = arg[key.len + 1usize..arg.len]; i += 1usize; }
+                else { value = args::argat(i + 1usize); i += 2usize; };
+                let mut parsed: usize = 0usize;
+                if (!parse_count(value, &mut parsed)) { c::fprintf(c::stderr, "uniq: invalid number of fields/characters: '%s'\n", value); usage_error(); return 1; };
+                if (key == "--skip-fields") { skip_fields = parsed; }
+                else if (key == "--skip-chars") { skip_chars = parsed; }
+                else { check_chars = parsed; };
+                continue;
+            };
+            if (key == "--help" || is_prefix(key, "--help")) { help(); stream::finishoutput("uniq"); return 0; };
+            if (key == "--version" || is_prefix(key, "--version")) { io::println("uniq (zovutils) 0.1.193"); stream::finishoutput("uniq"); return 0; };
+            c::fprintf(c::stderr, "uniq: unrecognized option '%s'\n", arg); usage_error(); return 1;
+        };
+        if (!options_done && arg.len > 1usize && arg.data[0usize] == 45u8) {
+            let mut j: usize = 1usize;
+            while (j < arg.len) {
+                let option: u8 = arg.data[j];
+                if (option == 99u8) { count_mode = true; j += 1usize; continue; };
+                if (option == 100u8) { duplicates = true; j += 1usize; continue; };
+                if (option == 68u8) { all_repeated = true; j += 1usize; continue; };
+                if (option == 105u8) { ignore_case = true; j += 1usize; continue; };
+                if (option == 117u8) { only_unique = true; j += 1usize; continue; };
+                if (option == 122u8) { zero_terminated = true; j += 1usize; continue; };
+                if (option == 102u8 || option == 115u8 || option == 119u8) {
+                    let mut value: str = "";
+                    if (j + 1usize < arg.len) { value = arg[j + 1usize..arg.len]; }
+                    else if (i + 1usize < argc) { i += 1usize; value = args::argat(i); }
+                    else { c::fprintf(c::stderr, "uniq: option requires an argument -- '%c'\n", option as i32); usage_error(); return 1; };
+                    let mut parsed: usize = 0usize;
+                    if (!parse_count(value, &mut parsed)) { c::fprintf(c::stderr, "uniq: invalid number of fields/characters: '%s'\n", value); usage_error(); return 1; };
+                    if (option == 102u8) { skip_fields = parsed; }
+                    else if (option == 115u8) { skip_chars = parsed; }
+                    else { check_chars = parsed; };
+                    j = arg.len; continue;
+                };
+                c::fprintf(c::stderr, "uniq: invalid option -- '%c'\n", option as i32); usage_error(); return 1;
+            };
+            i += 1usize; continue;
+        };
+        if (file_count >= 2usize) { c::fprintf(c::stderr, "uniq: extra operand '%s'\n", arg); usage_error(); return 1; };
+        files[file_count] = arg; file_count += 1usize; i += 1usize;
+    };
+    let mut input: str = "-";
+    let mut output: str = "";
+    let mut has_output: bool = false;
+    if (file_count > 0usize) { input = files[0usize]; };
+    if (file_count > 1usize) { output = files[1usize]; has_output = true; };
+    let mut paths: [1]*i8;
+    paths[0usize] = input.data as *i8;
+    return backend::zov_uniq_run(1usize, ((&paths[0usize]) as **i8), output.data as *i8,
+        has_output as i32, count_mode as i32, duplicates as i32, only_unique as i32,
+        all_repeated as i32, ignore_case as i32, skip_fields, skip_chars,
+        check_chars, zero_terminated as i32);
+};
