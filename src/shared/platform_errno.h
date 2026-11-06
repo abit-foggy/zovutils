@@ -2,6 +2,18 @@
 #define ZOVUTILS_PLATFORM_ERRNO_H
 
 #include <errno.h>
+#include <stdio.h>
+#include <string.h>
+
+static inline void zov_report_wc_write_error(void) {
+    int error = errno;
+    fprintf(stderr, "wc: write error");
+    if (error != 0) {
+        fprintf(stderr, ": %s\n", strerror(error));
+    } else {
+        fputc('\n', stderr);
+    }
+}
 
 static inline int zov_errno_value(void) {
     return errno;
