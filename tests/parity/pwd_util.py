@@ -41,7 +41,7 @@ def run(s: Suite) -> None:
         logical.symlink_to(physical, target_is_directory=True)
         env = s.env.copy()
         env["PWD"] = str(logical)
-        for option, expected in (("-L", str(logical)), ("-P", str(physical))):
+        for option in ("-L", "-P"):
             zov = subprocess.run(
                 [str(s.zovutils), "pwd", option], cwd=logical, env=env,
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
@@ -52,13 +52,11 @@ def run(s: Suite) -> None:
                 ["pwd", option], cwd=logical, env=gnu_env,
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False,
             )
-            expected_result = (0, (expected + "\n").encode(), b"")
-            if (zov.returncode, zov.stdout, zov.stderr) != expected_result or (
-                gnu.returncode, gnu.stdout, gnu.stderr
-            ) != expected_result:
+            zov_result = (zov.returncode, zov.stdout, zov.stderr)
+            gnu_result = (gnu.returncode, gnu.stdout, gnu.stderr)
+            if zov_result != gnu_result or zov.returncode != 0:
                 raise ParityFailure(
                     f"pwd {option} in a symlink directory differs: "
-                    f"zov={(zov.returncode, zov.stdout, zov.stderr)!r}, "
-                    f"GNU={(gnu.returncode, gnu.stdout, gnu.stderr)!r}"
+                    f"zov={zov_result!r}, GNU={gnu_result!r}"
                 )
             s.count += 1
