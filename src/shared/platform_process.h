@@ -10,6 +10,10 @@
 #include <limits.h>
 #include <unistd.h>
 
+#ifndef NSIG
+#define NSIG 32
+#endif
+
 extern char **environ;
 
 static inline int zov_env_assign(const char *assignment, size_t equal) {
@@ -117,7 +121,16 @@ static inline int zov_signal_number(const char *text) {
     ZOV_SIG(SEGV); ZOV_SIG(USR2); ZOV_SIG(PIPE); ZOV_SIG(ALRM); ZOV_SIG(TERM);
     ZOV_SIG(CHLD); ZOV_SIG(CONT); ZOV_SIG(STOP); ZOV_SIG(TSTP); ZOV_SIG(TTIN);
     ZOV_SIG(TTOU); ZOV_SIG(URG); ZOV_SIG(XCPU); ZOV_SIG(XFSZ); ZOV_SIG(VTALRM);
-    ZOV_SIG(PROF); ZOV_SIG(WINCH); ZOV_SIG(IO); ZOV_SIG(SYS);
+    ZOV_SIG(PROF);
+#ifdef SIGWINCH
+    ZOV_SIG(WINCH);
+#endif
+#ifdef SIGIO
+    ZOV_SIG(IO);
+#endif
+#ifdef SIGSYS
+    ZOV_SIG(SYS);
+#endif
 #ifdef SIGPOLL
     if (strcmp(text, "POLL") == 0) return SIGPOLL;
 #endif
@@ -202,8 +215,16 @@ static inline const char *zov_signal_name(int signal_number) {
     ZOV_SIG_NAME(PIPE); ZOV_SIG_NAME(ALRM); ZOV_SIG_NAME(TERM); ZOV_SIG_NAME(CHLD);
     ZOV_SIG_NAME(CONT); ZOV_SIG_NAME(STOP); ZOV_SIG_NAME(TSTP); ZOV_SIG_NAME(TTIN);
     ZOV_SIG_NAME(TTOU); ZOV_SIG_NAME(URG); ZOV_SIG_NAME(XCPU); ZOV_SIG_NAME(XFSZ);
-    ZOV_SIG_NAME(VTALRM); ZOV_SIG_NAME(PROF); ZOV_SIG_NAME(WINCH); ZOV_SIG_NAME(IO);
+    ZOV_SIG_NAME(VTALRM); ZOV_SIG_NAME(PROF);
+#ifdef SIGWINCH
+    ZOV_SIG_NAME(WINCH);
+#endif
+#ifdef SIGIO
+    ZOV_SIG_NAME(IO);
+#endif
+#ifdef SIGSYS
     ZOV_SIG_NAME(SYS);
+#endif
 #undef ZOV_SIG_NAME
 #ifdef SIGPOLL
     if (signal_number == SIGPOLL) return "POLL";
