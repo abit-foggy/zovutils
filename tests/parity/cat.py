@@ -154,7 +154,10 @@ def _direct_output_cases(s: Suite) -> None:
 
     s.count += 3
     if results[0] != results[1]:
-        raise AssertionError(f"cat direct-output behavior differs: {results!r}")
+        direct_flag = getattr(os, "O_DIRECT", None)
+        raise AssertionError(
+            f"cat direct-output behavior differs (O_DIRECT={direct_flag!r}): {results!r}"
+        )
 
 
 def run(s: Suite) -> None:
