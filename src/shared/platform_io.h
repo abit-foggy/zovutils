@@ -50,8 +50,15 @@ static inline int zov_write_output(FILE *output, const void *buffer, size_t leng
         int close_fallback = 0;
         off_t position = -1;
         if (length < 65536) {
-            if (fcntl(fileno(output), F_SETFL, flags & ~O_DIRECT) == 0) {
+            int set_result = fcntl(fileno(output), F_SETFL, flags & ~O_DIRECT);
+            if (debug != NULL && debug[0] != '\0') {
+                fprintf(stderr, "direct I/O debug: setfl=%d errno=%d\n", set_result, errno);
+            }
+            if (set_result == 0) {
                 int updated_flags = fcntl(fileno(output), F_GETFL);
+                if (debug != NULL && debug[0] != '\0') {
+                    fprintf(stderr, "direct I/O debug: updated flags=%d\n", updated_flags);
+                }
                 if (updated_flags >= 0 && (updated_flags & O_DIRECT) == 0) {
                     zov_debug_direct_io("buffered begin", updated_flags,
                                         lseek(fileno(output), 0, SEEK_CUR));
@@ -85,6 +92,10 @@ static inline int zov_write_output(FILE *output, const void *buffer, size_t leng
                             "/proc/self/fd/%d", fileno(output));
             fallback_fd = open(descriptor_path, O_WRONLY | (flags & O_APPEND));
             position = lseek(fileno(output), 0, SEEK_CUR);
+            if (debug != NULL && debug[0] != '\0') {
+                fprintf(stderr, "direct I/O debug: fallback fd=%d offset=%lld\n",
+                        fallback_fd, (long long) position);
+            }
             if (fallback_fd < 0 || position < 0 ||
                 lseek(fallback_fd, position, SEEK_SET) < 0) {
                 zov_debug_direct_io("fallback open/seek", errno, position);
