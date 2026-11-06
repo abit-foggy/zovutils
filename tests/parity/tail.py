@@ -354,7 +354,12 @@ def _nonblocking_input_cases(s: Suite) -> None:
         [str(s.gnu_dir / "tail")],
     ):
         modes = []
-        for options in (("-c", "4"), ("---presume-input-pipe", "-c", "4")):
+        for options in (
+            ("-c", "4"),
+            ("---presume-input-pipe", "-c", "4"),
+            ("-n", "2"),
+            ("---presume-input-pipe", "-n", "2"),
+        ):
             read_fd, write_fd = os.pipe()
             os.set_blocking(read_fd, False)
             os.write(write_fd, b"alpha\nbeta\n")
@@ -378,7 +383,7 @@ def _nonblocking_input_cases(s: Suite) -> None:
                 os.close(write_fd)
             modes.append((proc.returncode, stdout, stderr))
         results.append(modes)
-    s.count += 2
+    s.count += 4
     if results[0] != results[1]:
         raise AssertionError(f"tail nonblocking-input behavior differs: {results!r}")
 
