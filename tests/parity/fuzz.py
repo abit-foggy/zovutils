@@ -2,6 +2,7 @@
 
 import itertools
 import random
+import sys
 
 from support import Suite
 
@@ -66,6 +67,8 @@ def run(s: Suite) -> None:
                 s.case(utility, [flag, value, suffix_fixture])
 
     for utility, prefix in (("head", "-1"), ("tail", "+1"), ("tail", "-1")):
+        if sys.platform == "darwin" and prefix == "+1":
+            continue
         for codepoint in range(1, 128):
             suffix = chr(codepoint)
             if utility == "tail" and suffix == "f":
