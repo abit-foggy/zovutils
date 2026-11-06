@@ -531,6 +531,37 @@ ssize_t read(int fd, void *buffer, size_t count) {
     if hardlink_results[0] != hardlink_results[1]:
         raise AssertionError(f"cat hard-link same-file handling differs: {hardlink_results!r}")
 
+    proc_fd = Path("/proc/self/fd")
+    if sys.platform == "linux" and proc_fd.is_dir():
+        for offset in (0, 2):
+            procfd_results = []
+            for command in (
+                [str(s.zovutils), "cat", "/proc/self/fd/1"],
+                [str(s.gnu_dir / "cat"), "/proc/self/fd/1"],
+            ):
+                with open(same_path, "wb") as fixture:
+                    fixture.write(b"procfs-self-copy\n")
+                with open(same_path, "r+b") as output:
+                    output.seek(offset)
+                    proc = subprocess.run(
+                        command,
+                        stdout=output,
+                        stderr=subprocess.PIPE,
+                        env=s.env,
+                        timeout=5,
+                        check=False,
+                        preexec_fn=_limit_output_file,
+                    )
+                procfd_results.append(
+                    (proc.returncode, proc.stderr, Path(same_path).read_bytes())
+                )
+            s.count += 1
+            if procfd_results[0] != procfd_results[1]:
+                raise AssertionError(
+                    f"cat procfs same-file handling differs at offset {offset}: "
+                    f"{procfd_results!r}"
+                )
+
     append_results = []
     for command in (
         [str(s.zovutils), "cat", same_path],
