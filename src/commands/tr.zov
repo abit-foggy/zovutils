@@ -1,0 +1,93 @@
+use std::env as args;
+use std::io;
+use <stdio.h> as c;
+use <tr_backend.h> as backend;
+use shared::io as stream;
+
+fn usage_error() void = { c::fprintf(c::stderr, "Try 'tr --help' for more information.\n"); };
+
+fn longkey(arg: str) str = {
+    for (let i in 0usize..arg.len) { if (arg.data[i] == 61u8) { return arg[0usize..i]; }; };
+    return arg;
+};
+
+fn is_prefix(value: str, full: str) bool = {
+    return value.len > 2usize && value.len <= full.len && value == full[0usize..value.len];
+};
+
+fn help() void = {
+    io::print("Usage: tr [OPTION]... STRING1 [STRING2]\n");
+    io::print("Translate, squeeze, and/or delete characters from standard input,\nwriting to standard output.  STRING1 and STRING2 specify arrays of\ncharacters ARRAY1 and ARRAY2 that control the action.\n\n");
+    io::print("  -c, -C, --complement\n         use the complement of ARRAY1\n");
+    io::print("  -d, --delete\n         delete characters in ARRAY1, do not translate\n");
+    io::print("  -s, --squeeze-repeats\n         replace each sequence of a repeated character\n         that is listed in the last specified ARRAY,\n         with a single occurrence of that character\n");
+    io::print("  -t, --truncate-set1\n         first truncate ARRAY1 to length of ARRAY2\n");
+    io::print("      --help\n         display this help and exit\n");
+    io::print("      --version\n         output version information and exit\n\n");
+    io::print("ARRAYs are specified as strings of characters.  Most represent themselves.\nInterpreted sequences are:\n\n");
+    io::print("  \\NNN            character with octal value NNN (1 to 3 octal digits)\n");
+    io::print("  \\\\              backslash\n");
+    io::print("  \\a              audible BEL\n  \\b              backspace\n  \\f              form feed\n");
+    io::print("  \\n              new line\n  \\r              return\n  \\t              horizontal tab\n  \\v              vertical tab\n");
+    io::print("  CHAR1-CHAR2     all characters from CHAR1 to CHAR2 in ascending order\n");
+    io::print("  [CHAR*]         in ARRAY2, copies of CHAR until length of ARRAY1\n");
+    io::print("  [CHAR*REPEAT]   REPEAT copies of CHAR, REPEAT octal if starting with 0\n");
+    io::print("  [:alnum:]       all letters and digits\n  [:alpha:]       all letters\n  [:blank:]       all horizontal whitespace\n");
+    io::print("  [:cntrl:]       all control characters\n  [:digit:]       all digits\n  [:graph:]       all printable characters, not including space\n");
+    io::print("  [:lower:]       all lower case letters\n  [:print:]       all printable characters, including space\n  [:punct:]       all punctuation characters\n");
+    io::print("  [:space:]       all horizontal or vertical whitespace\n  [:upper:]       all upper case letters\n  [:xdigit:]      all hexadecimal digits\n");
+    io::print("  [=CHAR=]        all characters which are equivalent to CHAR\n\n");
+    io::print("Translation occurs if -d is not given and both STRING1 and STRING2 appear.\n-t is only significant when translating.  ARRAY2 is extended to length of\nARRAY1 by repeating its last character as necessary.  Excess characters\nof ARRAY2 are ignored.  Character classes expand in unspecified order;\nwhile translating, '[:lower:]' and '[:upper:]' may be used in pairs to\nspecify case conversion.  Squeezing occurs after translation or deletion.\nArguments like '[...]' should be quoted, to avoid potential shell globbing.\n\n");
+    io::print("Report bugs to: bug-coreutils@gnu.org\n");
+    io::print("GNU coreutils home page: <https://www.gnu.org/software/coreutils/>\n");
+    io::print("General help using GNU software: <https://www.gnu.org/gethelp/>\n");
+    io::print("Report any translation bugs to <https://translationproject.org/team/>\n");
+    io::print("Full documentation <https://www.gnu.org/software/coreutils/tr>\n");
+    io::print("or available locally via: info '(coreutils) tr invocation'\n");
+};
+
+export fn run(start: usize, argc: usize) i32 = {
+    let mut complement: bool = false;
+    let mut delete_mode: bool = false;
+    let mut squeeze: bool = false;
+    let mut truncate: bool = false;
+    let mut operands: [2]str;
+    let mut operand_count: usize = 0usize;
+    let mut i: usize = start;
+    let mut options_done: bool = false;
+    while (i < argc) {
+        let arg: str = args::argat(i);
+        if (!options_done && arg == "--") { options_done = true; i += 1usize; continue; };
+        if (!options_done && arg.len > 2usize && arg[0usize..2usize] == "--") {
+            let key: str = longkey(arg);
+            if (key == "--complement" || is_prefix(key, "--complement")) { complement = true; i += 1usize; continue; };
+            if (key == "--delete" || is_prefix(key, "--delete")) { delete_mode = true; i += 1usize; continue; };
+            if (key == "--squeeze-repeats" || is_prefix(key, "--squeeze-repeats")) { squeeze = true; i += 1usize; continue; };
+            if (key == "--truncate-set1" || is_prefix(key, "--truncate-set1")) { truncate = true; i += 1usize; continue; };
+            if (key == "--help" || is_prefix(key, "--help")) { help(); stream::finishoutput("tr"); return 0; };
+            if (key == "--version" || is_prefix(key, "--version")) { io::println("tr (zovutils) 0.1.194"); stream::finishoutput("tr"); return 0; };
+            c::fprintf(c::stderr, "tr: unrecognized option '%s'\n", arg); usage_error(); return 1;
+        };
+        if (!options_done && arg.len > 1usize && arg.data[0usize] == 45u8) {
+            for (let j in 1usize..arg.len) {
+                let option: u8 = arg.data[j];
+                if (option == 99u8 || option == 67u8) { complement = true; }
+                else if (option == 100u8) { delete_mode = true; }
+                else if (option == 115u8) { squeeze = true; }
+                else if (option == 116u8) { truncate = true; }
+                else { c::fprintf(c::stderr, "tr: invalid option -- '%c'\n", option as i32); usage_error(); return 1; };
+            };
+            i += 1usize; continue;
+        };
+        if (operand_count >= 2usize) { c::fprintf(c::stderr, "tr: extra operand '%s'\n", arg); usage_error(); return 1; };
+        operands[operand_count] = arg; operand_count += 1usize; i += 1usize;
+    };
+    if (operand_count == 0usize) { c::fprintf(c::stderr, "tr: missing operand\n"); usage_error(); return 1; };
+    if (delete_mode && operand_count > 1usize && (!squeeze || operand_count > 2usize)) { c::fprintf(c::stderr, "tr: extra operand '%s'\n", operands[1usize]); usage_error(); return 1; };
+    if (!delete_mode && !squeeze && operand_count != 2usize) { c::fprintf(c::stderr, "tr: missing operand\n"); usage_error(); return 1; };
+    let mut set2: str = "";
+    let mut has_set2: bool = false;
+    if (operand_count > 1usize) { set2 = operands[1usize]; has_set2 = true; };
+    return backend::zov_tr_run(operands[0usize].data as *i8, set2.data as *i8,
+        has_set2 as i32, complement as i32, delete_mode as i32, squeeze as i32, truncate as i32);
+};
