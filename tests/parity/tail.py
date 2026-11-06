@@ -322,6 +322,29 @@ def _presume_pipe_cases(s: Suite) -> None:
     if results[0] != results[1]:
         raise AssertionError(f"tail presumed-pipe input position differs: {results!r}")
 
+    if Path("/dev/zero").exists():
+        running = []
+        for command in (
+            [str(s.zovutils), "tail", "---presume-input-pipe", "-c", "4096", "/dev/zero"],
+            [str(s.gnu_dir / "tail"), "---presume-input-pipe", "-c", "4096", "/dev/zero"],
+        ):
+            proc = subprocess.Popen(
+                command,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                env=s.env,
+            )
+            try:
+                proc.wait(timeout=0.25)
+                running.append((False, proc.returncode, proc.stderr.read()))
+            except subprocess.TimeoutExpired:
+                proc.terminate()
+                _, stderr = proc.communicate(timeout=3)
+                running.append((True, proc.returncode, stderr))
+        s.count += 1
+        if running[0] != running[1] or not running[0][0]:
+            raise AssertionError(f"tail presumed-pipe /dev/zero behavior differs: {running!r}")
+
 
 def run(s: Suite) -> None:
     _presume_pipe_cases(s)

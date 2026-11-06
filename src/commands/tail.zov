@@ -40,7 +40,46 @@ fn copyfrom(fp: *c::FILE, start: i64, dest: *c::FILE) bool = {
     return !stream::readerror(fp);
 };
 
-fn tailfrom(fp: *c::FILE, count: usize, bytes: bool, delim: u8, dest: *c::FILE, raw_input: bool) bool = {
+fn tail_bytes_pipe(fp: *c::FILE, count: usize, dest: *c::FILE, raw_input: bool) bool = {
+    let mut ring: nullable *u8 = null;
+    if (count > 0usize) {
+        let allocated: nullable *void = libc::malloc(count);
+        if (allocated == null) { return false; };
+        ring = (allocated! as *u8) as nullable *u8;
+    };
+    let mut kept: usize = 0usize;
+    let mut next: usize = 0usize;
+    let buf: [65536]u8;
+    let mut ok: bool = true;
+    while (ok) {
+        let read_count: i64 = readinput(fp, ((&buf[0usize]) as *u8), 65536usize, raw_input);
+        if (read_count == 0i64) { break; };
+        if (read_count < 0i64) { ok = false; break; };
+        let n: usize = read_count as usize;
+        if (count == 0usize) { continue; };
+        for (let i in 0..n) {
+            ring![next] = buf[i];
+            next += 1usize;
+            if (next == count) { next = 0usize; };
+            if (kept < count) { kept += 1usize; };
+        };
+    };
+    if (ok && !raw_input && stream::readerror(fp)) { ok = false; };
+    if (ok && kept > 0usize) {
+        if (kept < count) {
+            ok = stream::writebytes(dest, ((&ring![0usize]) as *u8), kept);
+        } else {
+            let tail_len: usize = count - next;
+            if (tail_len > 0usize) { ok = stream::writebytes(dest, ((&ring![next]) as *u8), tail_len); };
+            if (ok && next > 0usize) { ok = stream::writebytes(dest, ((&ring![0usize]) as *u8), next); };
+        };
+    };
+    if (ring != null) { libc::free(ring! as *void); };
+    return ok;
+};
+
+fn tailfrom(fp: *c::FILE, count: usize, bytes: bool, delim: u8, dest: *c::FILE, raw_input: bool, presume_input_pipe: bool) bool = {
+    if (bytes && presume_input_pipe) { return tail_bytes_pipe(fp, count, dest, raw_input); };
     if (bytes && stream::characterfile(fp)) {
         let descriptor: i32 = c::fileno(fp);
         let initial: i64 = posix::lseek(descriptor, 0i64, c::SEEK_CUR);
@@ -302,6 +341,7 @@ export fn run(start: usize, argc: usize) i32 = {
     let mut retry: bool = false;
     let mut debug: bool = false;
     let mut disable_inotify: bool = false;
+    let mut presume_input_pipe: bool = false;
     let mut interval_secs: f64 = 1.0f64;
     let mut pid_ignored: bool = false;
     let mut files = vec::new[str]();
@@ -414,6 +454,7 @@ export fn run(start: usize, argc: usize) i32 = {
             };
             if (triplematch(key, "---presume-input-pipe")) {
                 if (has_equal) { badargument("---presume-input-pipe"); return 1; };
+                presume_input_pipe = true;
                 i += 1usize; continue;
             };
             if (longambiguity(key)) { return 1; };
@@ -505,7 +546,7 @@ export fn run(start: usize, argc: usize) i32 = {
             };
             if (longmatch(key, "--version")) {
                 if (has_equal) { badargument("--version"); return 1; };
-                io::println("tail (zovutils) 0.1.106"); if (!stream::finishoutput("tail")) { return 1; }; return 0;
+                io::println("tail (zovutils) 0.1.107"); if (!stream::finishoutput("tail")) { return 1; }; return 0;
             };
             badlong(arg); return 1;
         };
@@ -660,7 +701,7 @@ export fn run(start: usize, argc: usize) i32 = {
         };
         let mut ok: bool = false;
         if (plus) { ok = tailplus(fp, count, bytes, delim, dest, !follow); }
-        else { ok = tailfrom(fp, count, bytes, delim, dest, !follow); };
+        else { ok = tailfrom(fp, count, bytes, delim, dest, !follow, presume_input_pipe); };
         if (!ok) {
             if (!stream::outputfailed()) {
                 if (path == "-") { readerror("standard input"); }
