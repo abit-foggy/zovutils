@@ -39,11 +39,11 @@ static inline int zov_write_output(FILE *output, const void *buffer, size_t leng
 #ifdef O_DIRECT
     int flags = fcntl(fileno(output), F_GETFL);
     const char *debug = getenv("ZOVUTILS_DEBUG_DIRECT_IO");
-    if (debug != NULL && debug[0] != '\0') {
-        fprintf(stderr, "direct I/O debug: flags=%d mask=%o length=%zu\n",
-                flags, O_DIRECT, length);
-    }
     if (flags >= 0 && (flags & O_DIRECT)) {
+        if (debug != NULL && debug[0] != '\0') {
+            fprintf(stderr, "direct I/O debug: flags=%d mask=%o length=%zu\n",
+                    flags, O_DIRECT, length);
+        }
         const unsigned char *bytes = (const unsigned char *) buffer;
         size_t written = 0;
         int fallback_fd = fileno(output);
