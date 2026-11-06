@@ -50,6 +50,30 @@ static inline int zov_write_output(FILE *output, const void *buffer, size_t leng
         int close_fallback = 0;
         off_t position = -1;
         if (length < 65536) {
+            if (fcntl(fileno(output), F_SETFL, flags & ~O_DIRECT) == 0) {
+                int updated_flags = fcntl(fileno(output), F_GETFL);
+                if (updated_flags >= 0 && (updated_flags & O_DIRECT) == 0) {
+                    while (written < length) {
+                        ssize_t count = write(fileno(output), bytes + written,
+                                              length - written);
+                        if (count < 0 && errno == EINTR) {
+                            continue;
+                        }
+                        if (count <= 0) {
+                            zov_debug_direct_io("buffered write", errno,
+                                                lseek(fileno(output), 0, SEEK_CUR));
+                            (void) fcntl(fileno(output), F_SETFL, flags);
+                            return 0;
+                        }
+                        written += (size_t) count;
+                    }
+                    if (fcntl(fileno(output), F_SETFL, flags) != 0) {
+                        return 0;
+                    }
+                    return 1;
+                }
+                (void) fcntl(fileno(output), F_SETFL, flags);
+            }
             char descriptor_path[64];
             (void) snprintf(descriptor_path, sizeof descriptor_path,
                             "/proc/self/fd/%d", fileno(output));
