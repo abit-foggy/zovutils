@@ -45,6 +45,10 @@ fn longmatch(arg: str, option: str) bool = {
     return arg.len > 2usize && arg.len <= option.len && arg == option[0usize..arg.len];
 };
 
+fn triplematch(arg: str, option: str) bool = {
+    return arg.len >= 3usize && arg.len <= option.len && arg == option[0usize..arg.len];
+};
+
 fn longambiguity(arg: str) bool = {
     if (longmatch(arg, "--verbose") && longmatch(arg, "--version")) {
         c::fprintf(c::stderr, "head: option '%s' is ambiguous; possibilities: '--verbose' '--version'\nTry 'head --help' for more information.\n", arg);
@@ -196,6 +200,7 @@ export fn run(start: usize, argc: usize) i32 = {
     let mut delim: u8 = 10u8;
     let mut quiet: bool = false;
     let mut verbose: bool = false;
+    let mut presume_input_pipe: bool = false;
     let mut files = vec::new[str]();
     defer files.free();
     let mut operands: bool = false;
@@ -204,12 +209,17 @@ export fn run(start: usize, argc: usize) i32 = {
     while (i < argc) {
         let arg: str = env::argat(i);
         if (operands || arg == "-") { if (posixly_correct) { operands = true; }; files.push(arg); i += 1usize; continue; };
-        if (arg == "--" || arg == "---") { operands = true; i += 1usize; continue; };
+        if (arg == "--") { operands = true; i += 1usize; continue; };
         if (arg.len > 2usize && arg[0usize..2usize] == "--") {
             let mut eqpos: usize = arg.len;
             for (let j in 2usize..arg.len) { if (arg.data[j] == 61u8) { eqpos = j; break; }; };
             let key: str = arg[0usize..eqpos];
             let has_equal: bool = eqpos < arg.len;
+            if (triplematch(key, "---presume-input-pipe")) {
+                if (has_equal) { badargument("---presume-input-pipe"); return 1; };
+                presume_input_pipe = true;
+                i += 1usize; continue;
+            };
             if (longambiguity(key)) { return 1; };
             let takes_bytes: bool = longmatch(key, "--bytes");
             let takes_lines: bool = longmatch(key, "--lines");
@@ -248,7 +258,7 @@ export fn run(start: usize, argc: usize) i32 = {
             };
             if (longmatch(key, "--version")) {
                 if (has_equal) { badargument("--version"); return 1; };
-                io::println("head (zovutils) 0.1.102"); if (!stream::finishoutput("head")) { return 1; }; return 0;
+                io::println("head (zovutils) 0.1.103"); if (!stream::finishoutput("head")) { return 1; }; return 0;
             };
             badlong(arg); return 1;
         };
@@ -365,7 +375,7 @@ export fn run(start: usize, argc: usize) i32 = {
         };
         let mut input_limit: i64 = -1i64;
         let mut input_position: i64 = -1i64;
-        if (stream::regularfile(fp)) { input_position = c::ftell(fp); };
+        if (!presume_input_pipe && stream::regularfile(fp)) { input_position = c::ftell(fp); };
         if (stream::sameopenfile(fp, c::stdout)) {
             if (!negative && input_position >= 0i64 && c::fseek(fp, 0i64, c::SEEK_END) == 0) {
                 let end: i64 = c::ftell(fp);

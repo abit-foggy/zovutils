@@ -272,6 +272,39 @@ def run(s: Suite) -> None:
             f"head large negative-line input position differs: {large_position_results!r}"
         )
 
+    for option in ("---", "---p", "---pres", "---presume-input-pipe"):
+        s.case("head", [option, "--bytes=-2", binary])
+
+    presumed_pipe_results = []
+    for command in (
+        [str(s.zovutils), "head", "---presume-input-pipe", "-n", "-50000"],
+        [str(s.gnu_dir / "head"), "---presume-input-pipe", "-n", "-50000"],
+    ):
+        with open(large_positioned, "rb") as source:
+            proc = subprocess.run(
+                command,
+                stdin=source,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                env=s.env,
+                timeout=10,
+                check=False,
+            )
+            remaining = bytearray()
+            while True:
+                chunk = os.read(source.fileno(), 65536)
+                if not chunk:
+                    break
+                remaining.extend(chunk)
+        presumed_pipe_results.append(
+            (proc.returncode, proc.stdout, proc.stderr, bytes(remaining))
+        )
+    s.count += 1
+    if presumed_pipe_results[0] != presumed_pipe_results[1]:
+        raise AssertionError(
+            f"head presumed-pipe input position differs: {presumed_pipe_results!r}"
+        )
+
     # Positive-count modes emit as soon as enough bytes arrive, before stdin
     # reaches EOF. Check newline, byte, and NUL-delimited reads against GNU.
     for opts, payload in (
