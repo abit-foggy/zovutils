@@ -117,14 +117,14 @@ class Suite:
         )
         return result.stdout.decode("utf-8", "replace").splitlines()[0]
 
-    def product_version(self, utility: str) -> None:
+    def product_version(self, utility: str, *, status: int = 0) -> None:
         manifest = Path(__file__).resolve().parents[2] / "zov.toml"
         match = re.search(r'^version = "([^"]+)"$', manifest.read_text(), re.MULTILINE)
         if match is None:
             raise ParityFailure("zov.toml does not declare a package version")
         result = self._run([str(self.zovutils), utility, "--version"], b"")
         expected = f"{utility} (zovutils) {match.group(1)}\n".encode()
-        if result != (0, expected, b""):
+        if result != (status, expected, b""):
             raise ParityFailure(f"{utility} --version does not report package version: {result!r}")
 
     def write_failure(self, utility: str, args: list[str]) -> None:

@@ -1,0 +1,39 @@
+use std::env;
+use std::io;
+use shared::io as stream;
+
+fn help() void = {
+    io::print("Usage: false [ignored command line arguments]\n");
+    io::print("  or:  false OPTION\n");
+    io::print("Exit with a status code indicating failure.\n\n");
+    io::print("      --help\n");
+    io::print("         display this help and exit\n");
+    io::print("      --version\n");
+    io::print("         output version information and exit\n\n");
+    io::print("Your shell may have its own version of false, which usually supersedes\n");
+    io::print("the version described here.  Please refer to your shell's documentation\n");
+    io::print("for details about the options it supports.\n\n");
+    io::print("Report bugs to: bug-coreutils@gnu.org\n");
+    io::print("GNU coreutils home page: <https://www.gnu.org/software/coreutils/>\n");
+    io::print("General help using GNU software: <https://www.gnu.org/gethelp/>\n");
+    io::print("Report any translation bugs to <https://translationproject.org/team/>\n");
+    io::print("Full documentation <https://www.gnu.org/software/coreutils/false>\n");
+    io::print("or available locally via: info '(coreutils) false invocation'\n");
+};
+
+export fn run(start: usize, argc: usize) i32 = {
+    if (argc == start + 1usize) {
+        let first: str = env::argat(start);
+        if (first == "--help") {
+            help();
+            stream::finishoutput("false");
+            return 1;
+        };
+        if (first == "--version") {
+            io::println("false (zovutils) 0.1.179");
+            stream::finishoutput("false");
+            return 1;
+        };
+    };
+    return 1;
+};

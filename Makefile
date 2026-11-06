@@ -1,7 +1,7 @@
 ZOVC ?= zovc
 PREFIX ?= /usr/local
 BINDIR ?= $(PREFIX)/bin
-UTILS = basename cat dirname echo env head tail wc
+UTILS = basename cat dirname echo env false head tail true wc
 
 .PHONY: all check build unit parity asan-parity test install uninstall clean
 

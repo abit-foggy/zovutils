@@ -13,9 +13,11 @@ import cat
 import dirname
 import echo
 import env
+import false
 import fuzz
 import head
 import tail
+import true
 import wc
 from support import ParityFailure, Suite, require_executables
 
@@ -32,7 +34,7 @@ def main() -> int:
     suite = Suite(args.zovutils.resolve(), args.gnu_dir.resolve())
     try:
         require_executables(suite)
-        for module in (basename, cat, dirname, echo, env, head, tail, wc, fuzz):
+        for module in (basename, cat, dirname, echo, env, false, head, tail, true, wc, fuzz):
             start = suite.count
             module.run(suite)
             print(f"[PASS] {module.__name__}: {suite.count - start} parity cases")
