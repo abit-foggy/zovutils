@@ -290,7 +290,41 @@ def _follow_write_failure(s: Suite) -> None:
             output.close()
 
 
+def _presume_pipe_cases(s: Suite) -> None:
+    path = s.fixture("tail-presumed-pipe", b"one\ntwo\nthree\n")
+    for option in ("---p", "---pres", "---presume-input-pipe"):
+        for args in (("-n", "2"), ("-c", "5"), ("+2",)):
+            s.case("tail", [option, *args, path])
+
+    results = []
+    for command in (
+        [str(s.zovutils), "tail", "---presume-input-pipe", "-n", "2"],
+        [str(s.gnu_dir / "tail"), "---presume-input-pipe", "-n", "2"],
+    ):
+        with open(path, "rb") as source:
+            proc = subprocess.run(
+                command,
+                stdin=source,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                env=s.env,
+                timeout=5,
+                check=False,
+            )
+            remaining = bytearray()
+            while True:
+                chunk = os.read(source.fileno(), 65536)
+                if not chunk:
+                    break
+                remaining.extend(chunk)
+        results.append((proc.returncode, proc.stdout, proc.stderr, bytes(remaining)))
+    s.count += 1
+    if results[0] != results[1]:
+        raise AssertionError(f"tail presumed-pipe input position differs: {results!r}")
+
+
 def run(s: Suite) -> None:
+    _presume_pipe_cases(s)
     # GNU treats seekable character devices such as /dev/zero as bounded
     # byte streams for -c, rather than trying to spool them until EOF.
     if os.path.exists("/dev/zero"):
