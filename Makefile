@@ -1,7 +1,7 @@
 ZOVC ?= zovc
 PREFIX ?= /usr/local
 BINDIR ?= $(PREFIX)/bin
-UTILS = basename cat dirname echo env false head printenv printf pwd seq sleep tail true wc
+UTILS = basename cat dirname echo env false head printenv printf pwd seq sleep test tail true wc
 
 .PHONY: all check build unit parity asan-parity test install uninstall clean
 
@@ -28,9 +28,10 @@ install: build
 	install -d "$(BINDIR)"
 	install -m 755 target/zovutils "$(BINDIR)/zovutils"
 	for utility in $(UTILS); do ln -sf zovutils "$(BINDIR)/$$utility"; done
+	ln -sf zovutils "$(BINDIR)/["
 
 uninstall:
-	rm -f "$(BINDIR)/zovutils" $(UTILS:%="$(BINDIR)/%")
+	rm -f "$(BINDIR)/zovutils" "$(BINDIR)/[" $(UTILS:%="$(BINDIR)/%")
 
 clean:
 	rm -rf target

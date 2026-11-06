@@ -1,0 +1,117 @@
+use std::env as args;
+use std::io;
+use <stdio.h> as c;
+use <test_backend.h> as backend;
+
+fn is_unary(op: str) bool = {
+    return op == "-n" || op == "-z" || op == "-e" || op == "-a" || op == "-f" ||
+        op == "-d" || op == "-b" || op == "-c" || op == "-p" || op == "-S" ||
+        op == "-h" || op == "-L" || op == "-r" || op == "-w" || op == "-x" ||
+        op == "-s" || op == "-t" || op == "-O" || op == "-G" || op == "-N";
+};
+
+fn is_binary(op: str) bool = {
+    return op == "=" || op == "==" || op == "!=" || op == "<" || op == ">" ||
+        op == "-eq" || op == "-ne" || op == "-gt" || op == "-ge" ||
+        op == "-lt" || op == "-le" || op == "-ef" || op == "-nt" || op == "-ot";
+};
+
+fn parse_or(start: usize, count: usize, pos: &mut usize, invalid: &mut bool) bool = {
+    if (*pos < count && args::argat(start + *pos) == "!") {
+        *pos += 1usize;
+        return !parse_or(start, count, pos, invalid);
+    };
+    let mut value: bool = parse_and(start, count, pos, invalid);
+    while (*pos < count && args::argat(start + *pos) == "-o") {
+        *pos += 1usize;
+        let right: bool = parse_and(start, count, pos, invalid);
+        value = value || right;
+    };
+    return value;
+};
+
+fn parse_and(start: usize, count: usize, pos: &mut usize, invalid: &mut bool) bool = {
+    let mut value: bool = parse_not(start, count, pos, invalid);
+    while (*pos < count && args::argat(start + *pos) == "-a") {
+        *pos += 1usize;
+        let right: bool = parse_not(start, count, pos, invalid);
+        value = value && right;
+    };
+    return value;
+};
+
+fn parse_not(start: usize, count: usize, pos: &mut usize, invalid: &mut bool) bool = {
+    if (*pos < count && args::argat(start + *pos) == "(") {
+        *pos += 1usize;
+        let value: bool = parse_or(start, count, pos, invalid);
+        if (*pos >= count || args::argat(start + *pos) != ")") { *invalid = true; return false; };
+        *pos += 1usize;
+        return value;
+    };
+    return parse_primary(start, count, pos, invalid);
+};
+
+fn parse_primary(start: usize, count: usize, pos: &mut usize, invalid: &mut bool) bool = {
+    if (*pos >= count || args::argat(start + *pos) == ")") { *invalid = true; return false; };
+    let left: str = args::argat(start + *pos);
+    *pos += 1usize;
+
+    if (is_unary(left)) {
+        if (*pos >= count) { *invalid = true; return false; };
+        let operand: str = args::argat(start + *pos);
+        *pos += 1usize;
+        if (left == "-n") { return operand.len > 0usize; };
+        if (left == "-z") { return operand.len == 0usize; };
+        return backend::zov_test_file(left.data as *i8, operand.data as *i8, operand.data as *i8) != 0i32;
+    };
+
+    if (*pos < count) {
+        let op: str = args::argat(start + *pos);
+        if (is_binary(op)) {
+            *pos += 1usize;
+            if (*pos >= count) { *invalid = true; return false; };
+            let right: str = args::argat(start + *pos);
+            *pos += 1usize;
+            if (op == "-eq" || op == "-ne" || op == "-gt" || op == "-ge" || op == "-lt" || op == "-le") {
+                let mut valid: i32 = 0i32;
+                let result: i32 = backend::zov_test_integer(op.data as *i8, left.data as *i8, right.data as *i8, &mut valid);
+                if (valid != 1i32) {
+                    let mut bad: str = right;
+                    if (valid == -1i32) { bad = left; };
+                    c::fprintf(c::stderr, "test: invalid integer '%s'\n", bad);
+                    *invalid = true;
+                    return false;
+                };
+                return result != 0i32;
+            };
+            if (op == "-ef" || op == "-nt" || op == "-ot") {
+                return backend::zov_test_file(op.data as *i8, left.data as *i8, right.data as *i8) != 0i32;
+            };
+            return backend::zov_test_string(op.data as *i8, left.data as *i8, right.data as *i8) != 0i32;
+        };
+    };
+    return left.len > 0usize;
+};
+
+export fn run(start: usize, argc: usize, is_bracket: bool) i32 = {
+    let mut count: usize = argc - start;
+    if (is_bracket) {
+        if (count == 0usize || args::argat(argc - 1usize) != "]") {
+            c::fprintf(c::stderr, "[: missing ']'\n");
+            return 2;
+        };
+        count -= 1usize;
+    };
+    if (count == 1usize && args::argat(start) == "!") { return 0; };
+    if (count == 0usize) { return 1; };
+    let mut pos: usize = 0usize;
+    let mut invalid: bool = false;
+    let value: bool = parse_or(start, count, &mut pos, &mut invalid);
+    if (pos != count) {
+        c::fprintf(c::stderr, "test: extra argument '%s'\n", args::argat(start + pos));
+        return 2;
+    };
+    if (invalid) { return 2; };
+    if (value) { return 0; };
+    return 1;
+};
