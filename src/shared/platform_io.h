@@ -1,12 +1,15 @@
 #ifndef ZOV_PLATFORM_IO_H
 #define ZOV_PLATFORM_IO_H
 
+#include <errno.h>
 #include <stdlib.h>
 
 static inline void *zov_alloc_read_buffer(void) {
     void *buffer = NULL;
     /* Direct-I/O descriptors can require both the address and size aligned. */
-    if (posix_memalign(&buffer, 65536, 65536) != 0) {
+    int error = posix_memalign(&buffer, 65536, 65536);
+    if (error != 0) {
+        errno = error;
         return NULL;
     }
     return buffer;
