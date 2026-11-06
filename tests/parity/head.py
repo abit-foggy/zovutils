@@ -33,6 +33,9 @@ def run(s: Suite) -> None:
     s.write_failure("head", [lines])
     s.write_failure("head", ["--help"])
     s.write_failure("head", ["--version"])
+    for mode in ("lines", "bytes"):
+        for count in ("-0", "-1"):
+            s.write_failure("head", [f"--{mode}={count}", large])
     s.broken_pipe_case("head", ["-c", "100000", large])
     s.interrupted_read_case("head", ["-c", "2"])
     s.symlink_dispatch("head", ["-n", "1", lines])

@@ -247,6 +247,15 @@ export fn finishoutput(name: str) bool = {
     return true;
 };
 
+export fn finishoutputnamed(name: str, destination: str) bool = {
+    if (c::fflush(c::stdout) != 0 || c::ferror(c::stdout) != 0) {
+        c::fprintf(c::stderr, "%s: error writing '%s': ", name, destination);
+        c::perror((0i64 as *i8));
+        return false;
+    };
+    return true;
+};
+
 export fn finishoutputbrief(name: str) bool = {
     if (c::fflush(c::stdout) != 0 || c::ferror(c::stdout) != 0) {
         c::fprintf(c::stderr, "%s: write error\n", name);
