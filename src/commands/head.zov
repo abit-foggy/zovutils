@@ -188,8 +188,16 @@ fn copyexclude(fp: *c::FILE, count: usize, bytes: bool, delim: u8, input_positio
         };
         if (found < count) { cutoff = 0i64; };
     };
-    if (input_position >= 0i64 && c::fseek(fp, input_position + cutoff, c::SEEK_SET) != 0) {
-        c::fclose(tmp); return false;
+    if (input_position >= 0i64) {
+        let target_position: i64 = input_position + cutoff;
+        if (c::fseek(fp, target_position, c::SEEK_SET) != 0) {
+            c::fclose(tmp); return false;
+        };
+        if ((platform_io::zov_needs_seekdescriptor_sync() != 0i32
+            || stream::sameopenfile(fp, c::stdout))
+            && !stream::seekdescriptor(fp, target_position)) {
+            c::fclose(tmp); return false;
+        };
     };
     let ok: bool = copyupto(tmp, cutoff);
     c::fclose(tmp);
@@ -261,7 +269,7 @@ export fn run(start: usize, argc: usize) i32 = {
             };
             if (longmatch(key, "--version")) {
                 if (has_equal) { badargument("--version"); return 1; };
-                io::println("head (zovutils) 0.1.158"); if (!stream::finishoutput("head")) { return 1; }; return 0;
+                io::println("head (zovutils) 0.1.159"); if (!stream::finishoutput("head")) { return 1; }; return 0;
             };
             badlong(arg); return 1;
         };
