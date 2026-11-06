@@ -10,6 +10,7 @@ from pathlib import Path
 
 import basename
 import cat
+import dirname
 import fuzz
 import head
 import tail
@@ -29,7 +30,7 @@ def main() -> int:
     suite = Suite(args.zovutils.resolve(), args.gnu_dir.resolve())
     try:
         require_executables(suite)
-        for module in (basename, cat, head, tail, wc, fuzz):
+        for module in (basename, cat, dirname, head, tail, wc, fuzz):
             start = suite.count
             module.run(suite)
             print(f"[PASS] {module.__name__}: {suite.count - start} parity cases")

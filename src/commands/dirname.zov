@@ -1,0 +1,136 @@
+use std::env;
+use std::io;
+use std::vec as vec;
+use <stdio.h> as c;
+use <platform_env.h> as platform_env;
+use shared::io as stream;
+
+fn longprefix(arg: str, option: str) bool = {
+    let mut end: usize = arg.len;
+    for (let i in 0usize..arg.len) {
+        if (arg.data[i] == 61u8) { end = i; break; };
+    };
+    let key: str = arg[0usize..end];
+    return key == option || (key.len > 2usize && key.len < option.len && key == option[0usize..key.len]);
+};
+
+fn longhasvalue(arg: str) bool = {
+    for (let i in 0usize..arg.len) { if (arg.data[i] == 61u8) { return true; }; };
+    return false;
+};
+
+fn help() void = {
+    io::print("Usage: dirname [OPTION] NAME...\n");
+    io::print("Output each NAME with its last non-slash component and trailing slashes\n");
+    io::print("removed; if NAME contains no /'s, output '.' (meaning the current directory).\n\n");
+    io::print("  -z, --zero\n");
+    io::print("         end each output line with NUL, not newline\n");
+    io::print("      --help\n");
+    io::print("         display this help and exit\n");
+    io::print("      --version\n");
+    io::print("         output version information and exit\n\n");
+    io::print("Examples:\n");
+    io::print("  dirname /usr/bin/          -> \"/usr\"\n");
+    io::print("  dirname dir1/str dir2/str  -> \"dir1\" followed by \"dir2\"\n");
+    io::print("  dirname stdio.h            -> \".\"\n\n");
+    io::print("Report bugs to: bug-coreutils@gnu.org\n");
+    io::print("GNU coreutils home page: <https://www.gnu.org/software/coreutils/>\n");
+    io::print("General help using GNU software: <https://www.gnu.org/gethelp/>\n");
+    io::print("Report any translation bugs to <https://translationproject.org/team/>\n");
+    io::print("Full documentation <https://www.gnu.org/software/coreutils/dirname>\n");
+    io::print("or available locally via: info '(coreutils) dirname invocation'\n");
+};
+
+fn tryhelp() void = {
+    c::fprintf(c::stderr, "Try 'dirname --help' for more information.\n");
+};
+
+fn badshort(option: u8) void = {
+    c::fprintf(c::stderr, "dirname: invalid option -- '%c'\n", option as i32);
+    tryhelp();
+};
+
+fn badlong(option: str) void = {
+    c::fprintf(c::stderr, "dirname: unrecognized option '%s'\n", option);
+    tryhelp();
+};
+
+fn badlongargument(option: str) void = {
+    c::fprintf(c::stderr, "dirname: option '%s' doesn't allow an argument\n", option);
+    tryhelp();
+};
+
+fn missingoperand() void = {
+    c::fprintf(c::stderr, "dirname: missing operand\n");
+    tryhelp();
+};
+
+fn parent(path: str) str = {
+    if (path.len == 0usize) { return "."; };
+    let mut end: usize = path.len;
+    while (end > 0usize && path.data[end - 1usize] == 47u8) { end -= 1usize; };
+    if (end == 0usize) { return "/"; };
+    let mut slash: usize = end;
+    while (slash > 0usize && path.data[slash - 1usize] != 47u8) { slash -= 1usize; };
+    if (slash == 0usize) { return "."; };
+    let mut prefix_end: usize = slash - 1usize;
+    while (prefix_end > 0usize && path.data[prefix_end - 1usize] == 47u8) { prefix_end -= 1usize; };
+    if (prefix_end == 0usize) { return "/"; };
+    return path[0usize..prefix_end];
+};
+
+fn output_parent(path: str, zero: bool) bool = {
+    let result: str = parent(path);
+    if (result.len > 0usize && !stream::writebytes(c::stdout, result.data as *u8, result.len)) { return false; };
+    if (zero) { return stream::putbyte(c::stdout, 0u8); };
+    return stream::putbyte(c::stdout, 10u8);
+};
+
+export fn run(start: usize, argc: usize) i32 = {
+    let mut zero: bool = false;
+    let mut operands = vec::new[str]();
+    defer operands.free();
+
+    let mut option_end: bool = false;
+    let mut i: usize = start;
+    while (i < argc) {
+        let arg: str = env::argat(i);
+        if (!option_end && arg == "--") { option_end = true; i += 1usize; continue; };
+        if (option_end || arg == "-" || arg.len == 0usize || arg.data[0usize] != 45u8) {
+            if (!option_end && platform_env::zov_posixly_correct() != 0i32) { option_end = true; };
+            operands.push(arg); i += 1usize; continue;
+        };
+        if (arg.len >= 2usize && arg[0usize..2usize] == "--") {
+            if (longprefix(arg, "--zero")) {
+                if (longhasvalue(arg)) { badlongargument("--zero"); return 1; };
+                zero = true; i += 1usize; continue;
+            };
+            if (longprefix(arg, "--help")) {
+                if (longhasvalue(arg)) { badlongargument("--help"); return 1; };
+                help(); if (!stream::finishoutput("dirname")) { return 1; }; return 0;
+            };
+            if (longprefix(arg, "--version")) {
+                if (longhasvalue(arg)) { badlongargument("--version"); return 1; };
+                io::println("dirname (zovutils) 0.1.173");
+                if (!stream::finishoutput("dirname")) { return 1; };
+                return 0;
+            };
+            badlong(arg); return 1;
+        };
+        let mut j: usize = 1usize;
+        while (j < arg.len) {
+            let option: u8 = arg.data[j];
+            if (option == 122u8) { zero = true; j += 1usize; continue; };
+            badshort(option); return 1;
+        };
+        i += 1usize;
+    };
+
+    if (operands.len() == 0usize) { missingoperand(); return 1; };
+    let mut status: i32 = 0;
+    for (let k in 0..operands.len()) {
+        if (!output_parent(operands.get(k), zero)) { status = 1; break; };
+    };
+    if (!stream::finishoutput("dirname")) { status = 1; };
+    return status;
+};
