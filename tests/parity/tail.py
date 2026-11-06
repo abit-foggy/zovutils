@@ -295,6 +295,7 @@ def _presume_pipe_cases(s: Suite) -> None:
     for option in ("---p", "---pres", "---presume-input-pipe"):
         for args in (("-n", "2"), ("-c", "5"), ("+2",)):
             s.case("tail", [option, *args, path])
+    s.case("tail", ["---presume-input-pipe", "-c", "18446744073709551615", path])
 
     results = []
     for command in (
