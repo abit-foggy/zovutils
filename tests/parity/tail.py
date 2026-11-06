@@ -347,8 +347,45 @@ def _presume_pipe_cases(s: Suite) -> None:
             raise AssertionError(f"tail presumed-pipe /dev/zero behavior differs: {running!r}")
 
 
+def _nonblocking_input_cases(s: Suite) -> None:
+    results = []
+    for command in (
+        [str(s.zovutils), "tail"],
+        [str(s.gnu_dir / "tail")],
+    ):
+        modes = []
+        for options in (("-c", "4"), ("---presume-input-pipe", "-c", "4")):
+            read_fd, write_fd = os.pipe()
+            os.set_blocking(read_fd, False)
+            os.write(write_fd, b"alpha\nbeta\n")
+            try:
+                proc = subprocess.Popen(
+                    [*command, *options],
+                    stdin=read_fd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    env=s.env,
+                )
+            finally:
+                os.close(read_fd)
+            try:
+                stdout, stderr = proc.communicate(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                stdout, stderr = proc.communicate()
+                raise AssertionError("tail did not stop at EAGAIN")
+            finally:
+                os.close(write_fd)
+            modes.append((proc.returncode, stdout, stderr))
+        results.append(modes)
+    s.count += 2
+    if results[0] != results[1]:
+        raise AssertionError(f"tail nonblocking-input behavior differs: {results!r}")
+
+
 def run(s: Suite) -> None:
     _presume_pipe_cases(s)
+    _nonblocking_input_cases(s)
     # GNU treats seekable character devices such as /dev/zero as bounded
     # byte streams for -c, rather than trying to spool them until EOF.
     if os.path.exists("/dev/zero"):

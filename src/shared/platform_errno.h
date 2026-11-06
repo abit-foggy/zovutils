@@ -11,4 +11,8 @@ static inline int zov_errno_permission_denied(void) {
     return errno == EPERM;
 }
 
+static inline int zov_errno_would_block(void) {
+    return errno == EAGAIN || errno == EWOULDBLOCK;
+}
+
 #endif

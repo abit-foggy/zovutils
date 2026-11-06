@@ -4,6 +4,7 @@ use std::vec as vec;
 use <stdio.h> as c;
 use <unistd.h> as posix;
 use <platform_env.h> as platform_env;
+use <platform_errno.h> as platform_errno;
 use <stdlib.h> as libc;
 use <string.h> as strc;
 use <tail_watch.h> as tailwatch;
@@ -21,7 +22,10 @@ fn spool(fp: *c::FILE, tmp: *c::FILE, raw_input: bool) bool = {
     while (true) {
         let read_count: i64 = readinput(fp, ((&buf[0usize]) as *u8), 65536usize, raw_input);
         if (read_count == 0i64) { break; };
-        if (read_count < 0i64) { return false; };
+        if (read_count < 0i64) {
+            if (raw_input && platform_errno::zov_errno_would_block() != 0i32) { break; };
+            return false;
+        };
         let n: usize = read_count as usize;
         if (!stream::writebytes(tmp, ((&buf[0usize]) as *u8), n)) { return false; };
     };
@@ -56,7 +60,10 @@ fn tail_bytes_pipe(fp: *c::FILE, count: usize, dest: *c::FILE, raw_input: bool) 
     while (ok) {
         let read_count: i64 = readinput(fp, ((&buf[0usize]) as *u8), 65536usize, raw_input);
         if (read_count == 0i64) { break; };
-        if (read_count < 0i64) { ok = false; break; };
+        if (read_count < 0i64) {
+            if (raw_input && platform_errno::zov_errno_would_block() != 0i32) { break; };
+            ok = false; break;
+        };
         let n: usize = read_count as usize;
         if (count == 0usize) { continue; };
         for (let i in 0..n) {
@@ -110,7 +117,10 @@ fn tailfrom(fp: *c::FILE, count: usize, bytes: bool, delim: u8, dest: *c::FILE, 
                     let mut want: usize = remaining;
                     if (want > 65536usize) { want = 65536usize; };
                     let read_count: i64 = readinput(fp, ((&buf[0usize]) as *u8), want, raw_input);
-                    if (read_count < 0i64) { return false; };
+                    if (read_count < 0i64) {
+                        if (raw_input && platform_errno::zov_errno_would_block() != 0i32) { break; };
+                        return false;
+                    };
                     if (read_count == 0i64) { break; };
                     let n: usize = read_count as usize;
                     if (!stream::writebytes(dest, ((&buf[0usize]) as *u8), n)) { return false; };
@@ -558,7 +568,7 @@ export fn run(start: usize, argc: usize) i32 = {
             };
             if (longmatch(key, "--version")) {
                 if (has_equal) { badargument("--version"); return 1; };
-                io::println("tail (zovutils) 0.1.109"); if (!stream::finishoutput("tail")) { return 1; }; return 0;
+                io::println("tail (zovutils) 0.1.110"); if (!stream::finishoutput("tail")) { return 1; }; return 0;
             };
             badlong(arg); return 1;
         };
