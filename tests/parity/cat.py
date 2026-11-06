@@ -58,8 +58,38 @@ def _nonblocking_input_cases(s: Suite) -> None:
         raise AssertionError(f"cat nonblocking-input behavior differs: {results!r}")
 
 
+def _write_error_cases(s: Suite) -> None:
+    if not Path("/dev/full").exists():
+        return
+
+    results = []
+    for command in (
+        [str(s.zovutils), "cat"],
+        [str(s.gnu_dir / "cat")],
+    ):
+        modes = []
+        for options in ((), ("-n",), ("-v",)):
+            with open("/dev/full", "wb") as output:
+                proc = subprocess.run(
+                    [*command, *options],
+                    input=b"write failure\nwith multiple lines\n",
+                    stdout=output,
+                    stderr=subprocess.PIPE,
+                    env=s.env,
+                    timeout=5,
+                    check=False,
+                )
+            modes.append((proc.returncode, proc.stderr))
+        results.append(modes)
+
+    s.count += 3
+    if results[0] != results[1]:
+        raise AssertionError(f"cat output-error behavior differs: {results!r}")
+
+
 def run(s: Suite) -> None:
     _nonblocking_input_cases(s)
+    _write_error_cases(s)
     empty = s.fixture("empty", b"")
     text = s.fixture("text", b"alpha\nbeta\n\ngamma\n")
     lines = s.fixture("lines", b"one\ntwo\nthree\nfour\n")
