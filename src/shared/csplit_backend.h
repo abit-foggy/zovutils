@@ -247,7 +247,16 @@ static inline int zov_csplit_run(const char *path, const char *prefix,
                     size_t found = 0; int match = zov_csplit_find(&previous, &bytes, lines, line_count, search_start, &found);
                     if (match == -2) { fprintf(stderr, "csplit: invalid regular expression: '%s'\n", previous.text); status = 1; break; }
                     if (match < 0) { fprintf(stderr, "csplit: memory exhausted\n"); status = 1; break; }
-                    if (!match) { if (star) break; fprintf(stderr, "csplit: '%s': match not found\n", previous.text); status = 1; break; }
+                    if (!match) {
+                        if (star) break;
+                        if (!zov_csplit_write_piece(prefix, suffix_format, digits, output_index,
+                                &bytes, lines, cursor, line_count, suppressed, elide_empty, silent, &created)) {
+                            status = 1; break;
+                        }
+                        if (created.count > output_index) ++output_index;
+                        fprintf(stderr, "csplit: '%s': match not found on repetition %lu\n", previous.text, done + 1);
+                        status = 1; break;
+                    }
                     long b = (long)found + previous.offset;
                     if (b < 0 || (unsigned long)b > line_count) { fprintf(stderr, "csplit: '%s': line number out of range\n", previous.text); status = 1; break; }
                     boundary = (size_t)b; matched = (long)found;

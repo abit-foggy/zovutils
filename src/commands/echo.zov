@@ -136,7 +136,7 @@ export fn run(start: usize, argc: usize) i32 = {
         let only: str = env::argat(start);
         if (only == "--help") { help(); if (!stream::finishoutput("echo")) { return 1; }; return 0; };
         if (only == "--version") {
-            io::println("echo (zovutils) 0.1.205");
+            io::println("echo (zovutils) 0.1.206");
             if (!stream::finishoutput("echo")) { return 1; };
             return 0;
         };

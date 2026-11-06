@@ -9,7 +9,9 @@ from pathlib import Path
 from support import ParityFailure, Suite
 
 
-def output_case(s: Suite, data: bytes, options: list[str], patterns: list[str]) -> None:
+def output_case(
+    s: Suite, data: bytes, options: list[str], patterns: list[str], *, stdin_file: bool = False
+) -> None:
     results = []
     outputs = []
     for label, executable in (("zov", s.zovutils), ("gnu", s.gnu_dir / "csplit")):
@@ -19,12 +21,13 @@ def output_case(s: Suite, data: bytes, options: list[str], patterns: list[str]) 
         env = s.env.copy()
         if label == "gnu":
             env["PATH"] = str(s.gnu_dir) + os.pathsep + env.get("PATH", "")
-        command = [str(executable), "csplit", *options, "input", *patterns] if label == "zov" else ["csplit", *options, "input", *patterns]
+        input_path = "-" if stdin_file else "input"
+        command = [str(executable), "csplit", *options, input_path, *patterns] if label == "zov" else ["csplit", *options, input_path, *patterns]
         try:
             result = subprocess.run(
                 command,
                 cwd=directory,
-                input=b"",
+                input=data if stdin_file else b"",
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 env=env,
@@ -64,6 +67,8 @@ def run(s: Suite) -> None:
     ):
         output_case(s, data, options, patterns)
     output_case(s, b"one\ntwo", ["-s"], ["2"])
+    output_case(s, data, ["-s"], ["/MARK/", "{1}"], stdin_file=True)
+    output_case(s, data, ["-k"], ["/MARK/", "{2}"])
     output_case(s, b"one\ntwo\n", ["-s", "--elide-empty-files"], ["1"])
     s.case("csplit", ["--help"])
     s.product_version("csplit")
