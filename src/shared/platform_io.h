@@ -31,6 +31,14 @@ static inline void *zov_alloc_write_buffer(void) {
     return zov_alloc_read_buffer();
 }
 
+static inline int zov_needs_seekdescriptor_sync(void) {
+#ifdef __APPLE__
+    return 0;
+#else
+    return 1;
+#endif
+}
+
 static inline int zov_write_output(FILE *output, const void *buffer, size_t length) {
     int flags = fcntl(fileno(output), F_GETFL);
 #ifdef O_DIRECT

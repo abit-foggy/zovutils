@@ -19,6 +19,9 @@ static inline size_t zov_wc_count_newlines(const unsigned char *buffer, size_t l
 }
 
 static inline int zov_wc_newline_backend(void) {
+#if defined(__aarch64__)
+    return 3;
+#endif
 #if defined(__x86_64__)
     unsigned int eax, ebx, ecx, edx;
     unsigned int leaf1_ecx;

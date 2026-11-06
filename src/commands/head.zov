@@ -3,6 +3,7 @@ use std::io;
 use std::vec as vec;
 use <stdio.h> as c;
 use <platform_env.h> as platform_env;
+use <platform_io.h> as platform_io;
 use shared::io as stream;
 use shared::numbers as numparse;
 
@@ -131,7 +132,8 @@ fn copyhead(fp: *c::FILE, count: usize, bytes: bool, delim: u8, input_limit: i64
         if (read_position >= 0i64 && take < n) {
             let target_position: i64 = read_position + (take as i64);
             if (c::fseek(fp, target_position, c::SEEK_SET) != 0) { return false; };
-            if (!stream::seekdescriptor(fp, target_position)) { return false; };
+            if (platform_io::zov_needs_seekdescriptor_sync() != 0i32
+                && !stream::seekdescriptor(fp, target_position)) { return false; };
         };
         if (take > 0usize && !stream::writebytes(c::stdout, ((&buf[0usize]) as *u8), take)) { return false; };
         if (input_limit < 0i64 && c::fflush(c::stdout) != 0) { return false; };
@@ -258,7 +260,7 @@ export fn run(start: usize, argc: usize) i32 = {
             };
             if (longmatch(key, "--version")) {
                 if (has_equal) { badargument("--version"); return 1; };
-                io::println("head (zovutils) 0.1.155"); if (!stream::finishoutput("head")) { return 1; }; return 0;
+                io::println("head (zovutils) 0.1.157"); if (!stream::finishoutput("head")) { return 1; }; return 0;
             };
             badlong(arg); return 1;
         };
