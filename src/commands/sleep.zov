@@ -1,0 +1,87 @@
+use std::env as args;
+use std::io;
+use <stdio.h> as c;
+use <sleep_backend.h> as backend;
+use shared::io as stream;
+
+fn help() void = {
+    io::print("Usage: sleep NUMBER[SUFFIX]...\n");
+    io::print("  or:  sleep OPTION\n");
+    io::print("Pause for NUMBER seconds, where NUMBER is an integer or floating-point.\n");
+    io::print("SUFFIX may be 's','m','h', or 'd', for seconds, minutes, hours, days.\n");
+    io::print("With multiple arguments, pause for the sum of their values.\n\n");
+    io::print("      --help\n");
+    io::print("         display this help and exit\n");
+    io::print("      --version\n");
+    io::print("         output version information and exit\n\n");
+    io::print("Report bugs to: bug-coreutils@gnu.org\n");
+    io::print("GNU coreutils home page: <https://www.gnu.org/software/coreutils/>\n");
+    io::print("General help using GNU software: <https://www.gnu.org/gethelp/>\n");
+    io::print("Report any translation bugs to <https://translationproject.org/team/>\n");
+    io::print("Full documentation <https://www.gnu.org/software/coreutils/sleep>\n");
+    io::print("or available locally via: info '(coreutils) sleep invocation'\n");
+};
+
+fn invalid_interval(value: str) void = {
+    c::fprintf(c::stderr, "sleep: invalid time interval '%s'\n", value);
+    c::fprintf(c::stderr, "Try 'sleep --help' for more information.\n");
+};
+
+fn is_prefix(value: str, full: str) bool = {
+    return value.len > 2usize && value.len <= full.len && value == full[0usize..value.len];
+};
+
+export fn run(start: usize, argc: usize) i32 = {
+    let mut i: usize = start;
+    let mut options_done: bool = false;
+    let mut saw_operand: bool = false;
+    while (i < argc) {
+        let arg: str = args::argat(i);
+        if (!options_done && arg == "--") { options_done = true; i += 1usize; continue; };
+        if (!options_done && arg.len > 2usize && arg[0usize..2usize] == "--") {
+            let mut key: str = arg;
+            for (let j in 0usize..arg.len) {
+                if (arg.data[j] == 61u8) { key = arg[0usize..j]; break; };
+            };
+            if (key == "--help" || is_prefix(key, "--help")) {
+                if (arg.len != key.len) {
+                    c::fprintf(c::stderr, "sleep: option '--help' doesn't allow an argument\n");
+                    c::fprintf(c::stderr, "Try 'sleep --help' for more information.\n");
+                    return 1;
+                };
+                help(); stream::finishoutput("sleep"); return 0;
+            };
+            if (key == "--version" || is_prefix(key, "--version")) {
+                if (arg.len != key.len) {
+                    c::fprintf(c::stderr, "sleep: option '--version' doesn't allow an argument\n");
+                    c::fprintf(c::stderr, "Try 'sleep --help' for more information.\n");
+                    return 1;
+                };
+                io::println("sleep (zovutils) 0.1.185"); stream::finishoutput("sleep"); return 0;
+            };
+            c::fprintf(c::stderr, "sleep: unrecognized option '%s'\n", arg);
+            c::fprintf(c::stderr, "Try 'sleep --help' for more information.\n");
+            return 1;
+        };
+        if (!options_done && arg.len > 1usize && arg.data[0usize] == 45u8) {
+            c::fprintf(c::stderr, "sleep: invalid option -- '%c'\n", arg.data[1usize] as i32);
+            c::fprintf(c::stderr, "Try 'sleep --help' for more information.\n");
+            return 1;
+        };
+        saw_operand = true;
+        let result: i32 = backend::zov_sleep_interval(arg.data as *i8);
+        if (result == 1i32) { invalid_interval(arg); return 1; };
+        if (result != 0i32) {
+            c::fprintf(c::stderr, "sleep: time interval '%s' is too large\n", arg);
+            c::fprintf(c::stderr, "Try 'sleep --help' for more information.\n");
+            return 1;
+        };
+        i += 1usize;
+    };
+    if (!saw_operand) {
+        c::fprintf(c::stderr, "sleep: missing operand\n");
+        c::fprintf(c::stderr, "Try 'sleep --help' for more information.\n");
+        return 1;
+    };
+    return 0;
+};
