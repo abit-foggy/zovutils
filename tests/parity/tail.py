@@ -80,7 +80,7 @@ def _follow(
     elif mode == "descriptor-long":
         args = ["--follow=descriptor", "--sleep-interval=0.1"]
     elif mode.startswith("F-"):
-        args = ["-F", "-s", "0.1"]
+        args = ["-F", "-s", "0.1", "--max-unchanged-stats=1"]
     elif mode == "name-abbrev":
         args = ["--fo=name", "--sleep-interval=0.1", "--max-unchanged-stats=1"]
     else:
