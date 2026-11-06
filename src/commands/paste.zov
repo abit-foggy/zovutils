@@ -1,0 +1,94 @@
+use std::env as args;
+use std::io;
+use <stdio.h> as c;
+use <paste_backend.h> as backend;
+use shared::io as stream;
+
+fn usage_error() void = {
+    c::fprintf(c::stderr, "Try 'paste --help' for more information.\n");
+};
+
+fn longkey(arg: str) str = {
+    for (let i in 0usize..arg.len) {
+        if (arg.data[i] == 61u8) { return arg[0usize..i]; };
+    };
+    return arg;
+};
+
+fn is_prefix(value: str, full: str) bool = {
+    return value.len > 2usize && value.len <= full.len && value == full[0usize..value.len];
+};
+
+fn help() void = {
+    io::print("Usage: paste [OPTION]... [FILE]...\n");
+    io::print("Write lines consisting of the sequentially corresponding lines from\n");
+    io::print("each FILE, separated by TABs, to standard output.\n");
+    io::print("The newline of every line except the line from the last file\n");
+    io::print("is replaced with a TAB.\n\n");
+    io::print("With no FILE, or when FILE is -, read standard input.\n\n");
+    io::print("Mandatory arguments to long options are mandatory for short options too.\n");
+    io::print("  -d, --delimiters=LIST\n         reuse characters from LIST instead of TABs;\n         backslash escapes are supported\n");
+    io::print("  -s, --serial\n         paste one file at a time instead of in parallel; the newline of\n         every line except the last line in each file is replaced with a TAB\n");
+    io::print("  -z, --zero-terminated\n         line delimiter is NUL, not newline\n");
+    io::print("      --help\n         display this help and exit\n");
+    io::print("      --version\n         output version information and exit\n\n");
+    io::print("Report bugs to: bug-coreutils@gnu.org\n");
+    io::print("GNU coreutils home page: <https://www.gnu.org/software/coreutils/>\n");
+    io::print("General help using GNU software: <https://www.gnu.org/gethelp/>\n");
+    io::print("Report any translation bugs to <https://translationproject.org/team/>\n");
+    io::print("Full documentation <https://www.gnu.org/software/coreutils/paste>\n");
+    io::print("or available locally via: info '(coreutils) paste invocation'\n");
+};
+
+export fn run(start: usize, argc: usize) i32 = {
+    let mut delimiter: str = "\t";
+    let mut serial: bool = false;
+    let mut zero_terminated: bool = false;
+    let mut files: [256]str;
+    let mut file_count: usize = 0usize;
+    let mut i: usize = start;
+    let mut options_done: bool = false;
+    while (i < argc) {
+        let arg: str = args::argat(i);
+        if (!options_done && arg == "--") { options_done = true; i += 1usize; continue; };
+        if (!options_done && arg.len > 2usize && arg[0usize..2usize] == "--") {
+            let key: str = longkey(arg);
+            if (key == "--delimiters" || is_prefix(key, "--delimiters")) {
+                if (arg.len == key.len && i + 1usize >= argc) { c::fprintf(c::stderr, "paste: option '--delimiters' requires an argument\n"); usage_error(); return 1; };
+                if (arg.len > key.len) { delimiter = arg[key.len + 1usize..arg.len]; i += 1usize; }
+                else { delimiter = args::argat(i + 1usize); i += 2usize; };
+                continue;
+            };
+            if (key == "--serial" || is_prefix(key, "--serial")) { serial = true; i += 1usize; continue; };
+            if (key == "--zero-terminated" || is_prefix(key, "--zero-terminated")) { zero_terminated = true; i += 1usize; continue; };
+            if (key == "--help" || is_prefix(key, "--help")) { help(); stream::finishoutput("paste"); return 0; };
+            if (key == "--version" || is_prefix(key, "--version")) { io::println("paste (zovutils) 0.1.191"); stream::finishoutput("paste"); return 0; };
+            c::fprintf(c::stderr, "paste: unrecognized option '%s'\n", arg); usage_error(); return 1;
+        };
+        if (!options_done && arg.len > 1usize && arg.data[0usize] == 45u8) {
+            let mut j: usize = 1usize;
+            while (j < arg.len) {
+                let option: u8 = arg.data[j];
+                if (option == 115u8) { serial = true; j += 1usize; continue; };
+                if (option == 122u8) { zero_terminated = true; j += 1usize; continue; };
+                if (option == 100u8) {
+                    if (j + 1usize < arg.len) { delimiter = arg[j + 1usize..arg.len]; }
+                    else if (i + 1usize < argc) { i += 1usize; delimiter = args::argat(i); }
+                    else { c::fprintf(c::stderr, "paste: option requires an argument -- 'd'\n"); usage_error(); return 1; };
+                    j = arg.len; continue;
+                };
+                c::fprintf(c::stderr, "paste: invalid option -- '%c'\n", option as i32); usage_error(); return 1;
+            };
+            i += 1usize; continue;
+        };
+        if (file_count >= 256usize) { c::fprintf(c::stderr, "paste: too many input files\n"); return 1; };
+        files[file_count] = arg; file_count += 1usize; i += 1usize;
+    };
+    if (file_count == 0usize) {
+        files[0usize] = "-";
+        file_count = 1usize;
+    };
+    let mut paths: [256]*i8;
+    for (let fi in 0usize..file_count) { paths[fi] = files[fi].data as *i8; };
+    return backend::zov_paste_run(file_count, ((&paths[0usize]) as **i8), delimiter.data as *i8, serial as i32, zero_terminated as i32);
+};
