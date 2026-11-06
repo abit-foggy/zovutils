@@ -36,14 +36,14 @@ static inline void zov_debug_direct_io(const char *stage, int error, off_t posit
 }
 
 static inline int zov_write_output(FILE *output, const void *buffer, size_t length) {
-#ifdef O_DIRECT
     int flags = fcntl(fileno(output), F_GETFL);
     const char *debug = getenv("ZOVUTILS_DEBUG_DIRECT_IO");
+#ifdef O_DIRECT
+    if (debug != NULL && debug[0] != '\0' && length > 16384) {
+        fprintf(stderr, "direct I/O debug: flags=%d mask=%o length=%zu\n",
+                flags, O_DIRECT, length);
+    }
     if (flags >= 0 && (flags & O_DIRECT)) {
-        if (debug != NULL && debug[0] != '\0') {
-            fprintf(stderr, "direct I/O debug: flags=%d mask=%o length=%zu\n",
-                    flags, O_DIRECT, length);
-        }
         const unsigned char *bytes = (const unsigned char *) buffer;
         size_t written = 0;
         int fallback_fd = fileno(output);
@@ -83,6 +83,10 @@ static inline int zov_write_output(FILE *output, const void *buffer, size_t leng
             written += (size_t) count;
         }
         return !close_fallback || close(fallback_fd) == 0;
+    }
+#else
+    if (debug != NULL && debug[0] != '\0' && length > 16384) {
+        fprintf(stderr, "direct I/O debug: O_DIRECT unavailable length=%zu\n", length);
     }
 #endif
     return fwrite(buffer, 1, length, output) == length;
