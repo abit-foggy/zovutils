@@ -3,7 +3,7 @@ PREFIX ?= /usr/local
 BINDIR ?= $(PREFIX)/bin
 UTILS = cat head tail wc
 
-.PHONY: all check build unit parity test install uninstall clean
+.PHONY: all check build unit parity asan-parity test install uninstall clean
 
 all: build
 
@@ -18,6 +18,9 @@ unit:
 
 parity: build
 	python3 tests/parity/run.py
+
+asan-parity:
+	ZOVC="$(ZOVC)" sh tests/asan/run.sh
 
 test: unit parity
 
