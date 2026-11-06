@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import difflib
 import os
+import pty
 import re
 import signal
 import subprocess
 import sys
 import tempfile
+import tty
 from pathlib import Path
 
 
@@ -276,6 +278,41 @@ ssize_t read(int fd, void *buffer, size_t count) {
         self.count += 1
         if results[0] != results[1]:
             raise ParityFailure(f"{utility} post-input read-error behavior differs: {results!r}")
+
+    def pty_read_error_case(self, utility: str, args: list[str]) -> None:
+        """Compare partial input followed by Linux PTY-master EIO."""
+        if not sys.platform.startswith("linux"):
+            return
+        payload = b"one two\nsecond line\n"
+        results = []
+        for command in (
+            [str(self.zovutils), utility, *args],
+            [str(self.gnu_dir / utility), *args],
+        ):
+            master, slave = pty.openpty()
+            tty.setraw(slave)
+            os.write(slave, payload)
+            try:
+                proc = subprocess.Popen(
+                    command,
+                    stdin=master,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    env=self.env,
+                )
+            finally:
+                os.close(master)
+                os.close(slave)
+            try:
+                stdout, stderr = proc.communicate(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                stdout, stderr = proc.communicate()
+                raise ParityFailure(f"{utility} did not stop after PTY read error")
+            results.append((proc.returncode, stdout, stderr))
+        self.count += 1
+        if results[0] != results[1]:
+            raise ParityFailure(f"{utility} PTY read-error behavior differs: {results!r}")
 
     def symlink_dispatch(self, utility: str, args: list[str]) -> None:
         alias = self.root / utility

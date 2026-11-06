@@ -161,6 +161,7 @@ def run(s: Suite) -> None:
     s.write_failure("wc", ["--version"])
     s.broken_pipe_case("wc", ["--files0-from=" + many_files0])
     s.interrupted_read_case("wc", [])
+    s.pty_read_error_case("wc", ["-wmL"])
     s.symlink_dispatch("wc", ["-l", text])
     s.permission_denied_case("wc", ["-l", unreadable, text], unreadable)
 

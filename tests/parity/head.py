@@ -93,6 +93,7 @@ def run(s: Suite) -> None:
     s.broken_pipe_case("head", ["-c", "100000", large])
     s.interrupted_read_case("head", ["-c", "2"])
     s.read_error_after_partial_case("head", [])
+    s.pty_read_error_case("head", [])
     s.symlink_dispatch("head", ["-n", "1", lines])
     s.case("head", ["-n", "1", lines], extra_env={"POSIXLY_CORRECT": "1"})
     s.case("head", [lines, "-n", "1"], extra_env={"POSIXLY_CORRECT": ""})
