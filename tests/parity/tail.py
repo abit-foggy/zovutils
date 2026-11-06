@@ -15,6 +15,25 @@ from support import ParityFailure, Suite
 FOLLOW_START_TIMEOUT = 1.0
 
 
+def _finish_process(
+    proc: subprocess.Popen[bytes], timeout: float
+) -> tuple[bool, bytes | None, bytes | None, int]:
+    timed_out = False
+    try:
+        try:
+            proc.wait(timeout=timeout)
+        except subprocess.TimeoutExpired:
+            timed_out = True
+            proc.terminate()
+        stdout, stderr = proc.communicate(timeout=3)
+        assert proc.returncode is not None
+        return timed_out, stdout, stderr, proc.returncode
+    finally:
+        if proc.poll() is None:
+            proc.kill()
+            proc.wait()
+
+
 def _limit_output_file() -> None:
     resource.setrlimit(resource.RLIMIT_FSIZE, (65536, 65536))
     signal.signal(signal.SIGXFSZ, signal.SIG_IGN)
@@ -337,13 +356,8 @@ def _presume_pipe_cases(s: Suite) -> None:
                 stderr=subprocess.PIPE,
                 env=s.env,
             )
-            try:
-                proc.wait(timeout=0.25)
-                running.append((False, proc.returncode, proc.stderr.read()))
-            except subprocess.TimeoutExpired:
-                proc.terminate()
-                _, stderr = proc.communicate(timeout=3)
-                running.append((True, proc.returncode, stderr))
+            timed_out, _, stderr, status = _finish_process(proc, 0.25)
+            running.append((timed_out, status, stderr))
         s.count += 1
         if running[0] != running[1] or not running[0][0]:
             raise AssertionError(f"tail presumed-pipe /dev/zero behavior differs: {running!r}")
@@ -441,12 +455,8 @@ def run(s: Suite) -> None:
                 stderr=subprocess.PIPE,
                 env=s.env,
             )
-            try:
-                proc.wait(timeout=FOLLOW_START_TIMEOUT)
-            except subprocess.TimeoutExpired:
-                proc.terminate()
-            stdout, stderr = proc.communicate(timeout=3)
-            outcomes.append((stdout, stderr, proc.returncode))
+            _, stdout, stderr, status = _finish_process(proc, FOLLOW_START_TIMEOUT)
+            outcomes.append((stdout, stderr, status))
         s.count += 1
         if outcomes[0] != outcomes[1]:
             raise AssertionError(f"tail legacy plus-follow differs for {option}: {outcomes!r}")
@@ -463,12 +473,8 @@ def run(s: Suite) -> None:
                 stderr=subprocess.PIPE,
                 env=s.env,
             )
-            try:
-                proc.wait(timeout=FOLLOW_START_TIMEOUT)
-            except subprocess.TimeoutExpired:
-                proc.terminate()
-            stdout, stderr = proc.communicate(timeout=3)
-            outcomes.append((stdout, stderr, proc.returncode))
+            _, stdout, stderr, status = _finish_process(proc, FOLLOW_START_TIMEOUT)
+            outcomes.append((stdout, stderr, status))
         s.count += 1
         if outcomes[0] != outcomes[1]:
             raise AssertionError(f"tail legacy block-follow differs for {option}: {outcomes!r}")
@@ -485,12 +491,8 @@ def run(s: Suite) -> None:
                 stderr=subprocess.PIPE,
                 env=s.env,
             )
-            try:
-                proc.wait(timeout=FOLLOW_START_TIMEOUT)
-            except subprocess.TimeoutExpired:
-                proc.terminate()
-            stdout, stderr = proc.communicate(timeout=3)
-            outcomes.append((stdout, stderr, proc.returncode))
+            _, stdout, stderr, status = _finish_process(proc, FOLLOW_START_TIMEOUT)
+            outcomes.append((stdout, stderr, status))
         s.count += 1
         if outcomes[0] != outcomes[1]:
             raise AssertionError(f"tail legacy minus-follow differs for {option}: {outcomes!r}")
