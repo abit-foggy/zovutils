@@ -1,0 +1,360 @@
+use std::env as args;
+use std::io;
+use std::mem as mem;
+use <stdio.h> as c;
+use <printf_format.h> as cprintf;
+use shared::io as stream;
+
+fn emitbyte(value: u8) bool = { return stream::putbyte(c::stdout, value); };
+
+fn emit(value: str) bool = {
+    for (let i in 0usize..value.len) {
+        if (!emitbyte(value.data[i])) { return false; };
+    };
+    return true;
+};
+
+fn digit(value: u8) i32 = {
+    if (value >= 48u8 && value <= 57u8) { return (value - 48u8) as i32; };
+    if (value >= 65u8 && value <= 70u8) { return (value - 65u8 + 10u8) as i32; };
+    if (value >= 97u8 && value <= 102u8) { return (value - 97u8 + 10u8) as i32; };
+    return -1;
+};
+
+fn emit_utf8(codepoint: u32) bool = {
+    if (codepoint <= 127u32) { return emitbyte(codepoint as u8); };
+    if (codepoint <= 2047u32) {
+        return emitbyte((192u32 | (codepoint >> 6u32)) as u8) &&
+            emitbyte((128u32 | (codepoint & 63u32)) as u8);
+    };
+    if (codepoint <= 65535u32 && !(codepoint >= 55296u32 && codepoint <= 57343u32)) {
+        return emitbyte((224u32 | (codepoint >> 12u32)) as u8) &&
+            emitbyte((128u32 | ((codepoint >> 6u32) & 63u32)) as u8) &&
+            emitbyte((128u32 | (codepoint & 63u32)) as u8);
+    };
+    if (codepoint <= 1114111u32) {
+        return emitbyte((240u32 | (codepoint >> 18u32)) as u8) &&
+            emitbyte((128u32 | ((codepoint >> 12u32) & 63u32)) as u8) &&
+            emitbyte((128u32 | ((codepoint >> 6u32) & 63u32)) as u8) &&
+            emitbyte((128u32 | (codepoint & 63u32)) as u8);
+    };
+    return false;
+};
+
+fn escapes(value: str, start: usize, octal_zero_required: bool, stopped: &mut bool, status: &mut i32) usize = {
+    let mut i: usize = start;
+    while (i < value.len) {
+        let b: u8 = value.data[i];
+        if (b != 92u8 || i + 1usize >= value.len) {
+            if (!emitbyte(b)) { *status = 1; return value.len; };
+            i += 1usize; continue;
+        };
+        let next: u8 = value.data[i + 1usize];
+        if (next == 92u8) { if (!emitbyte(92u8)) { *status = 1; }; i += 2usize; continue; };
+        if (next == 34u8) { if (!emitbyte(34u8)) { *status = 1; }; i += 2usize; continue; };
+        if (next == 97u8) { if (!emitbyte(7u8)) { *status = 1; }; i += 2usize; continue; };
+        if (next == 98u8) { if (!emitbyte(8u8)) { *status = 1; }; i += 2usize; continue; };
+        if (next == 99u8) { *stopped = true; return value.len; };
+        if (next == 101u8) { if (!emitbyte(27u8)) { *status = 1; }; i += 2usize; continue; };
+        if (next == 102u8) { if (!emitbyte(12u8)) { *status = 1; }; i += 2usize; continue; };
+        if (next == 110u8) { if (!emitbyte(10u8)) { *status = 1; }; i += 2usize; continue; };
+        if (next == 114u8) { if (!emitbyte(13u8)) { *status = 1; }; i += 2usize; continue; };
+        if (next == 116u8) { if (!emitbyte(9u8)) { *status = 1; }; i += 2usize; continue; };
+        if (next == 118u8) { if (!emitbyte(11u8)) { *status = 1; }; i += 2usize; continue; };
+        if ((next == 48u8) || (!octal_zero_required && next >= 49u8 && next <= 55u8)) {
+            let mut codepoint: u32 = 0u32;
+            let mut j: usize = i + 1usize;
+            let mut count: usize = 0usize;
+            while (j < value.len && count < 3usize && value.data[j] >= 48u8 && value.data[j] <= 55u8) {
+                codepoint = codepoint * 8u32 + (value.data[j] - 48u8) as u32;
+                j += 1usize; count += 1usize;
+            };
+            if (!emitbyte(codepoint as u8)) { *status = 1; };
+            i = j; continue;
+        };
+        if (next == 120u8) {
+            let mut required: usize = 2usize;
+            let mut codepoint: u32 = 0u32;
+            let mut j: usize = i + 2usize;
+            let mut count: usize = 0usize;
+            while (j < value.len && count < required) {
+                let part: i32 = digit(value.data[j]);
+                if (part < 0) { break; };
+                codepoint = codepoint * 16u32 + part as u32;
+                count += 1usize; j += 1usize;
+                if (next == 120u8 && count == 2usize) { break; };
+            };
+            if (count == 0usize) {
+                c::fprintf(c::stderr, "printf: missing hexadecimal number in escape\n");
+                *status = 1; return value.len;
+            };
+            if (!emitbyte(codepoint as u8)) { *status = 1; };
+            i = j; continue;
+        };
+        if (next == 117u8 || next == 85u8) {
+            let mut digits: usize = 4usize;
+            if (next == 85u8) { digits = 8usize; };
+            let mut normalized: [8]u8;
+            let mut j: usize = i + 2usize;
+            let mut count: usize = 0usize;
+            while (j < value.len && count < digits) {
+                let mut ch: u8 = value.data[j];
+                if (digit(ch) < 0) { break; };
+                if (ch >= 97u8 && ch <= 102u8) { ch = ch - 32u8; };
+                normalized[count] = ch;
+                j += 1usize; count += 1usize;
+            };
+            if (count < digits) {
+                c::fprintf(c::stderr, "printf: missing hexadecimal number in escape\n");
+                *status = 1; return value.len;
+            };
+            if (!emitbyte(92u8) || !emitbyte(next)) { *status = 1; };
+            for (let k in 0usize..digits) { if (!emitbyte(normalized[k])) { *status = 1; }; };
+            i = j; continue;
+        };
+        if (!emitbyte(92u8) || !emitbyte(next)) { *status = 1; };
+        i += 2usize;
+    };
+    return value.len;
+};
+
+fn safe_shell_byte(value: u8) bool = {
+    return (value >= 65u8 && value <= 90u8) || (value >= 97u8 && value <= 122u8) ||
+        (value >= 48u8 && value <= 57u8) || value == 95u8 || value == 43u8 ||
+        value == 45u8 || value == 46u8 || value == 47u8 || value == 58u8 || value == 64u8;
+};
+
+fn shell_quote(value: str) bool = {
+    if (value.len == 0usize) { return emit("''"); };
+    let mut safe: bool = true;
+    let mut has_single: bool = false;
+    let mut has_double: bool = false;
+    for (let i in 0usize..value.len) { if (!safe_shell_byte(value.data[i])) { safe = false; }; };
+    for (let i in 0usize..value.len) {
+        if (value.data[i] == 39u8) { has_single = true; };
+        if (value.data[i] == 34u8) { has_double = true; };
+    };
+    if (safe) { return emit(value); };
+    if (has_single && !has_double) {
+        if (!emitbyte(34u8)) { return false; };
+        for (let i in 0usize..value.len) {
+            let b: u8 = value.data[i];
+            if (b == 34u8 || b == 36u8 || b == 92u8 || b == 96u8) {
+                if (!emitbyte(92u8)) { return false; };
+            };
+            if (!emitbyte(b)) { return false; };
+        };
+        return emitbyte(34u8);
+    };
+    if (!emitbyte(39u8)) { return false; };
+    let mut i: usize = 0usize;
+    while (i < value.len) {
+        let b: u8 = value.data[i];
+        if (b == 39u8) {
+            if (!emit("'\\''")) { return false; };
+        } else if (b < 32u8 || b >= 127u8) {
+            if (!emitbyte(39u8) || !emit("$'")) { return false; };
+            while (i < value.len && (value.data[i] < 32u8 || value.data[i] >= 127u8)) {
+                let escaped: u8 = value.data[i];
+                if (escaped == 10u8) { if (!emit("\\n")) { return false; }; }
+                else if (escaped == 9u8) { if (!emit("\\t")) { return false; }; }
+                else if (escaped == 13u8) { if (!emit("\\r")) { return false; }; }
+                else {
+                    let first: u8 = 48u8 + (escaped / 64u8);
+                    let second: u8 = 48u8 + ((escaped / 8u8) % 8u8);
+                    let third: u8 = 48u8 + (escaped % 8u8);
+                    if (!emitbyte(92u8) || !emitbyte(first) || !emitbyte(second) || !emitbyte(third)) { return false; };
+                };
+                i += 1usize;
+            };
+            if (!emitbyte(39u8)) { return false; };
+            if (i < value.len && !emitbyte(39u8)) { return false; };
+            continue;
+        } else if (!emitbyte(b)) { return false; };
+        i += 1usize;
+    };
+    if (value.len > 0usize && value.data[value.len - 1usize] >= 32u8 && value.data[value.len - 1usize] < 127u8) {
+        return emitbyte(39u8);
+    };
+    return true;
+};
+
+fn invalid_conversion(spec: str) void = {
+    c::fprintf(c::stderr, "printf: %s: invalid conversion specification\n", spec);
+};
+
+fn numeric_error(value: str, error: i32) void = {
+    if (error == 1i32 || error == 5i32 || error == 8i32) {
+        c::fprintf(c::stderr, "printf: '%s': expected a numeric value\n", value);
+    } else if (error == 2i32 || error == 6i32 || error == 9i32) {
+        c::fprintf(c::stderr, "printf: '%s': value not completely converted\n", value);
+    } else {
+        c::fprintf(c::stderr, "printf: '%s': value too large to be represented\n", value);
+    };
+};
+
+fn help() void = {
+    io::print("Usage: printf FORMAT [ARGUMENT]...\n");
+    io::print("  or:  printf OPTION\n");
+    io::print("Print ARGUMENT(s) according to FORMAT, or execute according to OPTION:\n\n");
+    io::print("      --help\n");
+    io::print("         display this help and exit\n");
+    io::print("      --version\n");
+    io::print("         output version information and exit\n\n");
+    io::print("FORMAT controls the output as in C printf.  Interpreted sequences are:\n\n");
+    io::print("  \\\"      double quote\n");
+    io::print("  \\\\      backslash\n");
+    io::print("  \\a      alert (BEL)\n");
+    io::print("  \\b      backspace\n");
+    io::print("  \\c      produce no further output\n");
+    io::print("  \\e      escape\n");
+    io::print("  \\f      form feed\n");
+    io::print("  \\n      new line\n");
+    io::print("  \\r      carriage return\n");
+    io::print("  \\t      horizontal tab\n");
+    io::print("  \\v      vertical tab\n");
+    io::print("  \\NNN    byte with octal value NNN (1 to 3 digits)\n");
+    io::print("  \\xHH    byte with hexadecimal value HH (1 to 2 digits)\n");
+    io::print("  \\uHHHH  Unicode (ISO/IEC 10646) character with hex value HHHH (4 digits)\n");
+    io::print("  \\UHHHHHHHH  Unicode character with hex value HHHHHHHH (8 digits)\n");
+    io::print("  %%      a single %\n");
+    io::print("  %b      ARGUMENT as a string with '\\' escapes interpreted,\n");
+    io::print("          except that octal escapes should have a leading 0 like \\0NNN\n");
+    io::print("  %q      ARGUMENT is printed in a format that can be reused as shell input,\n");
+    io::print("          escaping non-printable characters with the POSIX $'' syntax\n\n");
+    io::print("and all C format specifications ending with one of diouxXfeEgGcs, with\n");
+    io::print("ARGUMENTs converted to proper type first.  Variable widths are handled.\n\n");
+    io::print("Your shell may have its own version of printf, which usually supersedes\n");
+    io::print("the version described here.  Please refer to your shell's documentation\n");
+    io::print("for details about the options it supports.\n\n");
+    io::print("Report bugs to: bug-coreutils@gnu.org\n");
+    io::print("GNU coreutils home page: <https://www.gnu.org/software/coreutils/>\n");
+    io::print("General help using GNU software: <https://www.gnu.org/gethelp/>\n");
+    io::print("Report any translation bugs to <https://translationproject.org/team/>\n");
+    io::print("Full documentation <https://www.gnu.org/software/coreutils/printf>\n");
+    io::print("or available locally via: info '(coreutils) printf invocation'\n");
+};
+
+export fn run(start: usize, argc: usize) i32 = {
+    if (start >= argc) {
+        c::fprintf(c::stderr, "printf: missing operand\nTry 'printf --help' for more information.\n");
+        return 1;
+    };
+    if (argc == start + 1usize) {
+        let only: str = args::argat(start);
+        if (only == "--help") { help(); stream::finishoutput("printf"); return 0; };
+        if (only == "--version") { io::println("printf (zovutils) 0.1.181"); stream::finishoutput("printf"); return 0; };
+    };
+    let format: str = args::argat(start);
+    let mut argument_index: usize = start + 1usize;
+    let mut status: i32 = 0;
+    let mut fatal: bool = false;
+    let mut stopped: bool = false;
+    let mut repeat: bool = true;
+    while (repeat && !stopped && !fatal) {
+        let mut consumed: bool = false;
+        let mut i: usize = 0usize;
+        while (i < format.len && !stopped && !fatal) {
+            if (format.data[i] == 92u8) {
+                i = escapes(format, i, false, &mut stopped, &mut status);
+                if (status != 0) { fatal = true; };
+                continue;
+            };
+            if (format.data[i] != 37u8) {
+                if (!emitbyte(format.data[i])) { status = 1; fatal = true; };
+                i += 1usize; continue;
+            };
+            if (i + 1usize < format.len && format.data[i + 1usize] == 37u8) {
+                if (!emitbyte(37u8)) { status = 1; fatal = true; };
+                i += 2usize; continue;
+            };
+            let mut end: usize = i + 1usize;
+            while (end < format.len) {
+                let ch: u8 = format.data[end];
+                if (ch == 100u8 || ch == 105u8 || ch == 111u8 || ch == 117u8 || ch == 120u8 || ch == 88u8 ||
+                    ch == 102u8 || ch == 70u8 || ch == 101u8 || ch == 69u8 || ch == 103u8 || ch == 71u8 ||
+                    ch == 99u8 || ch == 115u8 || ch == 98u8 || ch == 113u8) { break; };
+                end += 1usize;
+            };
+            if (end >= format.len) {
+                invalid_conversion(format[i..format.len]); status = 1; fatal = true; break;
+            };
+            let conversion: u8 = format.data[end];
+            let spec_buffer: *u8 = mem::alloc[u8](end - i + 2usize);
+            for (let j in i..end + 1usize) { spec_buffer[j - i] = format.data[j]; };
+            spec_buffer[end - i + 1usize] = 0u8;
+            let mut spec_value: String = String::fromowned(spec_buffer, end - i + 1usize, end - i + 2usize);
+            let spec: str = spec_value.view();
+            let mut has_argument: i32 = 0i32;
+            let mut value: str = "";
+            let mut width_argument: str = "";
+            let mut has_width: i32 = 0i32;
+            let mut precision_argument: str = "";
+            let mut has_precision: i32 = 0i32;
+            let mut after_dot: bool = false;
+            for (let j in i + 1usize..end) {
+                if (format.data[j] == 46u8) { after_dot = true; };
+                if (format.data[j] == 42u8) {
+                    if (argument_index < argc) {
+                        if (after_dot) { precision_argument = args::argat(argument_index); has_precision = 1i32; }
+                        else { width_argument = args::argat(argument_index); has_width = 1i32; };
+                        argument_index += 1usize; consumed = true;
+                    };
+                    after_dot = false;
+                };
+            };
+            if (argument_index < argc) {
+                value = args::argat(argument_index);
+                argument_index += 1usize; has_argument = 1i32; consumed = true;
+            };
+            if (conversion == 98u8) {
+                let mut escaped_stop: bool = false;
+                if (has_argument != 0i32) {
+                    escapes(value, 0usize, true, &mut escaped_stop, &mut status);
+                    if (status != 0) { fatal = true; };
+                };
+                if (escaped_stop) { stopped = true; };
+            } else if (conversion == 113u8) {
+                if (has_argument != 0i32 && !shell_quote(value)) { status = 1; fatal = true; };
+            } else {
+                let mut out_length: usize = 0usize;
+                let mut conversion_status: i32 = 0i32;
+                let output: nullable *i8 = cprintf::zov_printf_render(spec_buffer as *i8, value.data as *i8,
+                    has_argument, width_argument.data as *i8, has_width,
+                    precision_argument.data as *i8, has_precision, &mut out_length,
+                    &mut conversion_status);
+                if (conversion_status == 4i32) {
+                    invalid_conversion(spec); status = 1; fatal = true;
+                } else if (conversion_status != 0i32) {
+                    if (conversion_status >= 5i32 && conversion_status <= 7i32) {
+                        numeric_error(width_argument, conversion_status - 4i32);
+                    } else if (conversion_status >= 8i32 && conversion_status <= 10i32) {
+                        numeric_error(precision_argument, conversion_status - 7i32);
+                    } else {
+                        numeric_error(value, conversion_status);
+                    };
+                    status = 1;
+                };
+                match (output) {
+                    case let rendered: *i8 => {
+                        if (out_length > 0usize) {
+                            let raw: *u8 = rendered as *u8;
+                            for (let j in 0usize..out_length) { if (!emitbyte(raw[j])) { status = 1; fatal = true; break; }; };
+                        };
+                        mem::freeptr[u8](rendered as *u8);
+                    },
+                    case null => { if (status == 0) { status = 1; }; fatal = true; },
+                };
+            };
+            spec_value.free();
+            i = end + 1usize;
+        };
+        if (argument_index >= argc) { repeat = false; }
+        else if (!consumed) {
+            c::fprintf(c::stderr, "printf: warning: ignoring excess arguments, starting with '%s'\n", args::argat(argument_index));
+            repeat = false;
+        };
+    };
+    if (!stream::finishoutput("printf")) { return 1; };
+    return status;
+};
