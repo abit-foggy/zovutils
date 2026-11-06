@@ -1,6 +1,5 @@
 use <stdio.h> as c;
 use <platform_errno.h> as platform_errno;
-use <sys/stat.h> as sysc;
 use <unistd.h> as posix;
 use <platform_stat.h> as platform_stat;
 use <wc_backend.h> as wc_backend;
@@ -241,22 +240,9 @@ export fn finishoutputbrief(name: str) bool = {
 };
 
 export fn samefile(fp: *c::FILE, path: str) bool = {
-    let mut descriptor_info: [32]u64;
-    let mut path_info: [32]u64;
-    if (sysc::fstat(c::fileno(fp), ((&descriptor_info[0usize]) as *void)) != 0) { return false; };
-    if (sysc::stat(path, ((&path_info[0usize]) as *void)) != 0) { return false; };
-    // POSIX stat layouts on the supported 64-bit Linux and macOS targets put
-    // st_ino in the second machine word. st_dev occupies the first word; on
-    // macOS its defined width is 32 bits.
-    return descriptor_info[1usize] == path_info[1usize]
-        && (descriptor_info[0usize] & 4294967295u64) == (path_info[0usize] & 4294967295u64);
+    return platform_stat::zov_same_file(c::fileno(fp), path) != 0;
 };
 
 export fn sameopenfile(first: *c::FILE, second: *c::FILE) bool = {
-    let mut first_info: [32]u64;
-    let mut second_info: [32]u64;
-    if (sysc::fstat(c::fileno(first), ((&first_info[0usize]) as *void)) != 0) { return false; };
-    if (sysc::fstat(c::fileno(second), ((&second_info[0usize]) as *void)) != 0) { return false; };
-    return first_info[1usize] == second_info[1usize]
-        && (first_info[0usize] & 4294967295u64) == (second_info[0usize] & 4294967295u64);
+    return platform_stat::zov_same_open_file(c::fileno(first), c::fileno(second)) != 0;
 };
