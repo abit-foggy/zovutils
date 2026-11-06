@@ -12,6 +12,8 @@ from pathlib import Path
 
 from support import ParityFailure, Suite
 
+FOLLOW_START_TIMEOUT = 1.0
+
 
 def _limit_output_file() -> None:
     resource.setrlimit(resource.RLIMIT_FSIZE, (65536, 65536))
@@ -440,7 +442,7 @@ def run(s: Suite) -> None:
                 env=s.env,
             )
             try:
-                proc.wait(timeout=0.1)
+                proc.wait(timeout=FOLLOW_START_TIMEOUT)
             except subprocess.TimeoutExpired:
                 proc.terminate()
             stdout, stderr = proc.communicate(timeout=3)
@@ -462,7 +464,7 @@ def run(s: Suite) -> None:
                 env=s.env,
             )
             try:
-                proc.wait(timeout=0.1)
+                proc.wait(timeout=FOLLOW_START_TIMEOUT)
             except subprocess.TimeoutExpired:
                 proc.terminate()
             stdout, stderr = proc.communicate(timeout=3)
@@ -484,7 +486,7 @@ def run(s: Suite) -> None:
                 env=s.env,
             )
             try:
-                proc.wait(timeout=0.1)
+                proc.wait(timeout=FOLLOW_START_TIMEOUT)
             except subprocess.TimeoutExpired:
                 proc.terminate()
             stdout, stderr = proc.communicate(timeout=3)
