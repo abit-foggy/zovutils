@@ -7,11 +7,9 @@
 
 static inline void zov_report_wc_write_error(void) {
     int error = errno;
-#ifdef __APPLE__
     if (error == 0) {
         error = EPIPE;
     }
-#endif
     fprintf(stderr, "wc: write error");
     if (error != 0) {
         fprintf(stderr, ": %s\n", strerror(error));
