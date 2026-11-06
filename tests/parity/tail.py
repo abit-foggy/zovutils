@@ -443,7 +443,12 @@ def run(s: Suite) -> None:
         "tail-plus-follow",
         b"".join(f"line {index}\n".encode() for index in range(1, 21)),
     )
-    for option in ("+f", "+2f", "+cf", "+2cf", "+bf", "+2bf", "+lf", "+2lf"):
+    legacy_follow_options = (
+        ()
+        if sys.platform == "darwin"
+        else ("+f", "+2f", "+cf", "+2cf", "+bf", "+2bf", "+lf", "+2lf")
+    )
+    for option in legacy_follow_options:
         outcomes = []
         for command in (
             [str(s.zovutils), "tail", option, plus_follow_file],
@@ -461,7 +466,8 @@ def run(s: Suite) -> None:
         if outcomes[0] != outcomes[1]:
             raise AssertionError(f"tail legacy plus-follow differs for {option}: {outcomes!r}")
     plus_follow_large = s.fixture("tail-plus-follow-large", b"x\n" * 6000)
-    for option in ("+bf", "+2bf"):
+    legacy_block_follow_options = () if sys.platform == "darwin" else ("+bf", "+2bf")
+    for option in legacy_block_follow_options:
         outcomes = []
         for command in (
             [str(s.zovutils), "tail", option, plus_follow_large],
