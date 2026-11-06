@@ -87,9 +87,45 @@ def _write_error_cases(s: Suite) -> None:
         raise AssertionError(f"cat output-error behavior differs: {results!r}")
 
 
+def _direct_input_cases(s: Suite) -> None:
+    if sys.platform != "linux" or not hasattr(os, "O_DIRECT"):
+        return
+
+    payload = b"direct input alignment\n" + bytes(range(256)) * 16
+    path = s.root / "cat-direct-input"
+    path.write_bytes(payload)
+    results = []
+    for command in (
+        [str(s.zovutils), "cat"],
+        [str(s.gnu_dir / "cat")],
+    ):
+        modes = []
+        for options in ((), ("-n",), ("-v",)):
+            fd = os.open(path, os.O_RDONLY | os.O_DIRECT)
+            try:
+                proc = subprocess.run(
+                    [*command, *options],
+                    stdin=fd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    env=s.env,
+                    timeout=5,
+                    check=False,
+                )
+            finally:
+                os.close(fd)
+            modes.append((proc.returncode, proc.stdout, proc.stderr))
+        results.append(modes)
+
+    s.count += 3
+    if results[0] != results[1]:
+        raise AssertionError(f"cat direct-input behavior differs: {results!r}")
+
+
 def run(s: Suite) -> None:
     _nonblocking_input_cases(s)
     _write_error_cases(s)
+    _direct_input_cases(s)
     empty = s.fixture("empty", b"")
     text = s.fixture("text", b"alpha\nbeta\n\ngamma\n")
     lines = s.fixture("lines", b"one\ntwo\nthree\nfour\n")

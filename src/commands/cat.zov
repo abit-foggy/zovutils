@@ -2,6 +2,7 @@ use std::env;
 use std::io;
 use std::vec as vec;
 use <stdio.h> as c;
+use <platform_io.h> as platform_io;
 use <platform_env.h> as platform_env;
 use shared::io as stream;
 
@@ -162,16 +163,19 @@ fn emit_visible(output: &mut Output, b: u8, show_tabs: bool, show_ends: bool, sh
 
 fn process(fp: *c::FILE, number_all: bool, number_nonblank: bool, squeeze: bool,
            show_tabs: bool, show_ends: bool, show_nonprinting: bool, state: &mut State) bool = {
-    let buf: [65536]u8;
+    let raw_buffer: nullable *void = platform_io::zov_alloc_read_buffer();
+    if (raw_buffer == null) { return false; };
+    defer platform_io::zov_free_read_buffer(raw_buffer!);
+    let buf: *u8 = raw_buffer! as *u8;
     let mut output: Output;
     output.used = 0usize;
     while (true) {
-        let read_count: i64 = stream::readchunk(fp, ((&buf[0usize]) as *u8), 65536usize);
+        let read_count: i64 = stream::readchunk(fp, buf, 65536usize);
         if (read_count == 0i64) { break; };
         if (read_count < 0i64) { return false; };
         let n: usize = read_count as usize;
         if (!number_all && !number_nonblank && !squeeze && !show_tabs && !show_ends && !show_nonprinting) {
-            if (!stream::writebytes(c::stdout, ((&buf[0usize]) as *u8), n)) { return false; };
+            if (!stream::writebytes(c::stdout, buf, n)) { return false; };
             if (c::fflush(c::stdout) != 0) { return false; };
             continue;
         };
@@ -283,8 +287,8 @@ export fn run(start: usize, argc: usize) i32 = {
         if (longprefix(arg, "--show-tabs")) { show_tabs = true; i += 1usize; continue; };
         if (longprefix(arg, "--show-nonprinting")) { show_nonprinting = true; i += 1usize; continue; };
         if (arg == "--help" || longprefix(arg, "--help")) { help(); if (!stream::finishoutput("cat")) { return 1; }; return 0; };
-        if (longprefix(arg, "--version")) { io::println("cat (zovutils) 0.1.124"); if (!stream::finishoutput("cat")) { return 1; }; return 0; };
-        if (arg == "--version") { io::println("cat (zovutils) 0.1.124"); if (!stream::finishoutput("cat")) { return 1; }; return 0; };
+        if (longprefix(arg, "--version")) { io::println("cat (zovutils) 0.1.125"); if (!stream::finishoutput("cat")) { return 1; }; return 0; };
+        if (arg == "--version") { io::println("cat (zovutils) 0.1.125"); if (!stream::finishoutput("cat")) { return 1; }; return 0; };
         if (arg.len >= 2usize && arg[0usize..2usize] == "--" && badlongargument(arg)) { return 1; };
         if (arg.len < 2usize || arg.data[1usize] != 45u8) {
             for (let j in 1usize..arg.len) {
