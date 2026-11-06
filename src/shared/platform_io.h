@@ -22,6 +22,13 @@ static inline void *zov_alloc_write_buffer(void) {
     return zov_alloc_read_buffer();
 }
 
+static inline void zov_debug_direct_io(const char *stage, int error, off_t position) {
+    if (getenv("ZOVUTILS_DEBUG_DIRECT_IO") != NULL) {
+        fprintf(stderr, "direct I/O debug: %s errno=%d offset=%lld\n",
+                stage, error, (long long) position);
+    }
+}
+
 static inline int zov_write_output(FILE *output, const void *buffer, size_t length) {
 #ifdef O_DIRECT
     int flags = fcntl(fileno(output), F_GETFL);
@@ -30,14 +37,16 @@ static inline int zov_write_output(FILE *output, const void *buffer, size_t leng
         size_t written = 0;
         int fallback_fd = fileno(output);
         int close_fallback = 0;
+        off_t position = -1;
         if (length < 65536) {
             char descriptor_path[64];
             (void) snprintf(descriptor_path, sizeof descriptor_path,
                             "/proc/self/fd/%d", fileno(output));
             fallback_fd = open(descriptor_path, O_WRONLY | (flags & O_APPEND));
-            off_t position = lseek(fileno(output), 0, SEEK_CUR);
+            position = lseek(fileno(output), 0, SEEK_CUR);
             if (fallback_fd < 0 || position < 0 ||
                 lseek(fallback_fd, position, SEEK_SET) < 0) {
+                zov_debug_direct_io("fallback open/seek", errno, position);
                 if (fallback_fd >= 0) {
                     (void) close(fallback_fd);
                 }
@@ -51,10 +60,12 @@ static inline int zov_write_output(FILE *output, const void *buffer, size_t leng
                 if (errno == EINTR) {
                     continue;
                 }
+                    zov_debug_direct_io("fallback write", errno, position);
                 if (close_fallback) (void) close(fallback_fd);
                 return 0;
             }
             if (count == 0) {
+                zov_debug_direct_io("zero write", errno, position);
                 if (close_fallback) (void) close(fallback_fd);
                 return 0;
             }

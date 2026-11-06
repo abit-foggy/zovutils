@@ -82,6 +82,7 @@ jobs:
         env:
           GNU_COREUTILS_DIR: ${{ runner.temp }}/gnu-coreutils/bin
           ZOVC: ${{ github.workspace }}/zov/zovc
+          ZOVUTILS_DEBUG_DIRECT_IO: ${{ matrix.platform == 'Linux' && matrix.arch == 'aarch64' && '1' || '' }}
         run: make test
 
       - name: Run ASan and UBSan parity
