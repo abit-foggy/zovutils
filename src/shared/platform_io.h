@@ -53,6 +53,8 @@ static inline int zov_write_output(FILE *output, const void *buffer, size_t leng
             if (fcntl(fileno(output), F_SETFL, flags & ~O_DIRECT) == 0) {
                 int updated_flags = fcntl(fileno(output), F_GETFL);
                 if (updated_flags >= 0 && (updated_flags & O_DIRECT) == 0) {
+                    zov_debug_direct_io("buffered begin", updated_flags,
+                                        lseek(fileno(output), 0, SEEK_CUR));
                     while (written < length) {
                         ssize_t count = write(fileno(output), bytes + written,
                                               length - written);
@@ -67,7 +69,11 @@ static inline int zov_write_output(FILE *output, const void *buffer, size_t leng
                         }
                         written += (size_t) count;
                     }
+                    zov_debug_direct_io("buffered end", updated_flags,
+                                        lseek(fileno(output), 0, SEEK_CUR));
                     if (fcntl(fileno(output), F_SETFL, flags) != 0) {
+                        zov_debug_direct_io("restore direct", errno,
+                                            lseek(fileno(output), 0, SEEK_CUR));
                         return 0;
                     }
                     return 1;

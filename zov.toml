@@ -1,6 +1,6 @@
 [package]
 name = "zovutils"
-version = "0.1.150"
+version = "0.1.151"
 edition = "2026"
 zovc = "0.9.0"
 
