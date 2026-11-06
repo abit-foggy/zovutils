@@ -63,6 +63,7 @@ static inline int zov_write_output(FILE *output, const void *buffer, size_t leng
                 }
                 return 0;
             }
+            zov_debug_direct_io("fallback offset", 0, position);
             close_fallback = 1;
         }
         while (written < length) {
@@ -81,6 +82,9 @@ static inline int zov_write_output(FILE *output, const void *buffer, size_t leng
                 return 0;
             }
             written += (size_t) count;
+        }
+        if (close_fallback) {
+            zov_debug_direct_io("fallback written", 0, position + (off_t) written);
         }
         return !close_fallback || close(fallback_fd) == 0;
     }
