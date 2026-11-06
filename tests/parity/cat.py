@@ -8,6 +8,7 @@ import select
 import signal
 import subprocess
 import sys
+import locale
 from pathlib import Path
 
 from support import Suite
@@ -183,6 +184,7 @@ def run(s: Suite) -> None:
     missing_quote_control = s.path("cat-missing-'line\nbreak")
     unreadable = s.fixture("cat-unreadable", b"unreadable\n")
     missing_control_quote = s.path("cat-missing-\x07'control")
+    missing_unicode = s.path("cat-missing-café")
     missing_shell_meta = [
         s.path("cat-missing " + token)
         for token in ("space", "=", "!", ":", "[", "|")
@@ -335,6 +337,24 @@ def run(s: Suite) -> None:
     s.case("cat", [], stdin=b"stdin\0bytes\n")
     s.case("cat", ["-", "-"], stdin=b"stdin is consumed once\n")
     s.permission_denied_case("cat", [unreadable, text], unreadable)
+
+    # GNU preserves printable UTF-8 characters in quoted file diagnostics.
+    # Check this in an installed UTF-8 locale while keeping the base suite C.
+    utf8_locale = None
+    for candidate in ("C.UTF-8", "C.utf8", "UTF-8", "en_US.UTF-8", "en_US.utf8"):
+        try:
+            locale.setlocale(locale.LC_CTYPE, candidate)
+            utf8_locale = candidate
+            locale.setlocale(locale.LC_CTYPE, "C")
+            break
+        except locale.Error:
+            continue
+    if utf8_locale is not None:
+        s.case(
+            "cat",
+            [missing_unicode],
+            extra_env={"LC_ALL": utf8_locale, "LANG": utf8_locale},
+        )
 
     proc_cpuinfo = Path("/proc/cpuinfo")
     if sys.platform == "linux" and proc_cpuinfo.is_file():

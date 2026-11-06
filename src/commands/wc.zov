@@ -10,6 +10,7 @@ use <wchar.h> as wide;
 use <wctype.h> as wctype;
 use <string.h> as strc;
 use <zov_wcwidth.h> as display;
+use <platform_locale.h> as platform_locale;
 use shared::io as stream;
 
 type Counts = struct { lines: usize, words: usize, chars: usize, bytes: usize, maxline: usize };
@@ -51,7 +52,8 @@ fn consume(character: i32, out: &mut Counts, linebytes: &mut usize, inword: &mut
 };
 
 fn scan(fp: *c::FILE, out: &mut Counts, singlebyte_c: bool, line_fast: bool,
-        chars: bool, debug: bool, posixly_correct: bool, backend_reported: &mut bool) bool = {
+        utf8_locale: bool, chars: bool, debug: bool, posixly_correct: bool,
+        backend_reported: &mut bool) bool = {
     out.lines = 0usize; out.words = 0usize; out.chars = 0usize; out.bytes = 0usize; out.maxline = 0usize;
     if (debug && line_fast && !*backend_reported) {
         let backend: i32 = stream::wcnewlinebackend();
@@ -105,9 +107,20 @@ fn scan(fp: *c::FILE, out: &mut Counts, singlebyte_c: bool, line_fast: bool,
         };
         let mut i: usize = 0usize;
         while (i < n) {
+            if (utf8_locale && buf[i] > 244u8) {
+                if (pending > 0usize) {
+                    pending = 0usize;
+                    strc::memset((&mut state[0usize]) as *void, 0, 256usize);
+                    continue;
+                };
+                if (!inword) { out.words += 1usize; inword = true; };
+                strc::memset((&mut state[0usize]) as *void, 0, 256usize);
+                i += 1usize;
+                continue;
+            };
             let mut character: i32 = 0i32;
-            let decoded: usize = wide::mbrtowc((&mut character) as *void, ((&buf[i]) as *i8), 1usize, ((&mut state[0usize]) as *void));
-            if (decoded == 18446744073709551614usize) { pending += 1usize; i += 1usize; continue; };
+            let decoded: usize = wide::mbrtowc((&mut character) as *void, ((&buf[i]) as *i8), n - i, ((&mut state[0usize]) as *void));
+            if (decoded == 18446744073709551614usize) { pending += n - i; i = n; continue; };
             if (decoded == 18446744073709551615usize) {
                 if (pending > 0usize) {
                     if (!inword) { out.words += 1usize; inword = true; };
@@ -122,7 +135,8 @@ fn scan(fp: *c::FILE, out: &mut Counts, singlebyte_c: bool, line_fast: bool,
             };
             pending = 0usize;
             consume(character, out, &mut linebytes, &mut inword, posixly_correct);
-            i += 1usize;
+            if (decoded == 0usize) { i += 1usize; }
+            else { i += decoded; };
         };
     };
     if (pending > 0usize && !inword) { out.words += 1usize; };
@@ -334,6 +348,7 @@ fn help() void = {
 export fn run(start: usize, argc: usize) i32 = {
     lc::setlocale(0i32, "");
     let singlebyte_c: bool = singlebyte_c_locale();
+    let utf8_locale: bool = platform_locale::zov_locale_uses_unicode_quotes() != 0i32;
     let mut lines: bool = false;
     let mut words: bool = false;
     let mut chars: bool = false;
@@ -423,7 +438,7 @@ export fn run(start: usize, argc: usize) i32 = {
             else if (longmatch(key, "--max-line-length")) { maxline = true; }
             else if (longmatch(key, "--debug")) { debug = true; }
             else if (longmatch(key, "--help")) { help(); if (!stream::finishoutputbrief("wc")) { return 1; }; return 0; }
-            else if (longmatch(key, "--version")) { io::println("wc (zovutils) 0.1.130"); if (!stream::finishoutputbrief("wc")) { return 1; }; return 0; };
+            else if (longmatch(key, "--version")) { io::println("wc (zovutils) 0.1.132"); if (!stream::finishoutputbrief("wc")) { return 1; }; return 0; };
             i += 1usize; continue;
         };
         if (arg.len >= 2usize && arg.data[1usize] != 45u8) {
@@ -530,8 +545,8 @@ export fn run(start: usize, argc: usize) i32 = {
         if (bytes && !lines && !words && !chars && !maxline) {
             let remaining: i64 = stream::regularbytesremaining(c::stdin);
             if (remaining >= 0i64) { v.bytes = remaining as usize; }
-            else { scanned = scan(c::stdin, &mut v, singlebyte_c, line_fast, chars, debug, posixly_correct, &mut backend_reported); };
-        } else { scanned = scan(c::stdin, &mut v, singlebyte_c, line_fast, chars, debug, posixly_correct, &mut backend_reported); };
+            else { scanned = scan(c::stdin, &mut v, singlebyte_c, line_fast, utf8_locale, chars, debug, posixly_correct, &mut backend_reported); };
+        } else { scanned = scan(c::stdin, &mut v, singlebyte_c, line_fast, utf8_locale, chars, debug, posixly_correct, &mut backend_reported); };
         if (!scanned) { stream::errorprefix("wc", "standard input"); status = 1; };
         let mut width: usize = 1usize;
         if (seekable) {
@@ -586,8 +601,8 @@ export fn run(start: usize, argc: usize) i32 = {
             if (bytes && !lines && !words && !chars && !maxline) {
                 let remaining: i64 = stream::regularbytesremaining(fp);
                 if (remaining >= 0i64) { v.bytes = remaining as usize; }
-                else { scanned = scan(fp, &mut v, singlebyte_c, line_fast, chars, debug, posixly_correct, &mut backend_reported); };
-            } else { scanned = scan(fp, &mut v, singlebyte_c, line_fast, chars, debug, posixly_correct, &mut backend_reported); };
+                else { scanned = scan(fp, &mut v, singlebyte_c, line_fast, utf8_locale, chars, debug, posixly_correct, &mut backend_reported); };
+            } else { scanned = scan(fp, &mut v, singlebyte_c, line_fast, utf8_locale, chars, debug, posixly_correct, &mut backend_reported); };
             if (scanned) {
                 counts.push(v); names.push(path);
                 if (saturating_add(&mut total.lines, v.lines)) { total_lines_overflow = true; };

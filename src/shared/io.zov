@@ -167,6 +167,16 @@ fn shellmixed(fp: *c::FILE, text: str) void = {
             i += 1usize;
             continue;
         };
+        if (b >= 128u8) {
+            let printable_length: usize = platform_locale::zov_printable_utf8_length(
+                ((&text.data[i]) as *i8), text.len - i);
+            if (printable_length > 0usize) {
+                if (!in_single) { c::fputc(39, fp); in_single = true; };
+                for (let j in 0usize..printable_length) { c::fputc(text.data[i + j] as i32, fp); };
+                i += printable_length;
+                continue;
+            };
+        };
         if (b == 39u8) {
             if (in_single) { c::fputs("'\\''", fp); }
             else { c::fputs("\\''", fp); in_single = true; };
@@ -197,12 +207,21 @@ export fn printquoted(fp: *c::FILE, text: str, force: bool) void = {
     let mut apostrophe: bool = false;
     let mut backslash: bool = false;
     let mut needs_shell_quote: bool = false;
-    for (let i in 0..text.len) {
+    let mut i: usize = 0usize;
+    while (i < text.len) {
         let b: u8 = text.data[i];
-        if (!printable(b)) { nonprint = true; };
-        if (b == 39u8) { apostrophe = true; };
-        if (b == 92u8) { backslash = true; };
-        if (b == 32u8 || shellmeta(b)) { needs_shell_quote = true; };
+        if (b >= 128u8) {
+            let printable_length: usize = platform_locale::zov_printable_utf8_length(
+                ((&text.data[i]) as *i8), text.len - i);
+            if (printable_length > 0usize) { i += printable_length; continue; };
+            nonprint = true;
+        } else {
+            if (!printable(b)) { nonprint = true; };
+            if (b == 39u8) { apostrophe = true; };
+            if (b == 92u8) { backslash = true; };
+            if (b == 32u8 || shellmeta(b)) { needs_shell_quote = true; };
+        };
+        i += 1usize;
     };
     if (!force && text.len > 0usize && !nonprint && !apostrophe && !backslash && !needs_shell_quote) {
         for (let i in 0..text.len) { c::fputc(text.data[i] as i32, fp); };
@@ -219,8 +238,18 @@ export fn printquotedargument(fp: *c::FILE, text: str) void = {
     let unicode_quotes: bool = platform_locale::zov_locale_uses_unicode_quotes() != 0i32;
     if (unicode_quotes) { c::fputs("‘", fp); }
     else { c::fputc(39, fp); };
-    for (let i in 0..text.len) {
+    let mut i: usize = 0usize;
+    while (i < text.len) {
         let b: u8 = text.data[i];
+        if (unicode_quotes && b >= 128u8) {
+            let printable_length: usize = platform_locale::zov_printable_utf8_length(
+                ((&text.data[i]) as *i8), text.len - i);
+            if (printable_length > 0usize) {
+                for (let j in 0usize..printable_length) { c::fputc(text.data[i + j] as i32, fp); };
+                i += printable_length;
+                continue;
+            };
+        };
         if (b == 92u8 || (b == 39u8 && !unicode_quotes)) {
             c::fputc(92, fp);
             c::fputc(b as i32, fp);
@@ -233,6 +262,7 @@ export fn printquotedargument(fp: *c::FILE, text: str) void = {
         else if (b == 13u8) { c::fputs("\\r", fp); }
         else if (b < 32u8 || b >= 127u8) { c::fprintf(fp, "\\%03o", b as i32); }
         else { c::fputc(b as i32, fp); };
+        i += 1usize;
     };
     if (unicode_quotes) { c::fputs("’", fp); }
     else { c::fputc(39, fp); };

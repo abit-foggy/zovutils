@@ -518,6 +518,8 @@ def run(s: Suite) -> None:
             s.fixture("wc-utf8-spaces", "alpha\u2003beta\u00a0gamma\u2007delta\u202fepsilon\u2060zeta\n".encode()),
             s.fixture("wc-utf8-invalid", b"a\xffb\n"),
             s.fixture("wc-utf8-truncated", b"a\xe2\x82"),
+            s.fixture("wc-utf8-obsolete-five-byte", b"\xfb\x85\xa5\xb3\xa4"),
+            s.fixture("wc-utf8-obsolete-six-byte", b"\xfc\x84\x80\x80\x80\x80"),
             s.fixture("wc-utf8-tabs", "界\tx\n".encode()),
             s.fixture("wc-utf8-boundary", b"a" * 65535 + "é\n".encode()),
             s.fixture("wc-utf8-invalid-boundary", b"a" * 65535 + b"\xe2\x82\n"),
