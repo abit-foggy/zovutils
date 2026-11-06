@@ -27,6 +27,7 @@ target. It pins the Zov compiler source revision used by the workflow. OS calls
 stay behind `src/shared/` helpers so support can expand when Zov's hosted
 runtime supports more platforms.
 
-The current command coverage is `cat`, `head`, `tail`, and `wc`; this does not
-yet claim GNU Coreutils compatibility. See the project README for the planned
-command families.
+The current implemented command set is listed in the project README. Each
+utility has command-specific parity cases in `tests/parity/`; passing the
+present cases does not yet claim full GNU Coreutils compatibility. The README
+tracks the broader command roadmap and the remaining planned utilities.

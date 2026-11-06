@@ -7,6 +7,7 @@ use commands::cut;
 use commands::basename;
 use commands::dirname;
 use commands::echo;
+use commands::expand;
 use commands::environment;
 use commands::false_cmd;
 use commands::head;
@@ -37,6 +38,7 @@ fn dispatch(name: str, start: usize, argc: usize) i32 = {
     if (name == "basename") { return basename::run(start, argc); };
     if (name == "dirname") { return dirname::run(start, argc); };
     if (name == "echo") { return echo::run(start, argc); };
+    if (name == "expand") { return expand::run(start, argc); };
     if (name == "env") { return environment::run(start, argc); };
     if (name == "false") { return false_cmd::run(start, argc); };
     if (name == "true") { return true_cmd::run(start, argc); };
@@ -72,16 +74,16 @@ export fn main() i32 = {
     };
     if (argc < 2usize) {
         io::println("usage: zovutils <utility> [arguments...]");
-        io::println("utilities: [ basename cat cut dirname echo env false head paste printenv printf pwd seq sleep sort tail test tr true uniq wc yes");
+        io::println("utilities: [ basename cat cut dirname echo env expand false head paste printenv printf pwd seq sleep sort tail test tr true uniq wc yes");
         return 1;
     };
     if (env::argat(1usize) == "--help" || env::argat(1usize) == "-h") {
         io::println("usage: zovutils <utility> [arguments...]");
-        io::println("utilities: [ basename cat cut dirname echo env false head paste printenv printf pwd seq sleep sort tail test tr true uniq wc yes");
+        io::println("utilities: [ basename cat cut dirname echo env expand false head paste printenv printf pwd seq sleep sort tail test tr true uniq wc yes");
         return 0;
     };
     if (argc >= 2usize && (env::argat(1usize) == "--version" || env::argat(1usize) == "-V")) {
-        io::println("zovutils 0.1.195 (GNU Coreutils 9.11 compatibility target)");
+        io::println("zovutils 0.1.196 (GNU Coreutils 9.11 compatibility target)");
         return 0;
     };
     return dispatch(env::argat(1usize), 2usize, argc);
