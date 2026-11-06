@@ -14,7 +14,48 @@ def _limit_output_file() -> None:
     signal.signal(signal.SIGXFSZ, signal.SIG_IGN)
 
 
+def _nonblocking_input_cases(s: Suite) -> None:
+    if not hasattr(os, "set_blocking"):
+        return
+
+    results = []
+    for command in (
+        [str(s.zovutils), "head"],
+        [str(s.gnu_dir / "head")],
+    ):
+        modes = []
+        for options in ((), ("-n", "1"), ("-n", "-1"), ("-c", "3"), ("-c", "-1")):
+            read_fd, write_fd = os.pipe()
+            os.set_blocking(read_fd, False)
+            os.write(write_fd, b"a\nb\n")
+            try:
+                proc = subprocess.Popen(
+                    [*command, *options],
+                    stdin=read_fd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    env=s.env,
+                )
+            finally:
+                os.close(read_fd)
+            try:
+                stdout, stderr = proc.communicate(timeout=5)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.communicate()
+                raise AssertionError("head did not stop after nonblocking input")
+            finally:
+                os.close(write_fd)
+            modes.append((proc.returncode, stdout, stderr))
+        results.append(modes)
+
+    s.count += 5
+    if results[0] != results[1]:
+        raise AssertionError(f"head nonblocking-input behavior differs: {results!r}")
+
+
 def run(s: Suite) -> None:
+    _nonblocking_input_cases(s)
     s.product_version("head")
     if os.path.exists("/dev/zero"):
         s.case("head", ["-c", "4096", "/dev/zero"])
