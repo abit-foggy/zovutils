@@ -1,0 +1,135 @@
+use std::env as args;
+use std::io;
+use <stdio.h> as c;
+use <fmt_backend.h> as backend;
+use shared::io as stream;
+
+fn usage_error() void = { c::fprintf(c::stderr, "Try 'fmt --help' for more information.\n"); };
+
+fn longkey(arg: str) str = {
+    for (let i in 0usize..arg.len) { if (arg.data[i] == 61u8) { return arg[0usize..i]; }; };
+    return arg;
+};
+
+fn is_prefix(value: str, full: str) bool = {
+    return value.len > 2usize && value.len <= full.len && value == full[0usize..value.len];
+};
+
+fn parse_width(value: str) usize = {
+    if (value.len == 0usize) { return 0usize; };
+    let mut n: usize = 0usize;
+    for (let i in 0usize..value.len) {
+        let c: u8 = value.data[i];
+        if (c < 48u8 || c > 57u8) { return 0usize; };
+        let digit: usize = (c - 48u8) as usize;
+        if (n > (18446744073709551615usize - digit) / 10usize) { return 0usize; };
+        n = n * 10usize + digit;
+    };
+    return n;
+};
+
+fn decimal(value: str) bool = {
+    if (value.len == 0usize) { return false; };
+    for (let i in 0usize..value.len) { if (value.data[i] < 48u8 || value.data[i] > 57u8) { return false; }; };
+    return true;
+};
+
+fn help() void = {
+    io::print("Usage: fmt [-WIDTH] [OPTION]... [FILE]...\nReformat each paragraph in the FILE(s), writing to standard output.\n");
+    io::print("The option -WIDTH is an abbreviated form of --width=DIGITS.\n\n");
+    io::print("With no FILE, or when FILE is -, read standard input.\n\n");
+    io::print("Mandatory arguments to long options are mandatory for short options too.\n");
+    io::print("  -c, --crown-margin\n         preserve indentation of first two lines\n");
+    io::print("  -p, --prefix=STRING\n         reformat only lines beginning with STRING,\n         reattaching the prefix to reformatted lines\n");
+    io::print("  -s, --split-only\n         split long lines, but do not refill\n");
+    io::print("  -t, --tagged-paragraph\n         indentation of first line different from second\n");
+    io::print("  -u, --uniform-spacing\n         one space between words, two after sentences\n");
+    io::print("  -w, --width=WIDTH\n         maximum line width (default of 75 columns)\n");
+    io::print("  -g, --goal=WIDTH\n         goal width (default of 93% of width)\n");
+    io::print("      --help\n         display this help and exit\n");
+    io::print("      --version\n         output version information and exit\n\n");
+    io::print("Report bugs to: bug-coreutils@gnu.org\nGNU coreutils home page: <https://www.gnu.org/software/coreutils/>\n");
+    io::print("General help using GNU software: <https://www.gnu.org/gethelp/>\nReport any translation bugs to <https://translationproject.org/team/>\n");
+    io::print("Full documentation <https://www.gnu.org/software/coreutils/fmt>\nor available locally via: info '(coreutils) fmt invocation'\n");
+};
+
+export fn run(start: usize, argc: usize) i32 = {
+    let mut width: usize = 75usize;
+    let mut goal: usize = 69usize;
+    let mut goal_explicit: bool = false;
+    let mut uniform: bool = false;
+    let mut split_only: bool = false;
+    let mut crown: bool = false;
+    let mut tagged: bool = false;
+    let mut prefix: str = "";
+    let mut files: [256]str;
+    let mut file_count: usize = 0usize;
+    let mut i: usize = start;
+    let mut options_done: bool = false;
+    while (i < argc) {
+        let arg: str = args::argat(i);
+        if (!options_done && arg == "--") { options_done = true; i += 1usize; continue; };
+        if (!options_done && arg.len > 2usize && arg[0usize..2usize] == "--") {
+            let key: str = longkey(arg);
+            if (key == "--width" || is_prefix(key, "--width") || key == "--goal" || is_prefix(key, "--goal") || key == "--prefix" || is_prefix(key, "--prefix")) {
+                let mut value: str = "";
+                if (arg.len > key.len) { value = arg[key.len + 1usize..arg.len]; i += 1usize; }
+                else if (i + 1usize < argc) { value = args::argat(i + 1usize); i += 2usize; }
+                else { c::fprintf(c::stderr, "fmt: option '%s' requires an argument\n", key); usage_error(); return 1; };
+                if (key == "--prefix" || is_prefix(key, "--prefix")) { prefix = value; continue; };
+                let parsed: usize = parse_width(value);
+                if (!decimal(value)) { c::fprintf(c::stderr, "fmt: invalid width: '%s'\n", value); return 1; };
+                if (key == "--goal" || is_prefix(key, "--goal")) { goal = parsed; goal_explicit = true; }
+                else { width = parsed; if (width == 0usize) { width = 1usize; }; if (!goal_explicit) { goal = width * 93usize / 100usize; if (goal == 0usize) { goal = 1usize; }; } };
+                continue;
+            };
+            if (key == "--crown-margin" || is_prefix(key, "--crown-margin")) { crown = true; tagged = false; i += 1usize; continue; };
+            if (key == "--tagged-paragraph" || is_prefix(key, "--tagged-paragraph")) { tagged = true; crown = false; i += 1usize; continue; };
+            if (key == "--split-only" || is_prefix(key, "--split-only")) { split_only = true; i += 1usize; continue; };
+            if (key == "--uniform-spacing" || is_prefix(key, "--uniform-spacing")) { uniform = true; i += 1usize; continue; };
+            if (key == "--help" || is_prefix(key, "--help")) { help(); stream::finishoutput("fmt"); return 0; };
+            if (key == "--version" || is_prefix(key, "--version")) { io::println("fmt (zovutils) 0.1.200"); stream::finishoutput("fmt"); return 0; };
+            c::fprintf(c::stderr, "fmt: unrecognized option '%s'\n", arg); usage_error(); return 1;
+        };
+        if (!options_done && arg.len > 1usize && arg.data[0usize] == 45u8) {
+            if (arg.data[1usize] >= 48u8 && arg.data[1usize] <= 57u8) {
+                width = parse_width(arg[1usize..arg.len]);
+                if (!decimal(arg[1usize..arg.len])) { c::fprintf(c::stderr, "fmt: invalid width: '%s'\n", arg[1usize..arg.len]); return 1; };
+                if (width == 0usize) { width = 1usize; };
+                if (!goal_explicit) { goal = width * 93usize / 100usize; if (goal == 0usize) { goal = 1usize; }; };
+                i += 1usize; continue;
+            };
+            let mut j: usize = 1usize;
+            while (j < arg.len) {
+                let option: u8 = arg.data[j];
+                if (option == 99u8) { crown = true; tagged = false; j += 1usize; continue; };
+                if (option == 116u8) { tagged = true; crown = false; j += 1usize; continue; };
+                if (option == 115u8) { split_only = true; j += 1usize; continue; };
+                if (option == 117u8) { uniform = true; j += 1usize; continue; };
+                if (option == 119u8 || option == 103u8 || option == 112u8) {
+                    let mut value: str = "";
+                    if (j + 1usize < arg.len) { value = arg[j + 1usize..arg.len]; }
+                    else if (i + 1usize < argc) { i += 1usize; value = args::argat(i); }
+                    else { c::fprintf(c::stderr, "fmt: option requires an argument -- '%c'\n", option as i32); usage_error(); return 1; };
+                    if (option == 112u8) { prefix = value; }
+                    else {
+                        let parsed: usize = parse_width(value);
+                        if (!decimal(value)) { c::fprintf(c::stderr, "fmt: invalid width: '%s'\n", value); return 1; };
+                        if (option == 103u8) { goal = parsed; goal_explicit = true; }
+                        else { width = parsed; if (width == 0usize) { width = 1usize; }; if (!goal_explicit) { goal = width * 93usize / 100usize; if (goal == 0usize) { goal = 1usize; }; } };
+                    };
+                    j = arg.len; continue;
+                };
+                c::fprintf(c::stderr, "fmt: invalid option -- '%c'\n", option as i32); usage_error(); return 1;
+            };
+            i += 1usize; continue;
+        };
+        if (file_count >= 256usize) { c::fprintf(c::stderr, "fmt: too many input files\n"); return 1; };
+        files[file_count] = arg; file_count += 1usize; i += 1usize;
+    };
+    if (file_count == 0usize) { files[0usize] = "-"; file_count = 1usize; };
+    let mut paths: [256]*i8;
+    for (let fi in 0usize..file_count) { paths[fi] = files[fi].data as *i8; };
+    return backend::zov_fmt_run(file_count, ((&paths[0usize]) as **i8), width, goal,
+        uniform as i32, split_only as i32, crown as i32, tagged as i32, prefix.data as *i8);
+};
