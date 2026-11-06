@@ -348,6 +348,7 @@ ssize_t read(int fd, void *buffer, size_t count) {
             stdin=b"read error is reported\n",
             extra_env={"LD_PRELOAD": str(error_interposer)},
         )
+        s.read_error_after_partial_case("cat", ["-v"])
 
     # cat must forward each available input chunk before stdin reaches EOF.
     # Captured stdout is fully buffered by stdio unless cat flushes it.

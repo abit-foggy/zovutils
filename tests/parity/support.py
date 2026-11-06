@@ -237,6 +237,46 @@ ssize_t read(int fd, void *buffer, size_t count) {
         if results[0] != results[1]:
             raise ParityFailure(f"{utility} interrupted-read behavior differs: {results!r}")
 
+    def read_error_after_partial_case(self, utility: str, args: list[str]) -> None:
+        """Compare a read error after stdin has already supplied one chunk."""
+        if sys.platform != "linux":
+            return
+        source = self.root / f"{utility}-partial-error-read.c"
+        library = self.root / f"{utility}-partial-error-read.so"
+        source.write_text(
+            """
+#define _GNU_SOURCE
+#include <dlfcn.h>
+#include <errno.h>
+#include <unistd.h>
+static ssize_t (*next_read)(int, void *, size_t);
+static int injected;
+ssize_t read(int fd, void *buffer, size_t count) {
+    if (!next_read) next_read = dlsym(RTLD_NEXT, "read");
+    if (fd == STDIN_FILENO && injected++ > 0) {
+        errno = EIO;
+        return -1;
+    }
+    return next_read(fd, buffer, count);
+}
+"""
+        )
+        subprocess.run(
+            ["cc", "-shared", "-fPIC", str(source), "-ldl", "-o", str(library)],
+            check=True,
+            timeout=15,
+        )
+        env = self.env.copy()
+        env["LD_PRELOAD"] = str(library)
+        payload = b"one two\nsecond line\n"
+        results = [
+            self._run([str(self.zovutils), utility, *args], payload, env=env),
+            self._run([str(self.gnu_dir / utility), *args], payload, env=env),
+        ]
+        self.count += 1
+        if results[0] != results[1]:
+            raise ParityFailure(f"{utility} post-input read-error behavior differs: {results!r}")
+
     def symlink_dispatch(self, utility: str, args: list[str]) -> None:
         alias = self.root / utility
         alias.symlink_to(self.zovutils)

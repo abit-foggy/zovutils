@@ -419,6 +419,7 @@ def run(s: Suite) -> None:
     s.write_failure("tail", ["--version"])
     s.broken_pipe_case("tail", ["-c", "100000", large])
     s.interrupted_read_case("tail", [])
+    s.read_error_after_partial_case("tail", [])
     s.symlink_dispatch("tail", ["-n", "1", lines])
 
     plus_follow_file = s.fixture(
