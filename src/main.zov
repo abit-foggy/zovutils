@@ -11,6 +11,7 @@ use commands::false_cmd;
 use commands::head;
 use commands::printenv;
 use commands::printf;
+use commands::pwd;
 use commands::tail;
 use commands::true_cmd;
 use commands::wc;
@@ -34,6 +35,7 @@ fn dispatch(name: str, start: usize, argc: usize) i32 = {
     if (name == "head") { return head::run(start, argc); };
     if (name == "printenv") { return printenv::run(start, argc); };
     if (name == "printf") { return printf::run(start, argc); };
+    if (name == "pwd") { return pwd::run(start, argc); };
     if (name == "tail") { return tail::run(start, argc); };
     if (name == "wc") { return wc::run(start, argc); };
     io::println("zovutils: unknown utility '" + name + "'");
@@ -51,16 +53,16 @@ export fn main() i32 = {
     };
     if (argc < 2usize) {
         io::println("usage: zovutils <utility> [arguments...]");
-        io::println("utilities: basename cat dirname echo env false head printenv printf tail true wc");
+        io::println("utilities: basename cat dirname echo env false head printenv printf pwd tail true wc");
         return 1;
     };
     if (env::argat(1usize) == "--help" || env::argat(1usize) == "-h") {
         io::println("usage: zovutils <utility> [arguments...]");
-        io::println("utilities: basename cat dirname echo env false head printenv printf tail true wc");
+        io::println("utilities: basename cat dirname echo env false head printenv printf pwd tail true wc");
         return 0;
     };
     if (argc >= 2usize && (env::argat(1usize) == "--version" || env::argat(1usize) == "-V")) {
-        io::println("zovutils 0.1.181 (GNU Coreutils 9.11 compatibility target)");
+        io::println("zovutils 0.1.182 (GNU Coreutils 9.11 compatibility target)");
         return 0;
     };
     return dispatch(env::argat(1usize), 2usize, argc);
