@@ -3,9 +3,11 @@
 
 #include <errno.h>
 #include <stdint.h>
+#include <locale.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <wchar.h>
 
 static inline int zov_cut_parse_uint(const char **cursor, uint64_t *value) {
     const char *p = *cursor;
@@ -75,13 +77,35 @@ static inline int zov_cut_emit_line(FILE *out, const unsigned char *line,
                                     unsigned char terminator, const char *list,
                                     int mode, unsigned char delimiter,
                                     const char *output_delimiter, int has_output_delimiter,
-                                    int complement, int suppress) {
+                                    int no_partial, int complement, int suppress) {
     int wrote = 0;
-    if (mode != 2) {
+    if (mode == 1 && !no_partial) {
         for (size_t i = 0; i < length; ++i) {
             int selected = zov_cut_selected(list, (uint64_t)i + 1);
             if (complement) selected = !selected;
             if (selected && !zov_cut_write(out, line + i, 1)) return 0;
+        }
+    } else if (mode == 1 || mode == 3) {
+        mbstate_t state;
+        memset(&state, 0, sizeof(state));
+        size_t offset = 0;
+        uint64_t position = 1;
+        while (offset < length) {
+            size_t width = mbrlen((const char *)line + offset, length - offset, &state);
+            if (width == (size_t)-1 || width == (size_t)-2 || width == 0) {
+                memset(&state, 0, sizeof(state));
+                width = 1;
+            }
+            int selected = zov_cut_selected(list, position);
+            if (mode == 1 && no_partial) {
+                for (size_t j = 1; j < width; ++j) {
+                    if (!zov_cut_selected(list, position + j)) selected = 0;
+                }
+            }
+            if (complement) selected = !selected;
+            if (selected && !zov_cut_write(out, line + offset, width)) return 0;
+            offset += width;
+            position += mode == 1 ? width : 1;
         }
     } else {
         size_t fields = 1;
@@ -118,7 +142,8 @@ static inline int zov_cut_emit_line(FILE *out, const unsigned char *line,
 
 static inline int zov_cut_process(const char *path, const char *list, int mode,
                                   int delimiter, const char *output_delimiter, int has_output_delimiter,
-                                  int complement, int suppress, int zero_terminated) {
+                                  int no_partial, int complement, int suppress, int zero_terminated) {
+    (void)setlocale(LC_CTYPE, "");
     FILE *in = strcmp(path, "-") == 0 ? stdin : fopen(path, "rb");
     if (in == NULL) {
         fprintf(stderr, "cut: %s: %s\n", path, strerror(errno));
@@ -135,6 +160,7 @@ static inline int zov_cut_process(const char *path, const char *list, int mode,
             if (!zov_cut_emit_line(stdout, line, length, 1, terminator, list, mode,
                                    (unsigned char)delimiter, output_delimiter,
                                    has_output_delimiter,
+                                   no_partial,
                                    complement, suppress)) { status = 1; break; }
             length = 0;
             continue;
@@ -157,6 +183,7 @@ static inline int zov_cut_process(const char *path, const char *list, int mode,
         !zov_cut_emit_line(stdout, line, length, 1, terminator, list, mode,
                            (unsigned char)delimiter, output_delimiter,
                            has_output_delimiter,
+                           no_partial,
                            complement, suppress)) status = 1;
     free(line);
     if (close_input && fclose(in) != 0) status = 1;

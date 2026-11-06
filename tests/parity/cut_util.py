@@ -1,5 +1,7 @@
 """Parity cases for cut."""
 
+import locale
+
 from support import Suite
 
 
@@ -39,6 +41,7 @@ def run(s: Suite) -> None:
         ["-b", "1", "-f", "1"],
         ["-b", "1", "-d", ":"],
         ["-f", "1", "--output-delimiter=|"],
+        ["-n", "-c", "1"],
         ["--unknown"],
         [],
     ):
@@ -46,3 +49,18 @@ def run(s: Suite) -> None:
 
     s.product_version("cut")
     s.symlink_dispatch("cut", ["-b", "1-2"])
+
+    utf8_locale = None
+    for candidate in ("C.UTF-8", "C.utf8", "UTF-8", "en_US.UTF-8", "en_US.utf8"):
+        try:
+            locale.setlocale(locale.LC_CTYPE, candidate)
+        except locale.Error:
+            continue
+        utf8_locale = candidate
+        break
+    if utf8_locale is not None:
+        utf8 = s.fixture("cut-utf8", "aé中z\n".encode())
+        env = {"LC_ALL": utf8_locale, "LANG": utf8_locale}
+        s.case("cut", ["-c", "2-3", utf8], extra_env=env)
+        s.case("cut", ["-b", "1-2", "-n", utf8], extra_env=env)
+        s.case("cut", ["-b", "2-3", "-n", utf8], extra_env=env)

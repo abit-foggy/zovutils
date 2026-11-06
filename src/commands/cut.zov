@@ -44,6 +44,7 @@ export fn run(start: usize, argc: usize) i32 = {
     let mut output_delimiter: *i8 = list.data as *i8;
     let mut has_output_delimiter: bool = false;
     let mut complement: bool = false;
+    let mut no_partial: bool = false;
     let mut suppress: bool = false;
     let mut zero_terminated: bool = false;
     let mut files: [256]str;
@@ -67,7 +68,7 @@ export fn run(start: usize, argc: usize) i32 = {
                 let mut value: str = "";
                 if (arg.len > key.len) { value = arg[key.len + 1usize..arg.len]; i += 1usize; }
                 else { value = args::argat(i + 1usize); i += 2usize; };
-                list = value; mode = 1i32; list_count += 1usize; continue;
+                list = value; mode = 3i32; list_count += 1usize; continue;
             };
             if (key == "--fields" || is_prefix(key, "--fields")) {
                 if (arg.len == key.len && i + 1usize >= argc) { c::fprintf(c::stderr, "cut: option '--fields' requires an argument\n"); usage_error(); return 1; };
@@ -92,17 +93,18 @@ export fn run(start: usize, argc: usize) i32 = {
                 output_delimiter = value.data as *i8; has_output_delimiter = true; continue;
             };
             if (key == "--complement" || is_prefix(key, "--complement")) { complement = true; i += 1usize; continue; };
+            if (key == "--no-partial" || is_prefix(key, "--no-partial")) { no_partial = true; i += 1usize; continue; };
             if (key == "--only-delimited" || is_prefix(key, "--only-delimited")) { suppress = true; i += 1usize; continue; };
             if (key == "--zero-terminated" || is_prefix(key, "--zero-terminated")) { zero_terminated = true; i += 1usize; continue; };
             if (key == "--help" || is_prefix(key, "--help")) { help(); stream::finishoutput("cut"); return 0; };
-            if (key == "--version" || is_prefix(key, "--version")) { io::println("cut (zovutils) 0.1.188"); stream::finishoutput("cut"); return 0; };
+            if (key == "--version" || is_prefix(key, "--version")) { io::println("cut (zovutils) 0.1.189"); stream::finishoutput("cut"); return 0; };
             c::fprintf(c::stderr, "cut: unrecognized option '%s'\n", arg); usage_error(); return 1;
         };
         if (!options_done && arg.len > 1usize && arg.data[0usize] == 45u8) {
             let mut j: usize = 1usize;
             while (j < arg.len) {
                 let option: u8 = arg.data[j];
-                if (option == 110u8) { j += 1usize; continue; };
+                if (option == 110u8) { no_partial = true; j += 1usize; continue; };
                 if (option == 115u8) { suppress = true; j += 1usize; continue; };
                 if (option == 122u8) { zero_terminated = true; j += 1usize; continue; };
                 if (option == 98u8 || option == 99u8 || option == 102u8 || option == 100u8) {
@@ -116,7 +118,9 @@ export fn run(start: usize, argc: usize) i32 = {
                         if (value.len != 1usize) { c::fprintf(c::stderr, "cut: the delimiter must be a single character\n"); return 1; };
                         delimiter = value.data[0usize] as i32; has_delimiter = true;
                     } else {
-                        if (option == 102u8) { mode = 2i32; } else { mode = 1i32; };
+                        if (option == 102u8) { mode = 2i32; }
+                        else if (option == 99u8) { mode = 3i32; }
+                        else { mode = 1i32; };
                         list = value; list_count += 1usize;
                     };
                     j = arg.len; continue;
@@ -140,10 +144,10 @@ export fn run(start: usize, argc: usize) i32 = {
     };
     if (list_status == 3i32) { c::fprintf(c::stderr, "cut: invalid decreasing range\n"); usage_error(); return 1; };
     if (list_status != 1i32) { c::fprintf(c::stderr, "cut: invalid range with no endpoint: -\n"); usage_error(); return 1; };
-    if (file_count == 0usize) { return backend::zov_cut_process("-", list.data as *i8, mode, delimiter, output_delimiter, has_output_delimiter as i32, complement as i32, suppress as i32, zero_terminated as i32); };
+    if (file_count == 0usize) { return backend::zov_cut_process("-", list.data as *i8, mode, delimiter, output_delimiter, has_output_delimiter as i32, no_partial as i32, complement as i32, suppress as i32, zero_terminated as i32); };
     let mut status: i32 = 0i32;
     for (let fi in 0usize..file_count) {
-        let result: i32 = backend::zov_cut_process(files[fi].data as *i8, list.data as *i8, mode, delimiter, output_delimiter, has_output_delimiter as i32, complement as i32, suppress as i32, zero_terminated as i32);
+        let result: i32 = backend::zov_cut_process(files[fi].data as *i8, list.data as *i8, mode, delimiter, output_delimiter, has_output_delimiter as i32, no_partial as i32, complement as i32, suppress as i32, zero_terminated as i32);
         if (result != 0i32) { status = 1i32; };
     };
     return status;
