@@ -1,0 +1,429 @@
+use std::env as args;
+use std::io;
+use std::mem as mem;
+use std::vec as vec;
+use <platform_process.h> as process;
+use <stdio.h> as c;
+use <string.h> as cstr;
+use shared::io as stream;
+
+fn longprefix(arg: str, option: str) bool = {
+    let mut end: usize = arg.len;
+    for (let j in 0usize..arg.len) { if (arg.data[j] == 61u8) { end = j; break; }; };
+    let key: str = arg[0usize..end];
+    return key == option || (key.len > 2usize && key.len < option.len && key == option[0usize..key.len]);
+};
+
+fn longhasvalue(arg: str) bool = {
+    for (let j in 0usize..arg.len) { if (arg.data[j] == 61u8) { return true; }; };
+    return false;
+};
+
+fn longvalue(arg: str) str = {
+    for (let j in 0usize..arg.len) { if (arg.data[j] == 61u8) { return arg[j + 1usize..arg.len]; }; };
+    return "";
+};
+
+fn ambiguouslong(arg: str) bool = {
+    let mut end: usize = arg.len;
+    for (let j in 0usize..arg.len) { if (arg.data[j] == 61u8) { end = j; break; }; };
+    let key: str = arg[0usize..end];
+    let mut count: usize = 0usize;
+    if (longprefix(key, "--default-signal")) { count += 1usize; };
+    if (longprefix(key, "--debug")) { count += 1usize; };
+    if (longprefix(key, "--ignore-environment")) { count += 1usize; };
+    if (longprefix(key, "--ignore-signal")) { count += 1usize; };
+    if (count <= 1usize) { return false; };
+    c::fprintf(c::stderr, "env: option '%s' is ambiguous; possibilities:", key);
+    if (longprefix(key, "--default-signal")) { c::fprintf(c::stderr, " '%s'", "--default-signal"); };
+    if (longprefix(key, "--debug")) { c::fprintf(c::stderr, " '%s'", "--debug"); };
+    if (longprefix(key, "--ignore-environment")) { c::fprintf(c::stderr, " '%s'", "--ignore-environment"); };
+    if (longprefix(key, "--ignore-signal")) { c::fprintf(c::stderr, " '%s'", "--ignore-signal"); };
+    c::fprintf(c::stderr, "\n");
+    tryhelp();
+    return true;
+};
+
+fn help() void = {
+    io::print("Usage: env [OPTION]... [-] [NAME=VALUE]... [COMMAND [ARG]...]\n");
+    io::print("Set each NAME to VALUE in the environment and run COMMAND.\n\n");
+    io::print("Mandatory arguments to long options are mandatory for short options too.\n");
+    io::print("  -a, --argv0=ARG\n");
+    io::print("         pass ARG as the zeroth argument of COMMAND\n");
+    io::print("  -i, --ignore-environment\n");
+    io::print("         start with an empty environment\n");
+    io::print("  -0, --null\n");
+    io::print("         end each output line with NUL, not newline\n");
+    io::print("  -u, --unset=NAME\n");
+    io::print("         remove variable from the environment\n");
+    io::print("  -C, --chdir=DIR\n");
+    io::print("         change working directory to DIR\n");
+    io::print("  -S, --split-string=S\n");
+    io::print("         process and split S into separate arguments;\n");
+    io::print("         used to pass multiple arguments on shebang lines\n");
+    io::print("      --block-signal[=SIG]\n");
+    io::print("         block delivery of SIG signal(s) to COMMAND\n");
+    io::print("      --default-signal[=SIG]\n");
+    io::print("         reset handling of SIG signal(s) to the default\n");
+    io::print("      --ignore-signal[=SIG]\n");
+    io::print("         set handling of SIG signal(s) to do nothing\n");
+    io::print("      --list-signal-handling\n");
+    io::print("         list non default signal handling to standard error\n");
+    io::print("  -v, --debug\n");
+    io::print("         print verbose information for each processing step\n");
+    io::print("      --help\n");
+    io::print("         display this help and exit\n");
+    io::print("      --version\n");
+    io::print("         output version information and exit\n\n");
+    io::print("A mere - implies -i.  If no COMMAND, print the resulting environment.\n\n");
+    io::print("SIG may be a signal name like 'PIPE', or a signal number like '13'.\n");
+    io::print("Without SIG, all known signals are included.  Multiple signals can be\n");
+    io::print("comma-separated.  An empty SIG argument is a no-op.\n\n");
+    io::print("Exit status:\n");
+    io::print("  125  if the env command itself fails\n");
+    io::print("  126  if COMMAND is found but cannot be invoked\n");
+    io::print("  127  if COMMAND cannot be found\n");
+    io::print("  -    the exit status of COMMAND otherwise\n\n");
+    io::print("Report bugs to: bug-coreutils@gnu.org\n");
+    io::print("GNU coreutils home page: <https://www.gnu.org/software/coreutils/>\n");
+    io::print("General help using GNU software: <https://www.gnu.org/gethelp/>\n");
+    io::print("Report any translation bugs to <https://translationproject.org/team/>\n");
+    io::print("Full documentation <https://www.gnu.org/software/coreutils/env>\n");
+    io::print("or available locally via: info '(coreutils) env invocation'\n");
+};
+
+fn tryhelp() void = {
+    c::fprintf(c::stderr, "Try 'env --help' for more information.\n");
+};
+
+fn badshort(option: u8) void = {
+    c::fprintf(c::stderr, "env: invalid option -- '%c'\n", option as i32);
+    tryhelp();
+};
+
+fn badlong(option: str) void = {
+    c::fprintf(c::stderr, "env: unrecognized option '%s'\n", option);
+    tryhelp();
+};
+
+fn badlongargument(option: str) void = {
+    c::fprintf(c::stderr, "env: option '%s' doesn't allow an argument\n", option);
+    tryhelp();
+};
+
+fn missinglongargument(option: str) void = {
+    c::fprintf(c::stderr, "env: option '%s' requires an argument\n", option);
+    tryhelp();
+};
+
+fn missingshortargument(option: u8) void = {
+    c::fprintf(c::stderr, "env: option requires an argument -- '%c'\n", option as i32);
+    tryhelp();
+};
+
+fn assignment(arg: str) bool = {
+    for (let j in 0usize..arg.len) { if (arg.data[j] == 61u8) { return true; }; };
+    return false;
+};
+
+fn assign(arg: str) bool = {
+    for (let j in 0usize..arg.len) {
+        if (arg.data[j] == 61u8) {
+            if (j == 0usize || process::zov_env_assign(arg.data as *i8, j) != 0i32) { return false; };
+            return true;
+        };
+    };
+    return false;
+};
+
+fn signaloption(mode: i32, signals: str, all: bool) bool = {
+    let mut all_value: i32 = 0i32;
+    if (all) { all_value = 1i32; };
+    let result: i32 = process::zov_signal_apply(mode, signals.data as *i8, all_value);
+    if (result == 0i32) { return true; };
+    if (result > 0i32) { c::fprintf(c::stderr, "env: '%s': invalid signal\n", signals); }
+    else { c::fprintf(c::stderr, "env: cannot change signal handling: %s\n", cstr::strerror(process::zov_get_errno())); };
+    tryhelp();
+    return false;
+};
+
+fn splitspace(b: u8) bool = { return b == 32u8 || (b >= 9u8 && b <= 13u8); };
+
+fn store_split_token(buffer: *u8, length: usize, tokens: &mut vec::Vec[String]) bool = {
+    let mut owned: *u8 = mem::alloc[u8](length + 1usize);
+    for (let j in 0usize..length) { owned[j] = buffer[j]; };
+    owned[length] = 0u8;
+    tokens.push(String::fromowned(owned, length, length + 1usize));
+    return true;
+};
+
+fn split_string(value: str, tokens: &mut vec::Vec[String]) bool = {
+    let mut buffer: *u8 = mem::alloc[u8](value.len + 1usize);
+    defer mem::freeptr[u8](buffer);
+    let mut written: usize = 0usize;
+    let mut started: bool = false;
+    let mut quote: u8 = 0u8;
+    let mut i: usize = 0usize;
+    while (i < value.len) {
+        let b: u8 = value.data[i];
+        if (quote == 0u8 && splitspace(b)) {
+            if (started) { store_split_token(buffer, written, tokens); written = 0usize; started = false; };
+            i += 1usize; continue;
+        };
+        if (b == 39u8 || b == 34u8) {
+            if (quote == 0u8) { quote = b; started = true; i += 1usize; continue; };
+            if (quote == b) { quote = 0u8; i += 1usize; continue; };
+        };
+        if (quote == 0u8 && b == 35u8 && !started) { break; };
+        if (b == 92u8 && i + 1usize < value.len && value.data[i + 1usize] == 35u8) {
+            buffer[written] = 35u8; written += 1usize; started = true; i += 2usize; continue;
+        };
+        if (b == 36u8) {
+            if (i + 1usize >= value.len || value.data[i + 1usize] != 123u8) {
+                c::fprintf(c::stderr, "env: only $%cVARNAME%c expansion is supported, error at: %s\n", 123i32, 125i32, value[i..value.len]);
+                return false;
+            };
+            let mut end: usize = i + 2usize;
+            while (end < value.len && value.data[end] != 125u8) { end += 1usize; };
+            if (end >= value.len) {
+                c::fprintf(c::stderr, "env: invalid variable expansion in -S\n");
+                return false;
+            };
+            let variable: str = value[i + 2usize..end];
+            let found = args::get(variable);
+            match (found) {
+                case let contents: str => {
+                    for (let k in 0usize..contents.len) { buffer[written] = contents.data[k]; written += 1usize; };
+                },
+                case EnvNotFound => {},
+            };
+            started = true; i = end + 1usize; continue;
+        };
+        if (b == 92u8 && i + 1usize < value.len) {
+            let escaped: u8 = value.data[i + 1usize];
+            if (escaped == 95u8) { buffer[written] = 32u8; }
+            else if (escaped == 110u8) { buffer[written] = 10u8; }
+            else if (escaped == 116u8) { buffer[written] = 9u8; }
+            else if (escaped == 114u8) { buffer[written] = 13u8; }
+            else if (escaped == 102u8) { buffer[written] = 12u8; }
+            else if (escaped == 118u8) { buffer[written] = 11u8; }
+            else if (escaped == 99u8) { i = value.len; break; }
+            else if (escaped == 92u8 || escaped == 34u8 || escaped == 39u8) { buffer[written] = escaped; }
+            else {
+                c::fprintf(c::stderr, "env: invalid sequence '\\%c' in -S\n", escaped as i32);
+                return false;
+            };
+            written += 1usize; started = true; i += 2usize; continue;
+        };
+        buffer[written] = b; written += 1usize; started = true; i += 1usize;
+    };
+    if (quote != 0u8) {
+        c::fprintf(c::stderr, "env: no terminating quote in -S string\n");
+        return false;
+    };
+    if (started) { store_split_token(buffer, written, tokens); };
+    return true;
+};
+
+fn execstatus(command: str, error: i32) i32 = {
+    if (error == 2i32) {
+        c::fprintf(c::stderr, "env: '%s': No such file or directory\n", command);
+        return 127;
+    };
+    c::fprintf(c::stderr, "env: '%s': %s\n", command, cstr::strerror(error));
+    if (error == 8i32 || error == 13i32) { return 126; };
+    return 125;
+};
+
+export fn run(start: usize, argc: usize) i32 = {
+    let mut zero: bool = false;
+    let mut debug: bool = false;
+    let mut ignore_environment: bool = false;
+    let mut chdir: str = "";
+    let mut argv0: str = "";
+    let mut argv0_given: bool = false;
+    let mut list_signals: bool = false;
+    let mut split_operands = vec::new[String]();
+    defer split_operands.free();
+
+    let mut i: usize = start;
+    let mut option_end: bool = false;
+    while (i < argc) {
+        let arg: str = args::argat(i);
+        if (!option_end && arg == "--") { option_end = true; i += 1usize; continue; };
+        if (!option_end && arg == "-") { ignore_environment = true; i += 1usize; continue; };
+        if (option_end || arg == "-" || arg.len == 0usize || arg.data[0usize] != 45u8) { break; };
+        if (arg.len >= 2usize && arg[0usize..2usize] == "--") {
+            if (ambiguouslong(arg)) { return 125; };
+            if (longprefix(arg, "--ignore-environment")) {
+                if (longhasvalue(arg)) { badlongargument("--ignore-environment"); return 125; };
+                ignore_environment = true; i += 1usize; continue;
+            };
+            if (longprefix(arg, "--null")) {
+                if (longhasvalue(arg)) { badlongargument("--null"); return 125; };
+                zero = true; i += 1usize; continue;
+            };
+            if (longprefix(arg, "--unset")) {
+                let mut name: str = "";
+                if (longhasvalue(arg)) { name = longvalue(arg); }
+                else {
+                    if (i + 1usize >= argc) { missinglongargument("--unset"); return 125; };
+                    i += 1usize; name = args::argat(i);
+                };
+                if (debug) { c::fprintf(c::stderr, "unset:    %s\n", name); };
+                if (process::zov_env_unset(name.data as *i8) != 0i32) {
+                    c::fprintf(c::stderr, "env: cannot unset '%s': %s\n", name, cstr::strerror(process::zov_get_errno()));
+                    return 125;
+                };
+                i += 1usize; continue;
+            };
+            if (longprefix(arg, "--chdir")) {
+                if (!longhasvalue(arg) && i + 1usize >= argc) { missinglongargument("--chdir"); return 125; };
+                if (longhasvalue(arg)) { chdir = longvalue(arg); }
+                else { i += 1usize; chdir = args::argat(i); };
+                i += 1usize; continue;
+            };
+            if (longprefix(arg, "--argv0")) {
+                if (!longhasvalue(arg) && i + 1usize >= argc) { missinglongargument("--argv0"); return 125; };
+                if (longhasvalue(arg)) { argv0 = longvalue(arg); }
+                else { i += 1usize; argv0 = args::argat(i); };
+                argv0_given = true; i += 1usize; continue;
+            };
+            if (longprefix(arg, "--debug")) {
+                if (longhasvalue(arg)) { badlongargument("--debug"); return 125; };
+                debug = true; i += 1usize; continue;
+            };
+            if (longprefix(arg, "--block-signal")) {
+                let mut signals: str = "";
+                let mut all: bool = true;
+                if (longhasvalue(arg)) { signals = longvalue(arg); all = false; };
+                if (!signaloption(0i32, signals, all)) { return 125; };
+                i += 1usize; continue;
+            };
+            if (longprefix(arg, "--default-signal")) {
+                let mut signals: str = "";
+                let mut all: bool = true;
+                if (longhasvalue(arg)) { signals = longvalue(arg); all = false; };
+                if (!signaloption(1i32, signals, all)) { return 125; };
+                i += 1usize; continue;
+            };
+            if (longprefix(arg, "--ignore-signal")) {
+                let mut signals: str = "";
+                let mut all: bool = true;
+                if (longhasvalue(arg)) { signals = longvalue(arg); all = false; };
+                if (!signaloption(2i32, signals, all)) { return 125; };
+                i += 1usize; continue;
+            };
+            if (longprefix(arg, "--list-signal-handling")) {
+                if (longhasvalue(arg)) { badlongargument("--list-signal-handling"); return 125; };
+                list_signals = true; i += 1usize; continue;
+            };
+            if (longprefix(arg, "--split-string")) {
+                let mut value: str = "";
+                if (longhasvalue(arg)) { value = longvalue(arg); }
+                else {
+                    if (i + 1usize >= argc) { missinglongargument("--split-string"); return 125; };
+                    i += 1usize; value = args::argat(i);
+                };
+                if (!split_string(value, &mut split_operands)) { return 125; };
+                i += 1usize; continue;
+            };
+            if (longprefix(arg, "--help")) {
+                if (longhasvalue(arg)) { badlongargument("--help"); return 125; };
+                help(); if (!stream::finishoutput("env")) { return 125; }; return 0;
+            };
+            if (longprefix(arg, "--version")) {
+                if (longhasvalue(arg)) { badlongargument("--version"); return 125; };
+                io::println("env (zovutils) 0.1.175");
+                if (!stream::finishoutput("env")) { return 125; };
+                return 0;
+            };
+            badlong(arg); return 125;
+        };
+
+        let mut j: usize = 1usize;
+        while (j < arg.len) {
+            let option: u8 = arg.data[j];
+            if (option == 105u8) { ignore_environment = true; j += 1usize; continue; };
+            if (option == 48u8) { zero = true; j += 1usize; continue; };
+            if (option == 117u8 || option == 67u8 || option == 97u8 || option == 83u8) {
+                let mut value: str = "";
+                if (j + 1usize < arg.len) { value = arg[j + 1usize..arg.len]; j = arg.len; }
+                else {
+                    if (i + 1usize >= argc) { missingshortargument(option); return 125; };
+                    i += 1usize; value = args::argat(i); j = arg.len;
+                };
+                if (option == 117u8) {
+                    if (debug) { c::fprintf(c::stderr, "unset:    %s\n", value); };
+                    if (process::zov_env_unset(value.data as *i8) != 0i32) {
+                        c::fprintf(c::stderr, "env: cannot unset '%s': %s\n", value, cstr::strerror(process::zov_get_errno()));
+                        return 125;
+                    };
+                } else if (option == 67u8) { chdir = value; }
+                else if (option == 97u8) { argv0 = value; argv0_given = true; }
+                else if (option == 83u8) {
+                    if (!split_string(value, &mut split_operands)) { return 125; };
+                };
+                continue;
+            };
+            if (option == 118u8) { debug = true; j += 1usize; continue; };
+            badshort(option); return 125;
+        };
+        i += 1usize;
+    };
+
+    if (ignore_environment && debug) { c::fprintf(c::stderr, "cleaning environ\n"); };
+    if (ignore_environment && process::zov_env_clear() != 0i32) {
+        c::fprintf(c::stderr, "env: cannot clear environment: %s\n", cstr::strerror(process::zov_get_errno()));
+        return 125;
+    };
+    if (chdir.len > 0usize && debug) { c::fprintf(c::stderr, "chdir:    '%s'\n", chdir); };
+    if (chdir.len > 0usize && process::zov_change_directory(chdir.data as *i8) != 0i32) {
+        c::fprintf(c::stderr, "env: cannot change directory to '%s': %s\n", chdir, cstr::strerror(process::zov_get_errno()));
+        return 125;
+    };
+    if (list_signals && process::zov_signal_list() != 0i32) { return 125; };
+
+    let mut all_operands = vec::new[str]();
+    defer all_operands.free();
+    for (let k in 0..split_operands.len()) { all_operands.push(split_operands.getref(k).view()); };
+    while (i < argc) { all_operands.push(args::argat(i)); i += 1usize; };
+    let mut command_index: usize = 0usize;
+    while (command_index < all_operands.len() && assignment(all_operands.get(command_index))) {
+        if (debug) { c::fprintf(c::stderr, "setenv:   %s\n", all_operands.get(command_index)); };
+        if (!assign(all_operands.get(command_index))) {
+            c::fprintf(c::stderr, "env: invalid variable name\n");
+            return 125;
+        };
+        command_index += 1usize;
+    };
+    if (command_index == all_operands.len()) {
+        if (zero) {
+            if (process::zov_env_print(1i32) != 0i32) { return 125; };
+        } else if (process::zov_env_print(0i32) != 0i32) { return 125; };
+        if (!stream::finishoutput("env")) { return 125; };
+        return 0;
+    };
+    if (zero) {
+        c::fprintf(c::stderr, "env: cannot specify --null (-0) with command\n");
+        tryhelp(); return 125;
+    };
+
+    let command: str = all_operands.get(command_index);
+    let mut argv = vec::new[nullable *i8]();
+    defer argv.free();
+    if (argv0_given) { argv.push(argv0.data as nullable *i8); }
+    else { argv.push(command.data as nullable *i8); };
+    let mut arg_index: usize = command_index + 1usize;
+    while (arg_index < all_operands.len()) { argv.push(all_operands.get(arg_index).data as nullable *i8); arg_index += 1usize; };
+    argv.push(null);
+    if (debug && argv0_given) { c::fprintf(c::stderr, "argv0:     '%s'\n", argv0); };
+    if (debug) {
+        c::fprintf(c::stderr, "executing: %s\n", command);
+        for (let k in 0usize..argv.len() - 1usize) {
+            c::fprintf(c::stderr, "   arg[%zu]= '%s'\n", k, argv.get(k)!);
+        };
+    };
+    let error: i32 = process::zov_exec_command(command.data as *i8, argv.data! as *void);
+    return execstatus(command, error);
+};
