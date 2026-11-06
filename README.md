@@ -1,17 +1,38 @@
 # zovutils
 
-`zovutils` is a Zov implementation of GNU Coreutils behavior. It compiles
-through `zovc` to C99 and uses GNU Coreutils only as an executable parity
-oracle; no GNU implementation source is copied, ported, or linked.
+[![Parity CI](https://github.com/abit-foggy/zovutils/actions/workflows/parity.yml/badge.svg?branch=master)](https://github.com/abit-foggy/zovutils/actions/workflows/parity.yml)
+![Version 0.1.132](https://img.shields.io/badge/version-0.1.132-blue)
+![Alpha](https://img.shields.io/badge/status-alpha-orange)
+![GNU Coreutils target 9.11](https://img.shields.io/badge/target-GNU%20Coreutils%209.11-lightgrey)
+![Zov 0.9.0](https://img.shields.io/badge/language-Zov%200.9.0-6f42c1)
 
-## Current status
+`zovutils` is a multicall command-line utilities project written in Zov. It
+targets GNU Coreutils 9.11 behavior and compiles through Zov to C99, then to a
+native executable with libtcc.
 
-The project is alpha (`0.1.132`) and targets GNU Coreutils 9.11 behavior. The
-first command family is byte-stream processing: `cat`, `head`, `tail`, and
-`wc`. Compatibility is incomplete until the differential suite covers every
-supported command and behavior.
+GNU Coreutils is used only as an executable parity-test oracle. No GNU source
+is copied, ported, or linked into this project.
+
+## Status
+
+The project is in alpha (`0.1.132`). The initial command set is:
+
+- `cat`
+- `head`
+- `tail`
+- `wc`
+
+Each command is available through `zovutils <command>` and, after installation,
+through a command-name symlink. Compatibility work is ongoing; passing the
+current test suite is not a claim of complete GNU Coreutils compatibility.
+
+The parity workflow is configured for Linux and macOS on `x86_64` and
+`aarch64`. See the [compatibility policy](docs/compatibility.md) for test scope,
+platform behavior, and coverage limits.
 
 ## Build and run
+
+Install Zov 0.9.0, then run:
 
 ```sh
 zovc check
@@ -20,39 +41,52 @@ zovc build
 ./target/zovutils wc -l README.md
 ```
 
-After `make install`, command-name symlinks dispatch to the shared executable:
+To install `zovutils` and its command symlinks under `/usr/local/bin`:
 
 ```sh
-cat README.md
-wc -l README.md
+make install
 ```
 
-## Development checks
+Set `PREFIX` to install elsewhere, for example `make install PREFIX="$HOME/.local"`.
+
+## Development and parity tests
+
+Run the unit and GNU parity suites with:
 
 ```sh
 make unit
 GNU_COREUTILS_DIR=/path/to/gnu-coreutils-9.11/bin make parity
 ```
 
-The Python parity suite requires GNU Coreutils 9.11, uses `LC_ALL=C` and
-`TZ=UTC0` for its base cases, and compares output bytes, diagnostics, and exit
-status. `wc` also runs locale-sensitive cases under an installed UTF-8 locale.
-Command cases live in separate scripts under `tests/parity/`. See
-[compatibility policy](docs/compatibility.md). GitHub Actions runs the suite on
-Linux and macOS across x86_64 and aarch64.
+Or run both with `make test`. The parity runner requires GNU Coreutils 9.11,
+sets `LC_ALL=C` and `TZ=UTC0` for base cases, and compares stdout, stderr, and
+exit status byte-for-byte. Locale-sensitive `wc` and diagnostic cases also run
+under an installed UTF-8 locale.
+
+On Linux with Clang, run the sanitizer parity suite with:
+
+```sh
+GNU_COREUTILS_DIR=/path/to/gnu-coreutils-9.11/bin make asan-parity
+```
+
+Command cases live in separate Python scripts under `tests/parity/`; shared
+fixtures and comparison helpers live beside them. CI builds GNU Coreutils 9.11
+from its checksum-verified release archive and runs the same checks across the
+supported platform matrix.
 
 ## Roadmap
 
-1. Shell basics: `basename`, `dirname`, `echo`, `env`, `false`, `printenv`,
+1. **Shell basics:** `basename`, `dirname`, `echo`, `env`, `false`, `printenv`,
    `printf`, `pwd`, `seq`, `sleep`, `test`, `true`, and `yes`.
-2. Text processing: `cut`, `paste`, `sort`, `uniq`, `tr`, `expand`,
+2. **Text processing:** `cut`, `paste`, `sort`, `uniq`, `tr`, `expand`,
    `unexpand`, `nl`, `fold`, `fmt`, `join`, `comm`, `csplit`, `split`, `tac`,
    and `od`.
-3. Filesystem operations, including path, metadata, and permission tools.
-4. Data and system utilities, including checksums, encoding, numeric, date,
-   identity, environment, and host information tools.
-5. Specialized and privilege-sensitive utilities, then remaining GNU 9.11
-   commands.
+3. **Filesystem operations:** file and directory creation, copying, moving,
+   linking, removal, installation, path resolution, permissions, and metadata.
+4. **Data and system utilities:** checksums, encoding, numeric conversion,
+   date and time, identity, environment, and host information.
+5. **Specialized utilities:** device and terminal tools, buffering,
+   privilege-sensitive commands, and the remaining GNU 9.11 utilities.
 
-Feature-family releases remain `0.x` alpha. Minor versions mark added command
-families; patch versions mark fixes.
+The project and required Zov compiler stay in the `0.x` alpha series. Minor
+versions mark command-family additions; patch versions mark fixes.
