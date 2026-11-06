@@ -624,6 +624,8 @@ def run(s: Suite) -> None:
         ["-s0.001", lines],
         ["-s"],
         ["-n", "1", lines, missing],
+        [""],
+        ["", lines],
         [unusual_name, unusual_name],
         [invalid_byte_name],
         [missing_unusual],

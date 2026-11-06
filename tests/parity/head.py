@@ -198,6 +198,8 @@ def run(s: Suite) -> None:
         ["--verbose", "--quiet", "-n", "1", lines, binary],
         ["--quiet", "--verbose", "-n", "1", lines, binary],
         ["-n", "1", lines, missing],
+        [""],
+        ["", lines],
         [unusual_name, unusual_name],
         [invalid_byte_name],
         [missing_unusual],
