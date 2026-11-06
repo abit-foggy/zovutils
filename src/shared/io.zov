@@ -274,7 +274,9 @@ export fn outputfailed() bool = {
 
 export fn finishoutput(name: str) bool = {
     if (c::fflush(c::stdout) != 0 || c::ferror(c::stdout) != 0) {
+        let error_number: i32 = platform_errno::zov_errno_value();
         c::fprintf(c::stderr, "%s: write error: ", name);
+        platform_errno::zov_errno_set(error_number);
         c::perror((0i64 as *i8));
         return false;
     };
@@ -283,7 +285,9 @@ export fn finishoutput(name: str) bool = {
 
 export fn finishoutputnamed(name: str, destination: str) bool = {
     if (c::fflush(c::stdout) != 0 || c::ferror(c::stdout) != 0) {
+        let error_number: i32 = platform_errno::zov_errno_value();
         c::fprintf(c::stderr, "%s: error writing '%s': ", name, destination);
+        platform_errno::zov_errno_set(error_number);
         c::perror((0i64 as *i8));
         return false;
     };

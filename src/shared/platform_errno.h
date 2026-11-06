@@ -3,6 +3,14 @@
 
 #include <errno.h>
 
+static inline int zov_errno_value(void) {
+    return errno;
+}
+
+static inline void zov_errno_set(int value) {
+    errno = value;
+}
+
 static inline int zov_errno_interrupted(void) {
     return errno == EINTR;
 }
