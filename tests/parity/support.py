@@ -5,6 +5,7 @@ from __future__ import annotations
 import difflib
 import os
 import re
+import signal
 import subprocess
 import sys
 import tempfile
@@ -13,6 +14,10 @@ from pathlib import Path
 
 class ParityFailure(AssertionError):
     pass
+
+
+def _ignore_sigpipe() -> None:
+    signal.signal(signal.SIGPIPE, signal.SIG_IGN)
 
 
 class Suite:
@@ -112,30 +117,53 @@ class Suite:
             raise ParityFailure(f"{utility} --version does not report package version: {result!r}")
 
     def write_failure(self, utility: str, args: list[str]) -> None:
-        """Compare output error handling where Linux provides /dev/full."""
+        """Compare output errors on /dev/full and a closed pipe."""
         sink = Path("/dev/full")
-        if not sink.exists():
-            return
         gnu_env = self.env.copy()
         gnu_env["PATH"] = str(self.gnu_dir) + os.pathsep + gnu_env.get("PATH", "")
-        results = []
-        for command, env in (
+        commands = (
             ([str(self.zovutils), utility, *args], self.env),
             ([utility, *args], gnu_env),
-        ):
-            with sink.open("wb") as stdout:
+        )
+        methods: list[list[tuple[int, bytes]]] = []
+        if sink.exists():
+            results = []
+            for command, env in commands:
+                with sink.open("wb") as stdout:
+                    proc = subprocess.run(
+                        command,
+                        stdout=stdout,
+                        stderr=subprocess.PIPE,
+                        env=env,
+                        timeout=15,
+                        check=False,
+                    )
+                results.append((proc.returncode, proc.stderr))
+            methods.append(results)
+
+        results = []
+        read_fd, write_fd = os.pipe()
+        os.close(read_fd)
+        try:
+            for command, env in commands:
                 proc = subprocess.run(
                     command,
-                    stdout=stdout,
+                    stdout=write_fd,
                     stderr=subprocess.PIPE,
                     env=env,
                     timeout=15,
                     check=False,
+                    preexec_fn=_ignore_sigpipe,
                 )
-            results.append((proc.returncode, proc.stderr))
-        self.count += 1
-        if results[0] != results[1]:
-            raise ParityFailure(f"{utility} output-write failure differs: {results!r}")
+                results.append((proc.returncode, proc.stderr))
+        finally:
+            os.close(write_fd)
+        methods.append(results)
+
+        for results in methods:
+            self.count += 1
+            if results[0] != results[1]:
+                raise ParityFailure(f"{utility} output-write failure differs: {results!r}")
 
     def permission_denied_case(self, utility: str, args: list[str], path: str) -> None:
         """Compare an unreadable file and restore it for temporary-dir cleanup."""
