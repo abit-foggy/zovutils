@@ -31,22 +31,9 @@ static inline void *zov_alloc_write_buffer(void) {
     return zov_alloc_read_buffer();
 }
 
-static inline void zov_debug_direct_io(const char *stage, int error, off_t position) {
-    const char *enabled = getenv("ZOVUTILS_DEBUG_DIRECT_IO");
-    if (enabled != NULL && enabled[0] != '\0') {
-        fprintf(stderr, "direct I/O debug: %s errno=%d offset=%lld\n",
-                stage, error, (long long) position);
-    }
-}
-
 static inline int zov_write_output(FILE *output, const void *buffer, size_t length) {
     int flags = fcntl(fileno(output), F_GETFL);
-    const char *debug = getenv("ZOVUTILS_DEBUG_DIRECT_IO");
 #ifdef O_DIRECT
-    if (debug != NULL && debug[0] != '\0' && length > 16384) {
-        fprintf(stderr, "direct I/O debug: flags=%d mask=%o length=%zu\n",
-                flags, O_DIRECT, length);
-    }
     if (flags >= 0 && (flags & O_DIRECT)) {
         const unsigned char *bytes = (const unsigned char *) buffer;
         size_t written = 0;
@@ -55,17 +42,9 @@ static inline int zov_write_output(FILE *output, const void *buffer, size_t leng
         off_t position = -1;
         if (length < 65536) {
             int set_result = fcntl(fileno(output), F_SETFL, flags & ~O_DIRECT);
-            if (debug != NULL && debug[0] != '\0') {
-                fprintf(stderr, "direct I/O debug: setfl=%d errno=%d\n", set_result, errno);
-            }
             if (set_result == 0) {
                 int updated_flags = fcntl(fileno(output), F_GETFL);
-                if (debug != NULL && debug[0] != '\0') {
-                    fprintf(stderr, "direct I/O debug: updated flags=%d\n", updated_flags);
-                }
                 if (updated_flags >= 0 && (updated_flags & O_DIRECT) == 0) {
-                    zov_debug_direct_io("buffered begin", updated_flags,
-                                        lseek(fileno(output), 0, SEEK_CUR));
                     while (written < length) {
                         ssize_t count = write(fileno(output), bytes + written,
                                               length - written);
@@ -73,18 +52,12 @@ static inline int zov_write_output(FILE *output, const void *buffer, size_t leng
                             continue;
                         }
                         if (count <= 0) {
-                            zov_debug_direct_io("buffered write", errno,
-                                                lseek(fileno(output), 0, SEEK_CUR));
                             (void) fcntl(fileno(output), F_SETFL, flags);
                             return 0;
                         }
                         written += (size_t) count;
                     }
-                    zov_debug_direct_io("buffered end", updated_flags,
-                                        lseek(fileno(output), 0, SEEK_CUR));
                     if (fcntl(fileno(output), F_SETFL, flags) != 0) {
-                        zov_debug_direct_io("restore direct", errno,
-                                            lseek(fileno(output), 0, SEEK_CUR));
                         return 0;
                     }
                     return 1;
@@ -96,19 +69,13 @@ static inline int zov_write_output(FILE *output, const void *buffer, size_t leng
                             "/proc/self/fd/%d", fileno(output));
             fallback_fd = open(descriptor_path, O_WRONLY | (flags & O_APPEND));
             position = lseek(fileno(output), 0, SEEK_CUR);
-            if (debug != NULL && debug[0] != '\0') {
-                fprintf(stderr, "direct I/O debug: fallback fd=%d offset=%lld\n",
-                        fallback_fd, (long long) position);
-            }
             if (fallback_fd < 0 || position < 0 ||
                 lseek(fallback_fd, position, SEEK_SET) < 0) {
-                zov_debug_direct_io("fallback open/seek", errno, position);
                 if (fallback_fd >= 0) {
                     (void) close(fallback_fd);
                 }
                 return 0;
             }
-            zov_debug_direct_io("fallback offset", 0, position);
             close_fallback = 1;
         }
         while (written < length) {
@@ -117,25 +84,16 @@ static inline int zov_write_output(FILE *output, const void *buffer, size_t leng
                 if (errno == EINTR) {
                     continue;
                 }
-                    zov_debug_direct_io("fallback write", errno, position);
                 if (close_fallback) (void) close(fallback_fd);
                 return 0;
             }
             if (count == 0) {
-                zov_debug_direct_io("zero write", errno, position);
                 if (close_fallback) (void) close(fallback_fd);
                 return 0;
             }
             written += (size_t) count;
         }
-        if (close_fallback) {
-            zov_debug_direct_io("fallback written", 0, position + (off_t) written);
-        }
         return !close_fallback || close(fallback_fd) == 0;
-    }
-#else
-    if (debug != NULL && debug[0] != '\0' && length > 16384) {
-        fprintf(stderr, "direct I/O debug: O_DIRECT unavailable length=%zu\n", length);
     }
 #endif
     return fwrite(buffer, 1, length, output) == length;
