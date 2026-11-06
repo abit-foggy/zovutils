@@ -1,7 +1,7 @@
 # zovutils
 
 [![Parity CI](https://github.com/abit-foggy/zovutils/actions/workflows/parity.yml/badge.svg?branch=master)](https://github.com/abit-foggy/zovutils/actions/workflows/parity.yml)
-![Version 0.1.179](https://img.shields.io/badge/version-0.1.179-blue)
+![Version 0.1.180](https://img.shields.io/badge/version-0.1.180-blue)
 ![Alpha](https://img.shields.io/badge/status-alpha-orange)
 ![GNU Coreutils target 9.11](https://img.shields.io/badge/target-GNU%20Coreutils%209.11-lightgrey)
 ![Zov 0.9.0](https://img.shields.io/badge/language-Zov%200.9.0-6f42c1)
@@ -15,7 +15,7 @@ is copied, ported, or linked into this project.
 
 ## Status
 
-The project is in alpha (`0.1.179`). The current command set is:
+The project is in alpha (`0.1.180`). The current command set is:
 
 - `basename`
 - `cat`
@@ -24,6 +24,7 @@ The project is in alpha (`0.1.179`). The current command set is:
 - `env`
 - `false`
 - `head`
+- `printenv`
 - `tail`
 - `true`
 - `wc`
