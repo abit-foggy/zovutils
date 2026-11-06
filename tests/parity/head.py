@@ -24,6 +24,16 @@ def run(s: Suite) -> None:
     no_final_newline = s.fixture("head-no-final-newline", b"a\nb\nc")
     binary = s.fixture("head-binary", b"a\0b\n\xffz")
     large = s.fixture("head-large", b"row\n" * 25000)
+    # Exercise negative-count elision immediately around the streaming read
+    # boundary, for both byte and line modes.
+    for size in (65535, 65536, 65537):
+        payload = bytes(index % 251 for index in range(size))
+        fixture = s.fixture(f"head-elide-bytes-{size}", payload)
+        for count in (0, 1, 2, 8192, 65535, 65536, 65537):
+            s.case("head", ["--bytes=-" + str(count), fixture])
+    line_boundary = s.fixture("head-elide-line-boundary", b"x\n" * 32768 + b"tail")
+    for count in (0, 1, 2, 32767, 32768, 32769):
+        s.case("head", ["--lines=-" + str(count), line_boundary])
     missing = s.path("head-missing")
     unusual_name = s.fixture("head-line\nbreak", b"name with newline\n")
     invalid_byte_name = s.fixture("head-invalid-\udcff", b"name with invalid byte\n")
