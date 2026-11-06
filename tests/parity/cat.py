@@ -122,10 +122,45 @@ def _direct_input_cases(s: Suite) -> None:
         raise AssertionError(f"cat direct-input behavior differs: {results!r}")
 
 
+def _direct_output_cases(s: Suite) -> None:
+    if sys.platform != "linux" or not hasattr(os, "O_DIRECT"):
+        return
+
+    source = s.fixture("cat-direct-output-source", b"direct output\n" * 4096)
+    results = []
+    for command in (
+        [str(s.zovutils), "cat"],
+        [str(s.gnu_dir / "cat")],
+    ):
+        modes = []
+        for index, options in enumerate(((), ("-n",), ("-v",))):
+            path = s.root / f"cat-direct-output-{len(results)}-{index}"
+            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_DIRECT, 0o600)
+            try:
+                proc = subprocess.run(
+                    [*command, *options, source],
+                    stdin=subprocess.DEVNULL,
+                    stdout=fd,
+                    stderr=subprocess.PIPE,
+                    env=s.env,
+                    timeout=5,
+                    check=False,
+                )
+            finally:
+                os.close(fd)
+            modes.append((proc.returncode, proc.stderr, path.read_bytes()))
+        results.append(modes)
+
+    s.count += 3
+    if results[0] != results[1]:
+        raise AssertionError(f"cat direct-output behavior differs: {results!r}")
+
+
 def run(s: Suite) -> None:
     _nonblocking_input_cases(s)
     _write_error_cases(s)
     _direct_input_cases(s)
+    _direct_output_cases(s)
     empty = s.fixture("empty", b"")
     text = s.fixture("text", b"alpha\nbeta\n\ngamma\n")
     lines = s.fixture("lines", b"one\ntwo\nthree\nfour\n")
