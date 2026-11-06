@@ -28,7 +28,8 @@ static inline void *zov_alloc_write_buffer(void) {
 }
 
 static inline void zov_debug_direct_io(const char *stage, int error, off_t position) {
-    if (getenv("ZOVUTILS_DEBUG_DIRECT_IO") != NULL) {
+    const char *enabled = getenv("ZOVUTILS_DEBUG_DIRECT_IO");
+    if (enabled != NULL && enabled[0] != '\0') {
         fprintf(stderr, "direct I/O debug: %s errno=%d offset=%lld\n",
                 stage, error, (long long) position);
     }
@@ -37,7 +38,8 @@ static inline void zov_debug_direct_io(const char *stage, int error, off_t posit
 static inline int zov_write_output(FILE *output, const void *buffer, size_t length) {
 #ifdef O_DIRECT
     int flags = fcntl(fileno(output), F_GETFL);
-    if (getenv("ZOVUTILS_DEBUG_DIRECT_IO") != NULL) {
+    const char *debug = getenv("ZOVUTILS_DEBUG_DIRECT_IO");
+    if (debug != NULL && debug[0] != '\0') {
         fprintf(stderr, "direct I/O debug: flags=%d mask=%o length=%zu\n",
                 flags, O_DIRECT, length);
     }
