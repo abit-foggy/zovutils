@@ -27,6 +27,10 @@ typedef struct {
     size_t capacity;
 } zov_fold_line;
 
+static inline void zov_fold_zero_width_error(void) {
+    fprintf(stderr, "fold: invalid number of columns: '0': %s\n", strerror(ERANGE));
+}
+
 static inline int zov_fold_read_line(FILE *fp, zov_fold_line *line,
                                      int *terminated) {
     line->length = 0;
