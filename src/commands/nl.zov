@@ -1,0 +1,165 @@
+use std::env as args;
+use std::io;
+use <stdio.h> as c;
+use <nl_backend.h> as backend;
+use shared::io as stream;
+
+fn usage_error() void = { c::fprintf(c::stderr, "Try 'nl --help' for more information.\n"); };
+
+fn longkey(arg: str) str = {
+    for (let i in 0usize..arg.len) { if (arg.data[i] == 61u8) { return arg[0usize..i]; }; };
+    return arg;
+};
+
+fn is_prefix(value: str, full: str) bool = {
+    return value.len > 2usize && value.len <= full.len && value == full[0usize..value.len];
+};
+
+fn parse_style(value: str, style: &mut u8, pattern: &mut str) bool = {
+    if (value.len == 0usize) { return false; };
+    let kind: u8 = value.data[0usize];
+    if (kind == 97u8 || kind == 116u8 || kind == 110u8) {
+        if (value.len != 1usize) { return false; };
+        *style = kind; *pattern = ""; return true;
+    };
+    if (kind == 112u8 && value.len > 1usize) { *style = kind; *pattern = value[1usize..value.len]; return true; };
+    return false;
+};
+
+fn parse_number(value: str, out: &mut usize) bool = {
+    if (value.len == 0usize) { return false; };
+    let mut number: usize = 0usize;
+    for (let i in 0usize..value.len) {
+        let digit: u8 = value.data[i];
+        if (digit < 48u8 || digit > 57u8) { return false; };
+        let unit: usize = (digit - 48u8) as usize;
+        if (number > (18446744073709551615usize - unit) / 10usize) { return false; };
+        number = number * 10usize + unit;
+    };
+    *out = number; return true;
+};
+
+fn help() void = {
+    io::print("Usage: nl [OPTION]... [FILE]...\nWrite each FILE to standard output, with line numbers added.\n\n");
+    io::print("With no FILE, or when FILE is -, read standard input.\n\n");
+    io::print("Mandatory arguments to long options are mandatory for short options too.\n");
+    io::print("  -b, --body-numbering=STYLE      use STYLE for numbering body lines\n");
+    io::print("  -d, --section-delimiter=CC      use CC for logical page delimiters\n");
+    io::print("  -f, --footer-numbering=STYLE    use STYLE for numbering footer lines\n");
+    io::print("  -h, --header-numbering=STYLE    use STYLE for numbering header lines\n");
+    io::print("  -i, --line-increment=NUMBER     line number increment at each line\n");
+    io::print("  -l, --join-blank-lines=NUMBER   group of NUMBER empty lines counted as one\n");
+    io::print("  -n, --number-format=FORMAT      insert line numbers according to FORMAT\n");
+    io::print("  -p, --no-renumber               do not reset line numbers for each section\n");
+    io::print("  -s, --number-separator=STRING   add STRING after (possible) line number\n");
+    io::print("  -v, --starting-line-number=NUMBER  first line number for each section\n");
+    io::print("  -w, --number-width=NUMBER       use NUMBER columns for line numbers\n");
+    io::print("      --help\n         display this help and exit\n");
+    io::print("      --version\n         output version information and exit\n\n");
+    io::print("Default options are: -bt -d'\\:' -fn -hn -i1 -l1 -n'rn' -s<TAB> -v1 -w6\n\n");
+    io::print("CC are two delimiter characters used to construct logical page delimiters;\na missing second character implies ':'.  As a GNU extension one can specify\nmore than two characters, and also specifying the empty string (-d '')\ndisables section matching.\n\n");
+    io::print("STYLE is one of:\n\n  a      number all lines\n  t      number only nonempty lines\n  n      number no lines\n  pBRE   number only lines that contain a match for the basic regular\n         expression, BRE\n\n");
+    io::print("FORMAT is one of:\n\n  ln     left justified, no leading zeros\n  rn     right justified, no leading zeros\n  rz     right justified, leading zeros\n\n\n");
+    io::print("Report bugs to: bug-coreutils@gnu.org\nGNU coreutils home page: <https://www.gnu.org/software/coreutils/>\n");
+    io::print("General help using GNU software: <https://www.gnu.org/gethelp/>\nReport any translation bugs to <https://translationproject.org/team/>\n");
+    io::print("Full documentation <https://www.gnu.org/software/coreutils/nl>\nor available locally via: info '(coreutils) nl invocation'\n");
+};
+
+export fn run(start: usize, argc: usize) i32 = {
+    let mut body_style: u8 = 116u8;
+    let mut header_style: u8 = 110u8;
+    let mut footer_style: u8 = 110u8;
+    let mut body_pattern: str = "";
+    let mut header_pattern: str = "";
+    let mut footer_pattern: str = "";
+    let mut delimiter: str = "\\:";
+    let mut separator: str = "\t";
+    let mut increment: usize = 1usize;
+    let mut start_number: usize = 1usize;
+    let mut join_blank: usize = 1usize;
+    let mut width: usize = 6usize;
+    let mut number_format: u8 = 114u8;
+    let mut no_renumber: bool = false;
+    let mut files: [256]str;
+    let mut file_count: usize = 0usize;
+    let mut i: usize = start;
+    let mut options_done: bool = false;
+    while (i < argc) {
+        let arg: str = args::argat(i);
+        if (!options_done && arg == "--") { options_done = true; i += 1usize; continue; };
+        if (!options_done && arg.len > 2usize && arg[0usize..2usize] == "--") {
+            let key: str = longkey(arg);
+            let mut value: str = "";
+            let mut takes_value: bool = false;
+            let mut option: u8 = 0u8;
+            if (key == "--body-numbering" || is_prefix(key, "--body-numbering")) { option = 98u8; takes_value = true; };
+            if (key == "--section-delimiter" || is_prefix(key, "--section-delimiter")) { option = 100u8; takes_value = true; };
+            if (key == "--footer-numbering" || is_prefix(key, "--footer-numbering")) { option = 102u8; takes_value = true; };
+            if (key == "--header-numbering" || is_prefix(key, "--header-numbering")) { option = 104u8; takes_value = true; };
+            if (key == "--line-increment" || is_prefix(key, "--line-increment")) { option = 105u8; takes_value = true; };
+            if (key == "--join-blank-lines" || is_prefix(key, "--join-blank-lines")) { option = 108u8; takes_value = true; };
+            if (key == "--number-format" || is_prefix(key, "--number-format")) { option = 110u8; takes_value = true; };
+            if (key == "--number-separator" || is_prefix(key, "--number-separator")) { option = 115u8; takes_value = true; };
+            if (key == "--starting-line-number" || is_prefix(key, "--starting-line-number")) { option = 118u8; takes_value = true; };
+            if (key == "--number-width" || is_prefix(key, "--number-width")) { option = 119u8; takes_value = true; };
+            if (key == "--no-renumber" || is_prefix(key, "--no-renumber")) { no_renumber = true; i += 1usize; continue; };
+            if (key == "--help" || is_prefix(key, "--help")) { help(); stream::finishoutput("nl"); return 0; };
+            if (key == "--version" || is_prefix(key, "--version")) { io::println("nl (zovutils) 0.1.198"); stream::finishoutput("nl"); return 0; };
+            if (!takes_value) { c::fprintf(c::stderr, "nl: unrecognized option '%s'\n", arg); usage_error(); return 1; };
+            if (arg.len > key.len) { value = arg[key.len + 1usize..arg.len]; i += 1usize; }
+            else if (i + 1usize < argc) { value = args::argat(i + 1usize); i += 2usize; }
+            else { c::fprintf(c::stderr, "nl: option '--%s' requires an argument\n", key[2usize..key.len]); usage_error(); return 1; };
+            if (option == 98u8 && !parse_style(value, &mut body_style, &mut body_pattern)) { c::fprintf(c::stderr, "nl: invalid body numbering style: '%s'\n", value); usage_error(); return 1; };
+            if (option == 102u8 && !parse_style(value, &mut footer_style, &mut footer_pattern)) { c::fprintf(c::stderr, "nl: invalid footer numbering style: '%s'\n", value); usage_error(); return 1; };
+            if (option == 104u8 && !parse_style(value, &mut header_style, &mut header_pattern)) { c::fprintf(c::stderr, "nl: invalid header numbering style: '%s'\n", value); usage_error(); return 1; };
+            if (option == 100u8) { delimiter = value; };
+            if (option == 115u8) { separator = value; };
+            if (option == 110u8) { if (value == "ln") { number_format = 108u8; } else if (value == "rn") { number_format = 114u8; } else if (value == "rz") { number_format = 122u8; } else { c::fprintf(c::stderr, "nl: invalid line number format: '%s'\n", value); usage_error(); return 1; }; };
+            if (option == 105u8 && !parse_number(value, &mut increment)) { c::fprintf(c::stderr, "nl: invalid line number increment: '%s'\n", value); usage_error(); return 1; };
+            if (option == 108u8) { if (!parse_number(value, &mut join_blank)) { c::fprintf(c::stderr, "nl: invalid number of blank lines: '%s'\n", value); usage_error(); return 1; }; if (join_blank == 0usize) { join_blank = 1usize; }; };
+            if (option == 118u8 && !parse_number(value, &mut start_number)) { c::fprintf(c::stderr, "nl: invalid starting line number: '%s'\n", value); usage_error(); return 1; };
+            if (option == 119u8 && !parse_number(value, &mut width)) { c::fprintf(c::stderr, "nl: invalid line number field width: '%s'\n", value); usage_error(); return 1; };
+            if (option == 119u8 && width == 0usize) { c::fprintf(c::stderr, "nl: invalid line number field width: '0': Numerical result out of range\n"); return 1; };
+            if (option == 119u8 && width > 4096usize) { width = 4096usize; };
+            continue;
+        };
+        if (!options_done && arg.len > 1usize && arg.data[0usize] == 45u8) {
+            let mut j: usize = 1usize;
+            while (j < arg.len) {
+                let option: u8 = arg.data[j];
+                if (option == 112u8) { no_renumber = true; j += 1usize; continue; };
+                if (option == 98u8 || option == 100u8 || option == 102u8 || option == 104u8 || option == 105u8 || option == 108u8 || option == 110u8 || option == 115u8 || option == 118u8 || option == 119u8) {
+                    let mut value: str = "";
+                    if (j + 1usize < arg.len) { value = arg[j + 1usize..arg.len]; }
+                    else if (i + 1usize < argc) { i += 1usize; value = args::argat(i); }
+                    else { c::fprintf(c::stderr, "nl: option requires an argument -- '%c'\n", option as i32); usage_error(); return 1; };
+                    if (option == 98u8 && !parse_style(value, &mut body_style, &mut body_pattern)) { c::fprintf(c::stderr, "nl: invalid body numbering style: '%s'\n", value); usage_error(); return 1; };
+                    if (option == 102u8 && !parse_style(value, &mut footer_style, &mut footer_pattern)) { c::fprintf(c::stderr, "nl: invalid footer numbering style: '%s'\n", value); usage_error(); return 1; };
+                    if (option == 104u8 && !parse_style(value, &mut header_style, &mut header_pattern)) { c::fprintf(c::stderr, "nl: invalid header numbering style: '%s'\n", value); usage_error(); return 1; };
+                    if (option == 100u8) { delimiter = value; };
+                    if (option == 115u8) { separator = value; };
+                    if (option == 110u8) { if (value == "ln") { number_format = 108u8; } else if (value == "rn") { number_format = 114u8; } else if (value == "rz") { number_format = 122u8; } else { c::fprintf(c::stderr, "nl: invalid line number format: '%s'\n", value); usage_error(); return 1; }; };
+                    if (option == 105u8 && !parse_number(value, &mut increment)) { c::fprintf(c::stderr, "nl: invalid line number increment: '%s'\n", value); usage_error(); return 1; };
+                    if (option == 108u8) { if (!parse_number(value, &mut join_blank)) { c::fprintf(c::stderr, "nl: invalid number of blank lines: '%s'\n", value); usage_error(); return 1; }; if (join_blank == 0usize) { join_blank = 1usize; }; };
+                    if (option == 118u8 && !parse_number(value, &mut start_number)) { c::fprintf(c::stderr, "nl: invalid starting line number: '%s'\n", value); usage_error(); return 1; };
+                    if (option == 119u8 && !parse_number(value, &mut width)) { c::fprintf(c::stderr, "nl: invalid line number field width: '%s'\n", value); usage_error(); return 1; };
+                    if (option == 119u8 && width == 0usize) { c::fprintf(c::stderr, "nl: invalid line number field width: '0': Numerical result out of range\n"); return 1; };
+                    if (option == 119u8 && width > 4096usize) { width = 4096usize; };
+                    j = arg.len; continue;
+                };
+                c::fprintf(c::stderr, "nl: invalid option -- '%c'\n", option as i32); usage_error(); return 1;
+            };
+            i += 1usize; continue;
+        };
+        if (file_count >= 256usize) { c::fprintf(c::stderr, "nl: too many input files\n"); return 1; };
+        files[file_count] = arg; file_count += 1usize; i += 1usize;
+    };
+    if (file_count == 0usize) { files[0usize] = "-"; file_count = 1usize; };
+    let mut paths: [256]*i8;
+    for (let fi in 0usize..file_count) { paths[fi] = files[fi].data as *i8; };
+    return backend::zov_nl_run(file_count, ((&paths[0usize]) as **i8), body_style as i8,
+        header_style as i8, footer_style as i8, body_pattern.data as *i8,
+        header_pattern.data as *i8, footer_pattern.data as *i8, delimiter.data as *i8,
+        separator.data as *i8, increment as u64, start_number as u64, join_blank as u64,
+        width as u32, number_format as i8, no_renumber as i32);
+};

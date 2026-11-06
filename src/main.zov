@@ -11,6 +11,7 @@ use commands::expand;
 use commands::environment;
 use commands::false_cmd;
 use commands::head;
+use commands::nl;
 use commands::paste;
 use commands::printenv;
 use commands::printf;
@@ -48,6 +49,7 @@ fn dispatch(name: str, start: usize, argc: usize) i32 = {
     if (name == "cat") { return cat::run(start, argc); };
     if (name == "cut") { return cut::run(start, argc); };
     if (name == "head") { return head::run(start, argc); };
+    if (name == "nl") { return nl::run(start, argc); };
     if (name == "paste") { return paste::run(start, argc); };
     if (name == "printenv") { return printenv::run(start, argc); };
     if (name == "printf") { return printf::run(start, argc); };
@@ -76,16 +78,16 @@ export fn main() i32 = {
     };
     if (argc < 2usize) {
         io::println("usage: zovutils <utility> [arguments...]");
-        io::println("utilities: [ basename cat cut dirname echo env expand false head paste printenv printf pwd seq sleep sort tail tr true uniq unexpand wc yes");
+        io::println("utilities: [ basename cat cut dirname echo env expand false head nl paste printenv printf pwd seq sleep sort tail tr true uniq unexpand wc yes");
         return 1;
     };
     if (env::argat(1usize) == "--help" || env::argat(1usize) == "-h") {
         io::println("usage: zovutils <utility> [arguments...]");
-        io::println("utilities: [ basename cat cut dirname echo env expand false head paste printenv printf pwd seq sleep sort tail test tr true uniq unexpand wc yes");
+        io::println("utilities: [ basename cat cut dirname echo env expand false head nl paste printenv printf pwd seq sleep sort tail test tr true uniq unexpand wc yes");
         return 0;
     };
     if (argc >= 2usize && (env::argat(1usize) == "--version" || env::argat(1usize) == "-V")) {
-        io::println("zovutils 0.1.197 (GNU Coreutils 9.11 compatibility target)");
+        io::println("zovutils 0.1.198 (GNU Coreutils 9.11 compatibility target)");
         return 0;
     };
     return dispatch(env::argat(1usize), 2usize, argc);
