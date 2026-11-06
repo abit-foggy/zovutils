@@ -5,6 +5,7 @@ use <stdio.h> as c;
 use commands::cat;
 use commands::comm;
 use commands::csplit;
+use commands::split;
 use commands::cut;
 use commands::basename;
 use commands::dirname;
@@ -56,6 +57,7 @@ fn dispatch(name: str, start: usize, argc: usize) i32 = {
     if (name == "cat") { return cat::run(start, argc); };
     if (name == "comm") { return comm::run(start, argc); };
     if (name == "csplit") { return csplit::run(start, argc); };
+    if (name == "split") { return split::run(start, argc); };
     if (name == "cut") { return cut::run(start, argc); };
     if (name == "head") { return head::run(start, argc); };
     if (name == "join") { return join::run(start, argc); };
@@ -88,16 +90,16 @@ export fn main() i32 = {
     };
     if (argc < 2usize) {
         io::println("usage: zovutils <utility> [arguments...]");
-        io::println("utilities: [ basename cat comm csplit cut dirname echo env expand false fold fmt head join nl paste printenv printf pwd seq sleep sort tail tr true uniq unexpand wc yes");
+        io::println("utilities: [ basename cat comm csplit cut dirname echo env expand false fold fmt head join nl paste printenv printf pwd seq sleep sort split tail tr true uniq unexpand wc yes");
         return 1;
     };
     if (env::argat(1usize) == "--help" || env::argat(1usize) == "-h") {
         io::println("usage: zovutils <utility> [arguments...]");
-        io::println("utilities: [ basename cat comm csplit cut dirname echo env expand false fold fmt head join nl paste printenv printf pwd seq sleep sort tail test tr true uniq unexpand wc yes");
+        io::println("utilities: [ basename cat comm csplit cut dirname echo env expand false fold fmt head join nl paste printenv printf pwd seq sleep sort split tail test tr true uniq unexpand wc yes");
         return 0;
     };
     if (argc >= 2usize && (env::argat(1usize) == "--version" || env::argat(1usize) == "-V")) {
-        io::println("zovutils 0.1.206 (GNU Coreutils 9.11 compatibility target)");
+        io::println("zovutils 0.1.207 (GNU Coreutils 9.11 compatibility target)");
         return 0;
     };
     return dispatch(env::argat(1usize), 2usize, argc);
