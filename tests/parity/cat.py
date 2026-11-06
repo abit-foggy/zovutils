@@ -246,6 +246,38 @@ ssize_t read(int fd, void *buffer, size_t count) {
             extra_env={"LD_PRELOAD": str(interposer)},
         )
 
+        error_interposer = s.root / "error-read.so"
+        error_source = s.root / "error-read.c"
+        error_source.write_text(
+            """
+#define _GNU_SOURCE
+#include <dlfcn.h>
+#include <errno.h>
+#include <unistd.h>
+static ssize_t (*next_read)(int, void *, size_t);
+static int injected;
+ssize_t read(int fd, void *buffer, size_t count) {
+    if (!next_read) next_read = dlsym(RTLD_NEXT, "read");
+    if (fd == STDIN_FILENO && !injected++) {
+        errno = EIO;
+        return -1;
+    }
+    return next_read(fd, buffer, count);
+}
+"""
+        )
+        subprocess.run(
+            ["cc", "-shared", "-fPIC", str(error_source), "-ldl", "-o", str(error_interposer)],
+            check=True,
+            timeout=15,
+        )
+        s.case(
+            "cat",
+            ["-v"],
+            stdin=b"read error is reported\n",
+            extra_env={"LD_PRELOAD": str(error_interposer)},
+        )
+
     # cat must forward each available input chunk before stdin reaches EOF.
     # Captured stdout is fully buffered by stdio unless cat flushes it.
     for opts in ([], ["-n"], ["-v"], ["-u"]):
