@@ -15,6 +15,13 @@ from support import ParityFailure, Suite
 FOLLOW_START_TIMEOUT = 1.0
 
 
+def _without_darwin_legacy_plus(options: tuple[list[str], ...]) -> tuple[list[str], ...]:
+    # Darwin's GNU build does not enable tail's legacy leading-plus syntax.
+    if sys.platform == "darwin":
+        return tuple(option for option in options if not (option and option[0].startswith("+")))
+    return options
+
+
 def _finish_process(
     proc: subprocess.Popen[bytes], timeout: float
 ) -> tuple[bool, bytes | None, bytes | None, int]:
@@ -314,7 +321,10 @@ def _follow_write_failure(s: Suite) -> None:
 def _presume_pipe_cases(s: Suite) -> None:
     path = s.fixture("tail-presumed-pipe", b"one\ntwo\nthree\n")
     for option in ("---p", "---pres", "---presume-input-pipe"):
-        for args in (("-n", "2"), ("-c", "5"), ("+2",)):
+        args_cases = (("-n", "2"), ("-c", "5"))
+        if sys.platform != "darwin":
+            args_cases += (("+2",),)
+        for args in args_cases:
             s.case("tail", [option, *args, path])
     s.case("tail", ["---presume-input-pipe", "-c", "18446744073709551615", path])
 
@@ -503,7 +513,7 @@ def run(s: Suite) -> None:
         if outcomes[0] != outcomes[1]:
             raise AssertionError(f"tail legacy minus-follow differs for {option}: {outcomes!r}")
 
-    options = (
+    options = _without_darwin_legacy_plus((
         [],
         ["-b"],
         ["-l"],
@@ -547,7 +557,7 @@ def run(s: Suite) -> None:
         ["-2K"],
         ["-2l"],
         ["+2K"],
-    )
+    ))
     fixtures = (empty, lines, no_final_newline, binary, large)
     for opts in options:
         for fixture in fixtures:
@@ -589,7 +599,7 @@ def run(s: Suite) -> None:
         for flag in ("-n", "-c"):
             s.case("tail", [flag, value, lines])
 
-    for args in (
+    args_cases = (
         ["--help"],
         ["--hel"],
         ["---", lines],
@@ -682,7 +692,8 @@ def run(s: Suite) -> None:
         ["-f", missing],
         ["--follow=name", missing],
         ["--", "-n"],
-    ):
+    )
+    for args in _without_darwin_legacy_plus(args_cases):
         s.case("tail", args)
     s.case("tail", ["-n", "2"], stdin=b"one\ntwo\nthree\n")
     s.case("tail", [lines, "-", "-"], stdin=b"stdin is consumed once\n")
