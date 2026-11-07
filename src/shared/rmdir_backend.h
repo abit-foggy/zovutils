@@ -117,7 +117,7 @@ static inline int zov_rmdir_run(int argc, int8_t **argv) {
                     free(paths); return 1;
                 }
                 if (strcmp(name, "--help") == 0) { zov_rmdir_help(); free(paths); return 0; }
-                if (strcmp(name, "--version") == 0) { puts("rmdir (zovutils) 0.3.1"); free(paths); return 0; }
+                if (strcmp(name, "--version") == 0) { puts("rmdir (zovutils) 0.4.0"); free(paths); return 0; }
                 if (strcmp(name, "--parents") == 0) parents = 1;
                 else if (strcmp(name, "--verbose") == 0) verbose = 1;
                 else ignore_nonempty = 1;

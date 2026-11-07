@@ -11,6 +11,7 @@ use commands::od;
 use commands::mkdir;
 use commands::rmdir;
 use commands::touch;
+use commands::ln;
 use commands::cut;
 use commands::basename;
 use commands::dirname;
@@ -68,6 +69,7 @@ fn dispatch(name: str, start: usize, argc: usize) i32 = {
     if (name == "mkdir") { return mkdir::run(start, argc); };
     if (name == "rmdir") { return rmdir::run(start, argc); };
     if (name == "touch") { return touch::run(start, argc); };
+    if (name == "ln") { return ln::run(start, argc); };
     if (name == "cut") { return cut::run(start, argc); };
     if (name == "head") { return head::run(start, argc); };
     if (name == "join") { return join::run(start, argc); };
@@ -100,16 +102,16 @@ export fn main() i32 = {
     };
     if (argc < 2usize) {
         io::println("usage: zovutils <utility> [arguments...]");
-        io::println("utilities: basename cat comm csplit cut dirname echo env expand false fold fmt head join mkdir nl od paste printenv printf pwd rmdir seq sleep sort split tac tail test touch tr true uniq unexpand wc yes");
+        io::println("utilities: basename cat comm csplit cut dirname echo env expand false fold fmt head join ln mkdir nl od paste printenv printf pwd rmdir seq sleep sort split tac tail test touch tr true uniq unexpand wc yes");
         return 1;
     };
     if (env::argat(1usize) == "--help" || env::argat(1usize) == "-h") {
         io::println("usage: zovutils <utility> [arguments...]");
-        io::println("utilities: basename cat comm csplit cut dirname echo env expand false fold fmt head join mkdir nl od paste printenv printf pwd rmdir seq sleep sort split tac tail test touch tr true uniq unexpand wc yes");
+        io::println("utilities: basename cat comm csplit cut dirname echo env expand false fold fmt head join ln mkdir nl od paste printenv printf pwd rmdir seq sleep sort split tac tail test touch tr true uniq unexpand wc yes");
         return 0;
     };
     if (argc >= 2usize && (env::argat(1usize) == "--version" || env::argat(1usize) == "-V")) {
-        io::println("zovutils 0.3.1 (GNU Coreutils 9.11 compatibility target)");
+        io::println("zovutils 0.4.0 (GNU Coreutils 9.11 compatibility target)");
         return 0;
     };
     return dispatch(env::argat(1usize), 2usize, argc);
