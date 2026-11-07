@@ -45,6 +45,7 @@ The project is in alpha (`0.8.0`). The current command set is:
 - `fmt`
 - `groups`
 - `head`
+- `hostid`
 - `id`
 - `join`
 - `link`
@@ -80,6 +81,7 @@ The project is in alpha (`0.8.0`). The current command set is:
 - `seq`
 - `sleep`
 - `sort`
+- `stat`
 - `sum`
 - `sync`
 - `split`
