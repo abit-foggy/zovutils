@@ -35,7 +35,7 @@ export fn run(start: usize, argc: usize) i32 = {
         if (!options_done && arg.len > 2usize && arg[0usize..2usize] == "--") {
             let option: str = key(arg);
             if (option == "--help" || prefix(option, "--help")) { help(); stream::finishoutput("comm"); return 0; };
-            if (option == "--version" || prefix(option, "--version")) { io::println("comm (zovutils) 0.4.2"); stream::finishoutput("comm"); return 0; };
+            if (option == "--version" || prefix(option, "--version")) { io::println("comm (zovutils) 0.5.0"); stream::finishoutput("comm"); return 0; };
             if (option == "--check-order" || prefix(option, "--check-order")) { check_order = true; i += 1usize; continue; };
             if (option == "--nocheck-order" || prefix(option, "--nocheck-order")) { check_order = false; i += 1usize; continue; };
             if (option == "--total" || prefix(option, "--total")) { total = true; i += 1usize; continue; };
