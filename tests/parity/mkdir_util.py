@@ -73,7 +73,7 @@ def run(s: Suite) -> None:
     s.product_version("mkdir")
     s.symlink_dispatch("mkdir", [])
     s.case("mkdir", ["-m", "invalid", "directory"])
-    s.case("mkdir", ["--context=invalid", "directory"])
+    _filesystem_case(s, ["--context=invalid", "directory"])
     s.case("mkdir", ["-z"])
     s.case("mkdir", ["--context"])
 
