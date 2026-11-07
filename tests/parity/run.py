@@ -18,6 +18,7 @@ import cksum_util
 import sum_util
 import comm_util
 import cp_util
+import chroot_util
 import mv_util
 import rm_util
 import chmod_util
