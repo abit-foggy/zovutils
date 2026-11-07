@@ -71,7 +71,7 @@ export fn run(start: usize, argc: usize) i32 = {
         if (!options_done && arg.len > 2usize && arg[0usize..2usize] == "--") {
             let option: str = key(arg);
             if (option == "--help" || prefix(option, "--help")) { help(); stream::finishoutput("split"); return 0; };
-            if (option == "--version" || prefix(option, "--version")) { io::println("split (zovutils) 0.5.2"); stream::finishoutput("split"); return 0; };
+            if (option == "--version" || prefix(option, "--version")) { io::println("split (zovutils) 0.5.3"); stream::finishoutput("split"); return 0; };
             if (option == "--verbose" || prefix(option, "--verbose")) { verbose = true; i += 1usize; continue; };
             if (option == "--elide-empty-files" || prefix(option, "--elide-empty-files")) { elide_empty = true; i += 1usize; continue; };
             if (option == "--unbuffered" || prefix(option, "--unbuffered")) { i += 1usize; continue; };

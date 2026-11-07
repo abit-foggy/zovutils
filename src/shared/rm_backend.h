@@ -97,7 +97,7 @@ static inline int zov_rm_long(const char *arg, const char *name, size_t len) {
     return len > 2 && len <= strlen(name) && strncmp(arg, name, len) == 0;
 }
 
-
+static inline void zov_rm_help(void);
 
 static inline int zov_rm_run(int argc, int8_t **argv) {
     zov_rm_options opt = {0}; opt.preserve_root = 1;
@@ -111,7 +111,7 @@ static inline int zov_rm_run(int argc, int8_t **argv) {
             const char *eq = strchr(arg, '='); size_t len = eq ? (size_t)(eq - arg) : strlen(arg);
             const char *value = eq ? eq + 1 : NULL;
             if (zov_rm_long(arg, "--help", len)) { if (value != NULL) { fputs("rm: option '--help' doesn't allow an argument\nTry 'rm --help' for more information.\n", stderr); free(paths); return 1; } zov_rm_help(); free(paths); return 0; }
-            if (zov_rm_long(arg, "--version", len)) { puts("rm (zovutils) 0.5.2"); free(paths); return 0; }
+            if (zov_rm_long(arg, "--version", len)) { puts("rm (zovutils) 0.5.3"); free(paths); return 0; }
             if (zov_rm_long(arg, "--recursive", len)) { opt.recursive = 1; continue; }
             if (zov_rm_long(arg, "--force", len)) { opt.force = 1; opt.interactive = 0; continue; }
             if (zov_rm_long(arg, "--interactive", len)) {
