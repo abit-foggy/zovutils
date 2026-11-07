@@ -1,13 +1,19 @@
-"""GNU parity cases for shred on temporary files."""
+"""GNU parity cases for shred using isolated temporary files."""
 from support import Suite
 
+
 def run(s: Suite) -> None:
-    for i,args in enumerate((("-n","1","-u"),("-n","0","-z","-u"),("--size=0","-u"))):
-        zp=s.root/f"z-shred-{i}";gp=s.root/f"g-shred-{i}"
-        zp.write_bytes(b"temporary contents\0");gp.write_bytes(b"temporary contents\0")
-        z=s._run([str(s.zovutils),"shred",*args,str(zp)],b"")
-        g=s._run(["shred",*args,str(gp)],b"",env={**s.env,"PATH":str(s.gnu_dir)+":"+s.env.get("PATH","")})
-        assert z==g,(args,z,g)
-        assert not zp.exists() and not gp.exists()
-    s.case("shred",["--bad-option"])
+    def setup(root):
+        (root / "payload").write_bytes(b"temporary contents\0")
+        (root / "random").write_bytes(bytes(range(256)) * 64)
+
+    for args in (
+        ["--iterations=0", "--zero", "payload"],
+        ["--iterations=1", "--random-source=/dev/zero", "payload"],
+        ["--size=4", "--iterations=0", "--zero", "payload"],
+        ["--exact", "--iterations=0", "--zero", "payload"],
+        ["--iterations=0", "--zero", "--remove", "payload"],
+    ):
+        s.case_filesystem("shred", args, setup=setup)
+    s.case("shred", ["--bad-option"])
     s.product_version("shred")
