@@ -111,7 +111,7 @@ static inline int zov_rm_run(int argc, int8_t **argv) {
             const char *eq = strchr(arg, '='); size_t len = eq ? (size_t)(eq - arg) : strlen(arg);
             const char *value = eq ? eq + 1 : NULL;
             if (zov_rm_long(arg, "--help", len)) { if (value != NULL) { fputs("rm: option '--help' doesn't allow an argument\nTry 'rm --help' for more information.\n", stderr); free(paths); return 1; } zov_rm_help(); free(paths); return 0; }
-            if (zov_rm_long(arg, "--version", len)) { puts("rm (zovutils) 0.10.33"); free(paths); return 0; }
+            if (zov_rm_long(arg, "--version", len)) { puts("rm (zovutils) 0.10.34"); free(paths); return 0; }
             if (zov_rm_long(arg, "--recursive", len)) { opt.recursive = 1; continue; }
             if (zov_rm_long(arg, "--force", len)) { opt.force = 1; opt.interactive = 0; continue; }
             if (zov_rm_long(arg, "--interactive", len)) {

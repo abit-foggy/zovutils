@@ -43,7 +43,7 @@ static inline int zov_stdbuf_run(int argc, char **argv) {
             puts("Usage: stdbuf OPTION... COMMAND\nRun COMMAND, with modified buffering operations for its standard streams.\n  -i, --input=MODE   adjust standard input stream buffering\n  -o, --output=MODE  adjust standard output stream buffering\n  -e, --error=MODE   adjust standard error stream buffering\n      --help         display this help and exit\n      --version      output version information and exit\nIf MODE is 'L' the stream is line buffered, '0' unbuffered, or a number optionally followed by a size suffix.");
             return 0;
         }
-        if (!strcmp(a, "--version")) { puts("stdbuf (zovutils) 0.10.33"); return 0; }
+        if (!strcmp(a, "--version")) { puts("stdbuf (zovutils) 0.10.34"); return 0; }
         if (!strcmp(a, "--")) { i++; break; }
         if (a[0] != '-' || !a[1]) break;
         int which = -1;
