@@ -197,7 +197,7 @@ static inline int zov_chmod_long(const char *arg, const char *name, size_t len) 
     return len > 2 && len <= strlen(name) && strncmp(arg, name, len) == 0;
 }
 
-
+static inline void zov_chmod_help(void);
 
 static inline int zov_chmod_run(int argc, int8_t **argv) {
     zov_chmod_options opt = {0}; opt.dereference = 1; opt.traverse_mode = 0;
@@ -212,7 +212,7 @@ static inline int zov_chmod_run(int argc, int8_t **argv) {
             const char *eq = strchr(arg, '='); size_t len = eq ? (size_t)(eq - arg) : strlen(arg);
             const char *value = eq ? eq + 1 : NULL;
             if (zov_chmod_long(arg, "--help", len)) { if (value != NULL) { fputs("chmod: option '--help' doesn't allow an argument\nTry 'chmod --help' for more information.\n", stderr); free(operands); return 1; } zov_chmod_help(); free(operands); return 0; }
-            if (zov_chmod_long(arg, "--version", len)) { puts("chmod (zovutils) 0.5.4"); free(operands); return 0; }
+            if (zov_chmod_long(arg, "--version", len)) { puts("chmod (zovutils) 0.5.5"); free(operands); return 0; }
             if (zov_chmod_long(arg, "--recursive", len)) { opt.recursive = 1; continue; }
             if (zov_chmod_long(arg, "--changes", len)) { opt.verbose = opt.changes_only = 1; continue; }
             if (zov_chmod_long(arg, "--verbose", len)) { opt.verbose = 1; continue; }
