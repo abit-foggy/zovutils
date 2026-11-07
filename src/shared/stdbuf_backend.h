@@ -43,7 +43,7 @@ static inline int zov_stdbuf_run(int argc, char **argv) {
             puts("Usage: stdbuf OPTION... COMMAND\nRun COMMAND, with modified buffering operations for its standard streams.\n  -i, --input=MODE   adjust standard input stream buffering\n  -o, --output=MODE  adjust standard output stream buffering\n  -e, --error=MODE   adjust standard error stream buffering\n      --help         display this help and exit\n      --version      output version information and exit\nIf MODE is 'L' the stream is line buffered, '0' unbuffered, or a number optionally followed by a size suffix.");
             return 0;
         }
-        if (!strcmp(a, "--version")) { puts("stdbuf (zovutils) 0.10.22"); return 0; }
+        if (!strcmp(a, "--version")) { puts("stdbuf (zovutils) 0.10.23"); return 0; }
         if (!strcmp(a, "--")) { i++; break; }
         if (a[0] != '-' || !a[1]) break;
         int which = -1;
@@ -102,7 +102,8 @@ static inline int zov_stdbuf_run(int argc, char **argv) {
     char exe[PATH_MAX];
 #if defined(__APPLE__)
     uint32_t size = (uint32_t)sizeof exe;
-    if (_NSGetExecutablePath(exe, &size) != 0 || realpath(exe, exe) == NULL) { fprintf(stderr, "stdbuf: cannot locate preload library\n"); return 125; }
+    char unresolved[PATH_MAX];
+    if (_NSGetExecutablePath(unresolved, &size) != 0 || realpath(unresolved, exe) == NULL) { fprintf(stderr, "stdbuf: cannot locate preload library\n"); return 125; }
 #else
     ssize_t n = readlink("/proc/self/exe", exe, sizeof exe - 1);
     if (n < 0) { fprintf(stderr, "stdbuf: cannot locate preload library: %s\n", strerror(errno)); return 125; }
