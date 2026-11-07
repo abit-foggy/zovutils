@@ -447,7 +447,7 @@ export fn run(start: usize, argc: usize) i32 = {
                 return 0;
             }
             else if (longmatch(key, "--version")) {
-                io::println("wc (zovutils) 0.2.0");
+                io::println("wc (zovutils) 0.2.1");
                 if (platform_errno::zov_platform_is_apple() != 0i32) {
                     if (platform_errno::zov_finish_wc_output() == 0i32) { return 1; };
                 } else if (!stream::finishoutputbrief("wc")) { return 1; };

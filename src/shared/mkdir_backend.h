@@ -116,7 +116,9 @@ static inline int zov_mkdir_parse_mode(const char *text, mode_t *result,
         if (op == '=') mode = (mode & ~affected) | bits;
         else if (op == '+') mode |= bits;
         else mode &= ~bits;
+#if !defined(__APPLE__)
         if ((bits & S_ISVTX) != 0) mode &= ~(current_umask & 0777);
+#endif
         if (*p == ',') { ++p; if (*p == '\0') return 0; }
     }
     *result = mode & 07777;
@@ -232,7 +234,7 @@ static inline int zov_mkdir_run(int argc, int8_t **argv) {
                     free(paths); return 1;
                 }
                 if (strcmp(name, "--help") == 0) { zov_mkdir_help(); free(paths); return 0; }
-                if (strcmp(name, "--version") == 0) { puts("mkdir (zovutils) 0.2.0"); free(paths); return 0; }
+                if (strcmp(name, "--version") == 0) { puts("mkdir (zovutils) 0.2.1"); free(paths); return 0; }
                 if (strcmp(name, "--parents") == 0) parents = 1; else verbose = 1;
                 continue;
             }
