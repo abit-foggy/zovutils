@@ -19,5 +19,6 @@ def run(s: Suite) -> None:
     s.case("ptx", ["-A"], stdin=b"foo.bar alpha-beta\n")
     breaks = s.fixture("ptx-breaks", b".")
     s.case("ptx", ["-A", "--break-file", breaks], stdin=b"foo.bar\n")
+    s.case("ptx", ["-A", "--sentence-regexp=[.!?]"], stdin=b"one alpha. beta two! gamma three\n")
     s.case("ptx", ["--bad-option"])
     s.product_version("ptx")

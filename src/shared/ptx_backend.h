@@ -14,6 +14,7 @@ typedef struct {
     char *left;
     char *right;
     char *reference;
+    int sentence_offset;
 } zov_ptx_entry;
 
 static inline int zov_ptx_compare(const void *aa, const void *bb, int fold) {
@@ -54,6 +55,17 @@ static inline int zov_ptx_is_break(unsigned char c, const unsigned char *breaks)
     return isspace(c) || breaks[c];
 }
 
+static inline void zov_ptx_sentence_bounds(const char *line,size_t len,size_t pos,
+                                            regex_t *re,size_t *start,size_t *end) {
+    size_t cursor=0;*start=0;*end=len;
+    while(cursor<len){regmatch_t m;if(regexec(re,line+cursor,1,&m,0)!=0)break;
+        size_t a=cursor+(size_t)m.rm_so,b=cursor+(size_t)m.rm_eo;
+        if(b<=a){if(a>=len)break;cursor=a+1;continue;}
+        if(pos<b){*end=b;return;}
+        *start=b;cursor=b;
+    }
+}
+
 static inline int zov_ptx_add(zov_ptx_entry **entries, size_t *count, size_t *capacity,
                               const char *line, size_t line_len, size_t begin, size_t end,
                               const char *reference) {
@@ -69,6 +81,7 @@ static inline int zov_ptx_add(zov_ptx_entry **entries, size_t *count, size_t *ca
     item->left = zov_ptx_trim_copy(line, begin);
     item->right = zov_ptx_trim_copy(line + end, line_len - end);
     item->reference = strdup(reference);
+    item->sentence_offset = 0;
     return item->word && item->left && item->right && item->reference;
 }
 
@@ -119,7 +132,7 @@ static inline int zov_ptx_run(int argc, char **argv) {
     int nf = 0;
     for (int i = 0; i < argc; i++) {
         const char *a = argv[i];
-        if (!strcmp(a, "--version")) { puts("ptx (zovutils) 0.10.11"); free(files); return 0; }
+        if (!strcmp(a, "--version")) { puts("ptx (zovutils) 0.10.12"); free(files); return 0; }
         if (!strcmp(a, "--help")) {
             puts("Usage: ptx [OPTION]... [INPUT]...\nOutput a permuted index, including context, of the words in the input files.\n  -A, --auto-reference       output automatically generated references\n  -G, --traditional          use traditional System V output\n  -b, --break-file=FILE      use word break characters from FILE\n  -f, --ignore-case          fold lower case to upper case for sorting\n  -g, --gap-size=NUMBER      gap size between output fields\n  -i, --ignore-file=FILE     read words to ignore from FILE\n  -o, --only-file=FILE       read words to include from FILE\n  -r, --references           first field of each line is a reference\n  -R, --right-side-refs      put references at the right\n  -t, --typeset-mode         use a default width of 100 columns\n  -w, --width=NUMBER         output width in columns\n      --help                 display this help and exit\n      --version              output version information and exit");
             free(files); return 0;
@@ -188,8 +201,9 @@ static inline int zov_ptx_run(int argc, char **argv) {
     char **ignored=NULL, **only=NULL; size_t ignored_n=0, only_n=0;
     if (ignore_file && !zov_ptx_load_words(ignore_file,&ignored,&ignored_n)) { free(files); return 1; }
     if (only_file && !zov_ptx_load_words(only_file,&only,&only_n)) { free(files); return 1; }
-    regex_t word_re; int has_word_re=0;
+    regex_t word_re, sentence_re; int has_word_re=0,has_sentence_re=0;
     if(word_pattern){int rc=regcomp(&word_re,word_pattern,REG_EXTENDED);if(rc){fprintf(stderr,"ptx: invalid word regular expression\n");free(files);return 1;}has_word_re=1;}
+    if(sentence_pattern){int rc=regcomp(&sentence_re,sentence_pattern,REG_EXTENDED);if(rc){fprintf(stderr,"ptx: invalid sentence regular expression\n");if(has_word_re)regfree(&word_re);free(files);return 1;}has_sentence_re=1;}
     zov_ptx_entry *entries=NULL; size_t used=0, capacity=0; int status=0;
     for (int fi=0;fi<nf;fi++) {
         FILE *in=!strcmp(files[fi],"-")?stdin:fopen(files[fi],"r");
@@ -234,15 +248,22 @@ static inline int zov_ptx_run(int argc, char **argv) {
             else if(!strcmp(files[fi],"-"))snprintf(ref,sizeof ref,":%lu",lineno);
             else snprintf(ref,sizeof ref,"%s:%lu",files[fi],lineno);
             size_t context_start=refs_in?first_end:0;
-            if(!zov_ptx_add(&entries,&used,&capacity,line+context_start,len-context_start,
+            size_t context_end=len;
+            if(has_sentence_re)zov_ptx_sentence_bounds(line,len,begin,&sentence_re,&context_start,&context_end);
+            if(refs_in&&context_start<first_end)context_start=first_end;
+            if(!zov_ptx_add(&entries,&used,&capacity,line+context_start,context_end-context_start,
                             begin-context_start,finish-context_start,ref)){status=1;break;}
+            entries[used-1].sentence_offset=has_sentence_re&&context_start>0;
             if(!has_word_re){
                 for(size_t split=begin;split+1<finish;split++) if(breaks[(unsigned char)line[split]]){
                     char *suffix=zov_ptx_dup_range(line+split+1,finish-split-1);
                     int suffix_allowed=suffix&&(!ignore_file||zov_ptx_word_allowed(suffix,ignored,ignored_n,0))&&(!only_file||zov_ptx_word_allowed(suffix,only,only_n,1));
                     free(suffix);
-                    if(suffix_allowed&&!zov_ptx_add(&entries,&used,&capacity,line+context_start,len-context_start,
+                    if(has_sentence_re)zov_ptx_sentence_bounds(line,len,split+1,&sentence_re,&context_start,&context_end);
+                    if(refs_in&&context_start<first_end)context_start=first_end;
+                    if(suffix_allowed&&!zov_ptx_add(&entries,&used,&capacity,line+context_start,context_end-context_start,
                                                     split+1-context_start,finish-context_start,ref)){status=1;break;}
+                    if(suffix_allowed)entries[used-1].sentence_offset=has_sentence_re&&context_start>0;
                 }
             }
         }
@@ -279,6 +300,7 @@ static inline int zov_ptx_run(int argc, char **argv) {
             continue;
         }
         int before=leftlen?gap:0;
+        if(e->sentence_offset&&!leftlen)target++;
         int spaces=target-(int)pl-(int)leftlen-before;
         fputs(prefix,stdout);
         for (int j=0;j<spaces;j++) putchar(' ');
@@ -302,7 +324,7 @@ static inline int zov_ptx_run(int argc, char **argv) {
     for (size_t i=0;i<ignored_n;i++) free(ignored[i]); free(ignored);
     for (size_t i=0;i<only_n;i++) free(only[i]); free(only);
     zov_ptx_free(entries,used); free(files); (void)break_file; (void)truncation_flag;
-    (void)word_pattern; (void)sentence_pattern;
+    if(has_word_re)regfree(&word_re);if(has_sentence_re)regfree(&sentence_re);
     return status;
 }
 #endif

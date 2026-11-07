@@ -21,7 +21,7 @@ static inline int zov_basenc_run(const char *program, int argc, char **argv) {
     for (int i=0;i<argc;i++) {
         const char *a=argv[i];
         if (!strcmp(a,"--help")) { fprintf(stdout,"Usage: %s [OPTION]... [FILE]\nBase-encode or decode FILE, or standard input, to standard output.\n  -d, --decode          decode data\n  -i, --ignore-garbage  when decoding, ignore non-alphabet characters\n  -w, --wrap=COLS       wrap encoded lines after COLS character (default 76)\n      --help            display this help and exit\n      --version         output version information and exit\n",program); return 0; }
-        if (!strcmp(a,"--version")) { printf("%s (zovutils) 0.10.11\n",program); return 0; }
+        if (!strcmp(a,"--version")) { printf("%s (zovutils) 0.10.12\n",program); return 0; }
         if (!strcmp(a,"-d")||!strcmp(a,"--decode")) {decode=1;continue;}
         if (!strcmp(a,"-i")||!strcmp(a,"--ignore-garbage")) {ignore=1;continue;}
         if (!strcmp(a,"-u")||!strcmp(a,"--base64url")) {mode=0;url=1;continue;}
