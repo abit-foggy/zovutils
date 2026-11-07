@@ -10,8 +10,11 @@ def run(s: Suite) -> None:
         ("--base16", b"616263"),
         ("--base2msbf", b"011000010110001001100011"),
         ("--base2lsbf", b"100001100100011011000110"),
+        ("--base58", b"ZiCa\n"),
+        ("--z85", b"vpA.S\n"),
     ):
-        s.case("basenc", [option], stdin=b"abc")
+        raw = b"abcd" if option == "--z85" else b"abc"
+        s.case("basenc", [option], stdin=raw)
         s.case("basenc", [option, "--decode"], stdin=encoded)
     s.case("basenc", ["--base64", "--bad-option"])
     s.product_version("basenc")
