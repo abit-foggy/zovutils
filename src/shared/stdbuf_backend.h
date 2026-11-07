@@ -43,7 +43,7 @@ static inline int zov_stdbuf_run(int argc, char **argv) {
             puts("Usage: stdbuf OPTION... COMMAND\nRun COMMAND, with modified buffering operations for its standard streams.\n  -i, --input=MODE   adjust standard input stream buffering\n  -o, --output=MODE  adjust standard output stream buffering\n  -e, --error=MODE   adjust standard error stream buffering\n      --help         display this help and exit\n      --version      output version information and exit\nIf MODE is 'L' the stream is line buffered, '0' unbuffered, or a number optionally followed by a size suffix.");
             return 0;
         }
-        if (!strcmp(a, "--version")) { puts("stdbuf (zovutils) 0.10.20"); return 0; }
+        if (!strcmp(a, "--version")) { puts("stdbuf (zovutils) 0.10.21"); return 0; }
         if (!strcmp(a, "--")) { i++; break; }
         if (a[0] != '-' || !a[1]) break;
         int which = -1;
@@ -80,7 +80,11 @@ static inline int zov_stdbuf_run(int argc, char **argv) {
             return 125;
         }
         if (!zov_stdbuf_size(value)) {
+#if defined(__APPLE__)
+            fprintf(stderr, "stdbuf: invalid mode '%s': %s\n", value, strerror(EINVAL));
+#else
             fprintf(stderr, "stdbuf: invalid mode '%s'\n", value);
+#endif
             return 125;
         }
         if (which == 0 && !strcmp(value, "L")) {
