@@ -4,7 +4,7 @@ use <stdio.h> as c;
 use <unexpand_backend.h> as backend;
 use shared::io as stream;
 
-fn usage_error() void = { c::fprintf(c::stderr, "Try 'unexpand --help' for more information.\n"); };
+fn usage_error() void = { io::eprintln("Try 'unexpand --help' for more information."); };
 
 fn longkey(arg: str) str = {
     for (let i in 0usize..arg.len) { if (arg.data[i] == 61u8) { return arg[0usize..i]; }; };
@@ -55,14 +55,14 @@ export fn run(start: usize, argc: usize) i32 = {
             if (key == "--tabs" || is_prefix(key, "--tabs")) {
                 if (arg.len > key.len) { tabs = arg[key.len + 1usize..arg.len]; i += 1usize; }
                 else if (i + 1usize < argc) { tabs = args::argat(i + 1usize); i += 2usize; }
-                else { c::fprintf(c::stderr, "unexpand: option '--tabs' requires an argument\n"); usage_error(); return 1; };
+                else { io::eprintln("unexpand: option '--tabs' requires an argument"); usage_error(); return 1; };
                 all_blanks = true;
                 continue;
             };
             if (key == "--all" || is_prefix(key, "--all")) { all_blanks = true; i += 1usize; continue; };
             if (key == "--first-only" || is_prefix(key, "--first-only")) { first_only = true; i += 1usize; continue; };
             if (key == "--help" || is_prefix(key, "--help")) { help(); stream::finishoutput("unexpand"); return 0; };
-            if (key == "--version" || is_prefix(key, "--version")) { io::println("unexpand (zovutils) 0.6.0"); stream::finishoutput("unexpand"); return 0; };
+            if (key == "--version" || is_prefix(key, "--version")) { io::println("unexpand (zovutils) 0.6.1"); stream::finishoutput("unexpand"); return 0; };
             c::fprintf(c::stderr, "unexpand: unrecognized option '%s'\n", arg); usage_error(); return 1;
         };
         if (!options_done && arg.len > 1usize && arg.data[0usize] == 45u8) {
@@ -73,7 +73,7 @@ export fn run(start: usize, argc: usize) i32 = {
                 if (option == 116u8) {
                     if (j + 1usize < arg.len) { tabs = arg[j + 1usize..arg.len]; }
                     else if (i + 1usize < argc) { i += 1usize; tabs = args::argat(i); }
-                    else { c::fprintf(c::stderr, "unexpand: option requires an argument -- 't'\n"); usage_error(); return 1; };
+                    else { io::eprintln("unexpand: option requires an argument -- 't'"); usage_error(); return 1; };
                     all_blanks = true;
                     j = arg.len; continue;
                 };
@@ -81,7 +81,7 @@ export fn run(start: usize, argc: usize) i32 = {
             };
             i += 1usize; continue;
         };
-        if (file_count >= 256usize) { c::fprintf(c::stderr, "unexpand: too many input files\n"); return 1; };
+        if (file_count >= 256usize) { io::eprintln("unexpand: too many input files"); return 1; };
         files[file_count] = arg; file_count += 1usize; i += 1usize;
     };
     if (file_count == 0usize) { files[0usize] = "-"; file_count = 1usize; };

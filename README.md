@@ -1,10 +1,10 @@
 # zovutils
 
 [![Parity CI](https://github.com/abit-foggy/zovutils/actions/workflows/parity.yml/badge.svg?branch=master)](https://github.com/abit-foggy/zovutils/actions/workflows/parity.yml)
-![Version 0.6.0](https://img.shields.io/badge/version-0.6.0-blue)
+![Version 0.6.1](https://img.shields.io/badge/version-0.6.1-blue)
 ![Alpha](https://img.shields.io/badge/status-alpha-orange)
 ![GNU Coreutils target 9.11](https://img.shields.io/badge/target-GNU%20Coreutils%209.11-lightgrey)
-![Zov 0.9.0](https://img.shields.io/badge/language-Zov%200.9.0-6f42c1)
+![Zov 0.10.0](https://img.shields.io/badge/language-Zov%200.10.0-6f42c1)
 
 `zovutils` is a multicall command-line utilities project written in Zov. It
 targets GNU Coreutils 9.11 behavior and compiles through Zov to C99, then to a
@@ -15,7 +15,7 @@ is copied, ported, or linked into this project.
 
 ## Status
 
-The project is in alpha (`0.6.0`). The current command set is:
+The project is in alpha (`0.6.1`). The current command set is:
 
 - `basename`
 - `cat`
@@ -71,7 +71,7 @@ platform behavior, and coverage limits.
 
 ## Build and run
 
-Install Zov 0.9.0, then run:
+Install Zov 0.10.0, then run:
 
 ```sh
 zovc check

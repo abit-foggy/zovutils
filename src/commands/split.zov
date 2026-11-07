@@ -71,13 +71,13 @@ export fn run(start: usize, argc: usize) i32 = {
         if (!options_done && arg.len > 2usize && arg[0usize..2usize] == "--") {
             let option: str = key(arg);
             if (option == "--help" || prefix(option, "--help")) { help(); stream::finishoutput("split"); return 0; };
-            if (option == "--version" || prefix(option, "--version")) { io::println("split (zovutils) 0.6.0"); stream::finishoutput("split"); return 0; };
+            if (option == "--version" || prefix(option, "--version")) { io::println("split (zovutils) 0.6.1"); stream::finishoutput("split"); return 0; };
             if (option == "--verbose" || prefix(option, "--verbose")) { verbose = true; i += 1usize; continue; };
             if (option == "--elide-empty-files" || prefix(option, "--elide-empty-files")) { elide_empty = true; i += 1usize; continue; };
             if (option == "--unbuffered" || prefix(option, "--unbuffered")) { i += 1usize; continue; };
             if (option == "--numeric-suffixes" || option == "--hex-suffixes") {
                 if (option == "--numeric-suffixes") { suffix_mode = 1i32; } else { suffix_mode = 2i32; };
-                if (arg.len > option.len) { if (!parse_number(arg[option.len + 1usize..arg.len], &mut from)) { c::fprintf(c::stderr, "split: invalid suffix start value\n"); return 1; }; i += 1usize; }
+                if (arg.len > option.len) { if (!parse_number(arg[option.len + 1usize..arg.len], &mut from)) { io::eprintln("split: invalid suffix start value"); return 1; }; i += 1usize; }
                 else { i += 1usize; };
                 continue;
             };
@@ -145,7 +145,7 @@ export fn run(start: usize, argc: usize) i32 = {
                     } else { if (value == "\\0") { separator = 0u8; } else if (value.len == 1usize) { separator = value.data[0usize]; } else { return 1; } };
                     break;
                 };
-                if (option == 109u8) { c::fprintf(c::stderr, "split: invalid option -- 'm'\n"); return 1; };
+                if (option == 109u8) { io::eprintln("split: invalid option -- 'm'"); return 1; };
                 c::fprintf(c::stderr, "split: invalid option -- '%c'\nTry 'split --help' for more information.\n", option as i32); return 1;
             };
             i += 1usize; continue;
@@ -156,7 +156,7 @@ export fn run(start: usize, argc: usize) i32 = {
     let mut input: str = "-";
     if (operand_count == 1usize) { input = operands[0usize]; }
     if (operand_count == 2usize) { input = operands[0usize]; prefix_value = operands[1usize]; };
-    if (amount == 0u64) { c::fprintf(c::stderr, "split: invalid number or size\n"); return 1; };
+    if (amount == 0u64) { io::eprintln("split: invalid number or size"); return 1; };
     return backend::zov_split_run(input.data as *i8, prefix_value.data as *i8,
         additional.data as *i8, width, suffix_mode, from, verbose as i32,
         separator, mode as i32, amount, selector, (mode == 4u8) as i32, elide_empty as i32,

@@ -4,7 +4,7 @@ use <stdio.h> as c;
 use <fmt_backend.h> as backend;
 use shared::io as stream;
 
-fn usage_error() void = { c::fprintf(c::stderr, "Try 'fmt --help' for more information.\n"); };
+fn usage_error() void = { io::eprintln("Try 'fmt --help' for more information."); };
 
 fn longkey(arg: str) str = {
     for (let i in 0usize..arg.len) { if (arg.data[i] == 61u8) { return arg[0usize..i]; }; };
@@ -88,7 +88,7 @@ export fn run(start: usize, argc: usize) i32 = {
             if (key == "--split-only" || is_prefix(key, "--split-only")) { split_only = true; i += 1usize; continue; };
             if (key == "--uniform-spacing" || is_prefix(key, "--uniform-spacing")) { uniform = true; i += 1usize; continue; };
             if (key == "--help" || is_prefix(key, "--help")) { help(); stream::finishoutput("fmt"); return 0; };
-            if (key == "--version" || is_prefix(key, "--version")) { io::println("fmt (zovutils) 0.6.0"); stream::finishoutput("fmt"); return 0; };
+            if (key == "--version" || is_prefix(key, "--version")) { io::println("fmt (zovutils) 0.6.1"); stream::finishoutput("fmt"); return 0; };
             c::fprintf(c::stderr, "fmt: unrecognized option '%s'\n", arg); usage_error(); return 1;
         };
         if (!options_done && arg.len > 1usize && arg.data[0usize] == 45u8) {
@@ -124,7 +124,7 @@ export fn run(start: usize, argc: usize) i32 = {
             };
             i += 1usize; continue;
         };
-        if (file_count >= 256usize) { c::fprintf(c::stderr, "fmt: too many input files\n"); return 1; };
+        if (file_count >= 256usize) { io::eprintln("fmt: too many input files"); return 1; };
         files[file_count] = arg; file_count += 1usize; i += 1usize;
     };
     if (file_count == 0usize) { files[0usize] = "-"; file_count = 1usize; };

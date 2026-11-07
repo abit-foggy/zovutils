@@ -6,7 +6,7 @@ use <seq_backend.h> as backend;
 use shared::io as stream;
 
 fn usage_error() void = {
-    c::fprintf(c::stderr, "Try 'seq --help' for more information.\n");
+    io::eprintln("Try 'seq --help' for more information.");
 };
 
 fn help() void = {
@@ -99,7 +99,7 @@ export fn run(start: usize, argc: usize) i32 = {
             let key: str = longkey(arg);
             if (key == "--format" || is_prefix(key, "--format")) {
                 if (arg.len == key.len && i + 1usize >= argc) {
-                    c::fprintf(c::stderr, "seq: option '--format' requires an argument\n"); usage_error(); return 1;
+                    io::eprintln("seq: option '--format' requires an argument"); usage_error(); return 1;
                 };
                 if (arg.len > key.len) { format = arg[key.len + 1usize..arg.len]; i += 1usize; }
                 else { format = args::argat(i + 1usize); i += 2usize; };
@@ -107,23 +107,23 @@ export fn run(start: usize, argc: usize) i32 = {
             };
             if (key == "--separator" || is_prefix(key, "--separator")) {
                 if (arg.len == key.len && i + 1usize >= argc) {
-                    c::fprintf(c::stderr, "seq: option '--separator' requires an argument\n"); usage_error(); return 1;
+                    io::eprintln("seq: option '--separator' requires an argument"); usage_error(); return 1;
                 };
                 if (arg.len > key.len) { separator = arg[key.len + 1usize..arg.len]; i += 1usize; }
                 else { separator = args::argat(i + 1usize); i += 2usize; };
                 continue;
             };
             if (key == "--equal-width" || is_prefix(key, "--equal-width")) {
-                if (arg.len != key.len) { c::fprintf(c::stderr, "seq: option '--equal-width' doesn't allow an argument\n"); usage_error(); return 1; };
+                if (arg.len != key.len) { io::eprintln("seq: option '--equal-width' doesn't allow an argument"); usage_error(); return 1; };
                 equal_width = true; i += 1usize; continue;
             };
             if (key == "--help" || is_prefix(key, "--help")) {
-                if (arg.len != key.len) { c::fprintf(c::stderr, "seq: option '--help' doesn't allow an argument\n"); usage_error(); return 1; };
+                if (arg.len != key.len) { io::eprintln("seq: option '--help' doesn't allow an argument"); usage_error(); return 1; };
                 help(); stream::finishoutput("seq"); return 0;
             };
             if (key == "--version" || is_prefix(key, "--version")) {
-                if (arg.len != key.len) { c::fprintf(c::stderr, "seq: option '--version' doesn't allow an argument\n"); usage_error(); return 1; };
-                io::println("seq (zovutils) 0.6.0"); stream::finishoutput("seq"); return 0;
+                if (arg.len != key.len) { io::eprintln("seq: option '--version' doesn't allow an argument"); usage_error(); return 1; };
+                io::println("seq (zovutils) 0.6.1"); stream::finishoutput("seq"); return 0;
             };
             c::fprintf(c::stderr, "seq: unrecognized option '%s'\n", arg); usage_error(); return 1;
         };
@@ -157,10 +157,10 @@ export fn run(start: usize, argc: usize) i32 = {
         i += 1usize;
     };
     if (operand_count == 0usize) {
-        c::fprintf(c::stderr, "seq: missing operand\n"); usage_error(); return 1;
+        io::eprintln("seq: missing operand"); usage_error(); return 1;
     };
     if (has_format && equal_width) {
-        c::fprintf(c::stderr, "seq: format string may not be specified when printing equal width strings\n");
+        io::eprintln("seq: format string may not be specified when printing equal width strings");
         usage_error(); return 1;
     };
 

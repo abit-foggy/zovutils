@@ -213,13 +213,13 @@ fn invalidvalue(prefix: str, value: str) void = {
 };
 
 fn followargumentending() void = {
-    c::fprintf(c::stderr, " for ");
+    io::eprint(" for ");
     stream::printquotedargument(c::stderr, "--follow");
-    c::fprintf(c::stderr, "\nValid arguments are:\n  - ");
+    io::eprint("\nValid arguments are:\n  - ");
     stream::printquotedargument(c::stderr, "descriptor");
-    c::fprintf(c::stderr, "\n  - ");
+    io::eprint("\n  - ");
     stream::printquotedargument(c::stderr, "name");
-    c::fprintf(c::stderr, "\nTry 'tail --help' for more information.\n");
+    io::eprintln("\nTry 'tail --help' for more information.");
 };
 
 fn badshort(opt: u8) void = {
@@ -239,9 +239,9 @@ fn badargument(option: str) void = {
 };
 
 fn readerror(path: str) void = {
-    c::fprintf(c::stderr, "tail: error reading ");
+    io::eprint("tail: error reading ");
     stream::printquoted(c::stderr, path, false);
-    c::fprintf(c::stderr, ": ");
+    io::eprint(": ");
     c::perror((0i64 as *i8));
 };
 
@@ -514,13 +514,13 @@ export fn run(start: usize, argc: usize) i32 = {
                     if (mode == "name") { follow_name = true; }
                     else if (mode == "descriptor") { follow_name = false; }
                     else if (mode.len == 0usize) {
-                        c::fprintf(c::stderr, "tail: ambiguous argument ");
+                        io::eprint("tail: ambiguous argument ");
                         stream::printquotedargument(c::stderr, mode);
                         followargumentending();
                         return 1;
                     }
                     else {
-                        c::fprintf(c::stderr, "tail: invalid argument ");
+                        io::eprint("tail: invalid argument ");
                         stream::printquotedargument(c::stderr, mode);
                         followargumentending();
                         return 1;
@@ -532,7 +532,7 @@ export fn run(start: usize, argc: usize) i32 = {
                 let mut value_text: str = "";
                 if (has_equal) { value_text = arg[eqpos + 1usize..arg.len]; }
                 else if (i + 1usize < argc) { value_text = env::argat(i + 1usize); }
-                else { c::fprintf(c::stderr, "tail: option '--pid' requires an argument\nTry 'tail --help' for more information.\n"); return 1; };
+                else { io::eprintln("tail: option '--pid' requires an argument\nTry 'tail --help' for more information."); return 1; };
                 let n: i64 = match (numparse::signednumber(value_text)) { case let v: i64 => v, case ParseError => { invalidvalue("tail: invalid PID: ", value_text); return 1; } };
                 if (n < 0i64 || n > 2147483647i64) { invalidvalue("tail: invalid PID: ", value_text); return 1; };
                 if (n > 0i64) { pids.push(n as i32); } else { pid_ignored = true; };
@@ -543,7 +543,7 @@ export fn run(start: usize, argc: usize) i32 = {
                 let mut value_text: str = "";
                 if (has_equal) { value_text = arg[eqpos + 1usize..arg.len]; }
                 else if (i + 1usize < argc) { value_text = env::argat(i + 1usize); }
-                else { c::fprintf(c::stderr, "tail: option '--sleep-interval' requires an argument\nTry 'tail --help' for more information.\n"); return 1; };
+                else { io::eprintln("tail: option '--sleep-interval' requires an argument\nTry 'tail --help' for more information."); return 1; };
                 interval_secs = match (interval(value_text)) { case let v: f64 => v, case ParseError => { invalidvalue("tail: invalid number of seconds: ", value_text); return 1; } };
                 if (!has_equal) { i += 1usize; };
                 i += 1usize; continue;
@@ -583,12 +583,12 @@ export fn run(start: usize, argc: usize) i32 = {
             };
             if (longmatch(key, "--version")) {
                 if (has_equal) { badargument("--version"); return 1; };
-                io::println("tail (zovutils) 0.6.0"); if (!stream::finishoutput("tail")) { return 1; }; return 0;
+                io::println("tail (zovutils) 0.6.1"); if (!stream::finishoutput("tail")) { return 1; }; return 0;
             };
             badlong(arg); return 1;
         };
         if (arg == "-s") {
-            if (i + 1usize >= argc) { c::fprintf(c::stderr, "tail: option requires an argument -- 's'\nTry 'tail --help' for more information.\n"); return 1; };
+            if (i + 1usize >= argc) { io::eprintln("tail: option requires an argument -- 's'\nTry 'tail --help' for more information."); return 1; };
                 interval_secs = match (interval(env::argat(i + 1usize))) { case let v: f64 => v, case ParseError => { invalidvalue("tail: invalid number of seconds: ", env::argat(i + 1usize)); return 1; } };
             i += 2usize; continue;
         };
@@ -601,8 +601,8 @@ export fn run(start: usize, argc: usize) i32 = {
         };
         if (arg == "-n" || arg == "--lines" || arg == "-c" || arg == "--bytes") {
             if (i + 1usize >= argc) {
-                if (arg == "-n") { c::fprintf(c::stderr, "tail: option requires an argument -- 'n'\nTry 'tail --help' for more information.\n"); }
-                else if (arg == "-c") { c::fprintf(c::stderr, "tail: option requires an argument -- 'c'\nTry 'tail --help' for more information.\n"); }
+                if (arg == "-n") { io::eprintln("tail: option requires an argument -- 'n'\nTry 'tail --help' for more information."); }
+                else if (arg == "-c") { io::eprintln("tail: option requires an argument -- 'c'\nTry 'tail --help' for more information."); }
                 else { c::fprintf(c::stderr, "tail: option '%s' requires an argument\nTry 'tail --help' for more information.\n", arg); };
                 return 1;
             };
@@ -674,8 +674,8 @@ export fn run(start: usize, argc: usize) i32 = {
                     if (j + 1usize < arg.len) { value_text = arg[j + 1usize..arg.len]; }
                     else if (i + 1usize < argc) { value_text = env::argat(i + 1usize); advance = 2usize; }
                     else {
-                        if (ch == 110u8) { c::fprintf(c::stderr, "tail: option requires an argument -- 'n'\nTry 'tail --help' for more information.\n"); }
-                        else { c::fprintf(c::stderr, "tail: option requires an argument -- 'c'\nTry 'tail --help' for more information.\n"); };
+                        if (ch == 110u8) { io::eprintln("tail: option requires an argument -- 'n'\nTry 'tail --help' for more information."); }
+                        else { io::eprintln("tail: option requires an argument -- 'c'\nTry 'tail --help' for more information."); };
                         return 1;
                     };
                     let r = parsevalue(value_text);
@@ -685,7 +685,7 @@ export fn run(start: usize, argc: usize) i32 = {
                     let mut value_text: str = "";
                     if (j + 1usize < arg.len) { value_text = arg[j + 1usize..arg.len]; }
                     else if (i + 1usize < argc) { value_text = env::argat(i + 1usize); advance = 2usize; }
-                    else { c::fprintf(c::stderr, "tail: option requires an argument -- 's'\nTry 'tail --help' for more information.\n"); return 1; };
+                    else { io::eprintln("tail: option requires an argument -- 's'\nTry 'tail --help' for more information."); return 1; };
                     interval_secs = match (interval(value_text)) { case let v: f64 => v, case ParseError => { invalidvalue("tail: invalid number of seconds: ", value_text); return 1; } };
                     j = arg.len;
                 } else { badshort(ch); return 1; };
@@ -697,8 +697,8 @@ export fn run(start: usize, argc: usize) i32 = {
         if (posixly_correct) { operands = true; };
         files.push(arg); i += 1usize;
     };
-    if (pid_ignored && !follow) { c::fprintf(c::stderr, "tail: warning: PID ignored; --pid=PID is useful only when following\n"); };
-    if (retry && !follow) { c::fprintf(c::stderr, "tail: warning: --retry ignored; --retry is useful only when following\n"); };
+    if (pid_ignored && !follow) { io::eprintln("tail: warning: PID ignored; --pid=PID is useful only when following"); };
+    if (retry && !follow) { io::eprintln("tail: warning: --retry ignored; --retry is useful only when following"); };
     if (count == 0usize && !plus && !follow) {
         if (!stream::finishoutput("tail")) { return 1; };
         return 0;
@@ -779,7 +779,7 @@ export fn run(start: usize, argc: usize) i32 = {
     let mut follow_write_failed: bool = false;
     if (follow) {
         if (follow_fps.len() == 0usize) {
-            c::fprintf(c::stderr, "tail: no files remaining\n");
+            io::eprintln("tail: no files remaining");
             if (!stream::finishoutput("tail")) { status = 1; };
             return 1;
         };
@@ -798,8 +798,8 @@ export fn run(start: usize, argc: usize) i32 = {
             };
         };
         if (debug) {
-            if (notify_fd >= 0i32 && notify_count > 0usize) { c::fprintf(c::stderr, "tail: using notification mode\n"); }
-            else { c::fprintf(c::stderr, "tail: using polling mode\n"); };
+            if (notify_fd >= 0i32 && notify_count > 0usize) { io::eprintln("tail: using notification mode"); }
+            else { io::eprintln("tail: using polling mode"); };
         };
         if (!stream::finishoutput("tail")) { status = 1; follow_write_failed = true; };
         let buf: [65536]u8;
@@ -826,8 +826,8 @@ export fn run(start: usize, argc: usize) i32 = {
                             stream::closefile(next);
                             continue;
                         };
-                        c::fprintf(c::stderr, "tail: "); stream::printquoted(c::stderr, path, true);
-                        c::fprintf(c::stderr, " has appeared;  following new file\n");
+                        io::eprint("tail: "); stream::printquoted(c::stderr, path, true);
+                        io::eprintln(" has appeared;  following new file");
                         let mut output_started: bool = false;
                         while (true) {
                             let n: usize = stream::readbytes(next, ((&buf[0usize]) as *u8), 65536usize);
@@ -855,8 +855,8 @@ export fn run(start: usize, argc: usize) i32 = {
                             let replaced: bool = !stream::sameopenfile(fp, next);
                             if (end < begin || replaced) { begin = 0i64; };
                             if (replaced) {
-                                c::fprintf(c::stderr, "tail: "); stream::printquoted(c::stderr, path, true);
-                                c::fprintf(c::stderr, " has been replaced;  following new file\n");
+                                io::eprint("tail: "); stream::printquoted(c::stderr, path, true);
+                                io::eprintln(" has been replaced;  following new file");
                             };
                             if (end > begin && c::fseek(next, begin, c::SEEK_SET) == 0) {
                                 if (follow_headers) { printfollowheader(path, k, &mut printed, &mut last_header_index); };
@@ -882,8 +882,8 @@ export fn run(start: usize, argc: usize) i32 = {
                     if (position >= 0i64 && c::fseek(fp, 0i64, c::SEEK_END) == 0) {
                         let end: i64 = c::ftell(fp);
                         if (end >= 0i64 && end < position) {
-                            c::fprintf(c::stderr, "tail: "); stream::printquoted(c::stderr, path, false);
-                            c::fprintf(c::stderr, ": file truncated\n");
+                            io::eprint("tail: "); stream::printquoted(c::stderr, path, false);
+                            io::eprintln(": file truncated");
                             c::fseek(fp, 0i64, c::SEEK_SET);
                         } else { c::fseek(fp, position, c::SEEK_SET); };
                         c::clearerr(fp);
@@ -905,7 +905,7 @@ export fn run(start: usize, argc: usize) i32 = {
                 if (tailwatch::zov_tail_watch_wait(notify_fd, interval_secs) < 0i32) {
                     posix::close(notify_fd);
                     notify_fd = -1i32;
-                    if (debug) { c::fprintf(c::stderr, "tail: inotify wait failed, reverting to polling\n"); };
+                    if (debug) { io::eprintln("tail: inotify wait failed, reverting to polling"); };
                 };
             };
             if (notify_fd < 0i32) { platform::sleep(interval_secs); };

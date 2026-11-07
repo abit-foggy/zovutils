@@ -97,7 +97,7 @@ export fn run(start: usize, argc: usize, is_bracket: bool) i32 = {
     let mut count: usize = argc - start;
     if (is_bracket) {
         if (count == 0usize || args::argat(argc - 1usize) != "]") {
-            c::fprintf(c::stderr, "[: missing ']'\n");
+            io::eprintln("[: missing ']'");
             return 2;
         };
         count -= 1usize;

@@ -99,8 +99,8 @@ fn dispatch(name: str, start: usize, argc: usize) i32 = {
     if (name == "tr") { return tr::run(start, argc); };
     if (name == "unexpand") { return unexpand::run(start, argc); };
     if (name == "wc") { return wc::run(start, argc); };
-    io::println("zovutils: unknown utility '" + name + "'");
-    io::println("usage: zovutils <utility> [arguments...]");
+    io::eprintln("zovutils: unknown utility '" + name + "'");
+    io::eprintln("usage: zovutils <utility> [arguments...]");
     return 1;
 };
 
@@ -113,8 +113,8 @@ export fn main() i32 = {
         return dispatch(invoked_as, 1usize, argc);
     };
     if (argc < 2usize) {
-        io::println("usage: zovutils <utility> [arguments...]");
-        io::println("utilities: basename cat chgrp chmod chown comm cp csplit cut dirname echo env expand false fold fmt head join ln mkdir mv nl od paste printenv printf pwd rm rmdir seq sleep sort split tac tail test touch tr true uniq unexpand wc yes");
+        io::eprintln("usage: zovutils <utility> [arguments...]");
+        io::eprintln("utilities: basename cat chgrp chmod chown comm cp csplit cut dirname echo env expand false fold fmt head join ln mkdir mv nl od paste printenv printf pwd rm rmdir seq sleep sort split tac tail test touch tr true uniq unexpand wc yes");
         return 1;
     };
     if (env::argat(1usize) == "--help" || env::argat(1usize) == "-h") {
@@ -123,7 +123,7 @@ export fn main() i32 = {
         return 0;
     };
     if (argc >= 2usize && (env::argat(1usize) == "--version" || env::argat(1usize) == "-V")) {
-        io::println("zovutils 0.6.0 (GNU Coreutils 9.11 compatibility target)");
+        io::println("zovutils 0.6.1 (GNU Coreutils 9.11 compatibility target)");
         return 0;
     };
     return dispatch(env::argat(1usize), 2usize, argc);

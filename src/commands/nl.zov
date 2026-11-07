@@ -4,7 +4,7 @@ use <stdio.h> as c;
 use <nl_backend.h> as backend;
 use shared::io as stream;
 
-fn usage_error() void = { c::fprintf(c::stderr, "Try 'nl --help' for more information.\n"); };
+fn usage_error() void = { io::eprintln("Try 'nl --help' for more information."); };
 
 fn longkey(arg: str) str = {
     for (let i in 0usize..arg.len) { if (arg.data[i] == 61u8) { return arg[0usize..i]; }; };
@@ -104,7 +104,7 @@ export fn run(start: usize, argc: usize) i32 = {
             if (key == "--number-width" || is_prefix(key, "--number-width")) { option = 119u8; takes_value = true; };
             if (key == "--no-renumber" || is_prefix(key, "--no-renumber")) { no_renumber = true; i += 1usize; continue; };
             if (key == "--help" || is_prefix(key, "--help")) { help(); stream::finishoutput("nl"); return 0; };
-            if (key == "--version" || is_prefix(key, "--version")) { io::println("nl (zovutils) 0.6.0"); stream::finishoutput("nl"); return 0; };
+            if (key == "--version" || is_prefix(key, "--version")) { io::println("nl (zovutils) 0.6.1"); stream::finishoutput("nl"); return 0; };
             if (!takes_value) { c::fprintf(c::stderr, "nl: unrecognized option '%s'\n", arg); usage_error(); return 1; };
             if (arg.len > key.len) { value = arg[key.len + 1usize..arg.len]; i += 1usize; }
             else if (i + 1usize < argc) { value = args::argat(i + 1usize); i += 2usize; }
@@ -119,7 +119,7 @@ export fn run(start: usize, argc: usize) i32 = {
             if (option == 108u8) { if (!parse_number(value, &mut join_blank)) { c::fprintf(c::stderr, "nl: invalid number of blank lines: '%s'\n", value); usage_error(); return 1; }; if (join_blank == 0usize) { join_blank = 1usize; }; };
             if (option == 118u8 && !parse_number(value, &mut start_number)) { c::fprintf(c::stderr, "nl: invalid starting line number: '%s'\n", value); usage_error(); return 1; };
             if (option == 119u8 && !parse_number(value, &mut width)) { c::fprintf(c::stderr, "nl: invalid line number field width: '%s'\n", value); usage_error(); return 1; };
-            if (option == 119u8 && width == 0usize) { c::fprintf(c::stderr, "nl: invalid line number field width: '0': Numerical result out of range\n"); return 1; };
+            if (option == 119u8 && width == 0usize) { io::eprintln("nl: invalid line number field width: '0': Numerical result out of range"); return 1; };
             if (option == 119u8 && width > 4096usize) { width = 4096usize; };
             continue;
         };
@@ -143,7 +143,7 @@ export fn run(start: usize, argc: usize) i32 = {
                     if (option == 108u8) { if (!parse_number(value, &mut join_blank)) { c::fprintf(c::stderr, "nl: invalid number of blank lines: '%s'\n", value); usage_error(); return 1; }; if (join_blank == 0usize) { join_blank = 1usize; }; };
                     if (option == 118u8 && !parse_number(value, &mut start_number)) { c::fprintf(c::stderr, "nl: invalid starting line number: '%s'\n", value); usage_error(); return 1; };
                     if (option == 119u8 && !parse_number(value, &mut width)) { c::fprintf(c::stderr, "nl: invalid line number field width: '%s'\n", value); usage_error(); return 1; };
-                    if (option == 119u8 && width == 0usize) { c::fprintf(c::stderr, "nl: invalid line number field width: '0': Numerical result out of range\n"); return 1; };
+                    if (option == 119u8 && width == 0usize) { io::eprintln("nl: invalid line number field width: '0': Numerical result out of range"); return 1; };
                     if (option == 119u8 && width > 4096usize) { width = 4096usize; };
                     j = arg.len; continue;
                 };
@@ -151,7 +151,7 @@ export fn run(start: usize, argc: usize) i32 = {
             };
             i += 1usize; continue;
         };
-        if (file_count >= 256usize) { c::fprintf(c::stderr, "nl: too many input files\n"); return 1; };
+        if (file_count >= 256usize) { io::eprintln("nl: too many input files"); return 1; };
         files[file_count] = arg; file_count += 1usize; i += 1usize;
     };
     if (file_count == 0usize) { files[0usize] = "-"; file_count = 1usize; };

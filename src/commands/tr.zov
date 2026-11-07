@@ -4,7 +4,7 @@ use <stdio.h> as c;
 use <tr_backend.h> as backend;
 use shared::io as stream;
 
-fn usage_error() void = { c::fprintf(c::stderr, "Try 'tr --help' for more information.\n"); };
+fn usage_error() void = { io::eprintln("Try 'tr --help' for more information."); };
 
 fn longkey(arg: str) str = {
     for (let i in 0usize..arg.len) { if (arg.data[i] == 61u8) { return arg[0usize..i]; }; };
@@ -65,7 +65,7 @@ export fn run(start: usize, argc: usize) i32 = {
             if (key == "--squeeze-repeats" || is_prefix(key, "--squeeze-repeats")) { squeeze = true; i += 1usize; continue; };
             if (key == "--truncate-set1" || is_prefix(key, "--truncate-set1")) { truncate = true; i += 1usize; continue; };
             if (key == "--help" || is_prefix(key, "--help")) { help(); stream::finishoutput("tr"); return 0; };
-            if (key == "--version" || is_prefix(key, "--version")) { io::println("tr (zovutils) 0.6.0"); stream::finishoutput("tr"); return 0; };
+            if (key == "--version" || is_prefix(key, "--version")) { io::println("tr (zovutils) 0.6.1"); stream::finishoutput("tr"); return 0; };
             c::fprintf(c::stderr, "tr: unrecognized option '%s'\n", arg); usage_error(); return 1;
         };
         if (!options_done && arg.len > 1usize && arg.data[0usize] == 45u8) {
@@ -82,9 +82,9 @@ export fn run(start: usize, argc: usize) i32 = {
         if (operand_count >= 2usize) { c::fprintf(c::stderr, "tr: extra operand '%s'\n", arg); usage_error(); return 1; };
         operands[operand_count] = arg; operand_count += 1usize; i += 1usize;
     };
-    if (operand_count == 0usize) { c::fprintf(c::stderr, "tr: missing operand\n"); usage_error(); return 1; };
+    if (operand_count == 0usize) { io::eprintln("tr: missing operand"); usage_error(); return 1; };
     if (delete_mode && operand_count > 1usize && (!squeeze || operand_count > 2usize)) { c::fprintf(c::stderr, "tr: extra operand '%s'\n", operands[1usize]); usage_error(); return 1; };
-    if (!delete_mode && !squeeze && operand_count != 2usize) { c::fprintf(c::stderr, "tr: missing operand\n"); usage_error(); return 1; };
+    if (!delete_mode && !squeeze && operand_count != 2usize) { io::eprintln("tr: missing operand"); usage_error(); return 1; };
     let mut set2: str = "";
     let mut has_set2: bool = false;
     if (operand_count > 1usize) { set2 = operands[1usize]; has_set2 = true; };

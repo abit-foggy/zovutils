@@ -46,7 +46,7 @@ fn longambiguity(arg: str) bool = {
     if (longprefix(key, "--show-ends")) { c::fprintf(c::stderr, " '%s'", "--show-ends"); };
     if (longprefix(key, "--show-tabs")) { c::fprintf(c::stderr, " '%s'", "--show-tabs"); };
     if (longprefix(key, "--show-all")) { c::fprintf(c::stderr, " '%s'", "--show-all"); };
-    c::fprintf(c::stderr, "\nTry 'cat --help' for more information.\n");
+    io::eprintln("\nTry 'cat --help' for more information.");
     return true;
 };
 
@@ -289,8 +289,8 @@ export fn run(start: usize, argc: usize) i32 = {
         if (longprefix(arg, "--show-tabs")) { show_tabs = true; i += 1usize; continue; };
         if (longprefix(arg, "--show-nonprinting")) { show_nonprinting = true; i += 1usize; continue; };
         if (arg == "--help" || longprefix(arg, "--help")) { help(); if (!stream::finishoutput("cat")) { return 1; }; return 0; };
-        if (longprefix(arg, "--version")) { io::println("cat (zovutils) 0.6.0"); if (!stream::finishoutput("cat")) { return 1; }; return 0; };
-        if (arg == "--version") { io::println("cat (zovutils) 0.6.0"); if (!stream::finishoutput("cat")) { return 1; }; return 0; };
+        if (longprefix(arg, "--version")) { io::println("cat (zovutils) 0.6.1"); if (!stream::finishoutput("cat")) { return 1; }; return 0; };
+        if (arg == "--version") { io::println("cat (zovutils) 0.6.1"); if (!stream::finishoutput("cat")) { return 1; }; return 0; };
         if (arg.len >= 2usize && arg[0usize..2usize] == "--" && badlongargument(arg)) { return 1; };
         if (arg.len < 2usize || arg.data[1usize] != 45u8) {
             for (let j in 1usize..arg.len) {
@@ -322,7 +322,7 @@ export fn run(start: usize, argc: usize) i32 = {
         if (stream::sameopenfile(c::stdin, c::stdout)) {
             let action: i32 = samefileaction(c::stdin, c::stdout);
             if (action < 0i32) {
-                c::fprintf(c::stderr, "cat: -: input file is output file\n");
+                io::eprintln("cat: -: input file is output file");
                 status = 1;
                 safe_to_read = false;
             };
@@ -345,8 +345,8 @@ export fn run(start: usize, argc: usize) i32 = {
             if (stream::sameopenfile(fp, c::stdout)) {
                 let action: i32 = samefileaction(fp, c::stdout);
                 if (action < 0i32) {
-                    c::fprintf(c::stderr, "cat: "); stream::printquoted(c::stderr, path, false);
-                    c::fprintf(c::stderr, ": input file is output file\n");
+                    io::eprint("cat: "); stream::printquoted(c::stderr, path, false);
+                    io::eprintln(": input file is output file");
                     status = 1;
                 };
                 if (action <= 0i32) {

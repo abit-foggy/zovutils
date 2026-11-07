@@ -55,7 +55,7 @@ export fn run(start: usize, argc: usize) i32 = {
         if (!options_done && arg.len > 2usize && arg[0usize..2usize] == "--") {
             let key: str = longkey(arg);
             if (key == "--help" || prefix(key, "--help")) { help(); stream::finishoutput("join"); return 0; };
-            if (key == "--version" || prefix(key, "--version")) { io::println("join (zovutils) 0.6.0"); stream::finishoutput("join"); return 0; };
+            if (key == "--version" || prefix(key, "--version")) { io::println("join (zovutils) 0.6.1"); stream::finishoutput("join"); return 0; };
             if (key == "--ignore-case" || prefix(key, "--ignore-case")) { ignore_case = true; i += 1usize; continue; };
             if (key == "--header" || prefix(key, "--header")) { header = true; i += 1usize; continue; };
             if (key == "--check-order" || prefix(key, "--check-order")) { check_order = true; i += 1usize; continue; };
@@ -113,8 +113,8 @@ export fn run(start: usize, argc: usize) i32 = {
         if (file_count >= 2usize) { c::fprintf(c::stderr, "join: extra operand '%s'\nTry 'join --help' for more information.\n", arg.data as *i8); return 1; };
         files[file_count] = arg; file_count += 1usize; i += 1usize;
     };
-    if (file_count != 2usize) { c::fprintf(c::stderr, "join: missing operand\nTry 'join --help' for more information.\n"); return 1; };
-    if (files[0usize] == "-" && files[1usize] == "-") { c::fprintf(c::stderr, "join: both files cannot be standard input\n"); return 1; };
+    if (file_count != 2usize) { io::eprintln("join: missing operand\nTry 'join --help' for more information."); return 1; };
+    if (files[0usize] == "-" && files[1usize] == "-") { io::eprintln("join: both files cannot be standard input"); return 1; };
     if (!has_format) { format = ""; };
     return backend::zov_join_run(files[0usize].data as *i8, files[1usize].data as *i8,
         field1, field2, delimiter, separator, terminator, ignore_case as i32,

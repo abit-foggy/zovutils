@@ -53,11 +53,11 @@ fn help() void = {
 };
 
 fn tryhelp() void = {
-    c::fprintf(c::stderr, "Try 'basename --help' for more information.\n");
+    io::eprintln("Try 'basename --help' for more information.");
 };
 
 fn missingoperand() void = {
-    c::fprintf(c::stderr, "basename: missing operand\n");
+    io::eprintln("basename: missing operand");
     tryhelp();
 };
 
@@ -82,7 +82,7 @@ fn missinglongargument(option: str) void = {
 };
 
 fn missing_short_suffix() void = {
-    c::fprintf(c::stderr, "basename: option requires an argument -- 's'\n");
+    io::eprintln("basename: option requires an argument -- 's'");
     tryhelp();
 };
 
@@ -149,7 +149,7 @@ export fn run(start: usize, argc: usize) i32 = {
             };
             if (longprefix(arg, "--version")) {
                 if (longhasvalue(arg)) { badlongargument("--version"); return 1; };
-                io::println("basename (zovutils) 0.6.0");
+                io::println("basename (zovutils) 0.6.1");
                 if (!stream::finishoutput("basename")) { return 1; };
                 return 0;
             };

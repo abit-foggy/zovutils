@@ -33,7 +33,7 @@ fn help() void = {
 };
 
 fn usage_error() void = {
-    c::fprintf(c::stderr, "Try 'printenv --help' for more information.\n");
+    io::eprintln("Try 'printenv --help' for more information.");
 };
 
 export fn run(start: usize, argc: usize) i32 = {
@@ -65,7 +65,7 @@ export fn run(start: usize, argc: usize) i32 = {
                     c::fprintf(c::stderr, "printenv: option '%s' doesn't allow an argument\n", "--version");
                     usage_error(); return 2;
                 };
-                io::println("printenv (zovutils) 0.6.0");
+                io::println("printenv (zovutils) 0.6.1");
                 stream::finishoutput("printenv"); return 0;
             };
             c::fprintf(c::stderr, "printenv: unrecognized option '%s'\n", arg);

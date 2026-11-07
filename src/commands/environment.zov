@@ -39,7 +39,7 @@ fn ambiguouslong(arg: str) bool = {
     if (longprefix(key, "--debug")) { c::fprintf(c::stderr, " '%s'", "--debug"); };
     if (longprefix(key, "--ignore-environment")) { c::fprintf(c::stderr, " '%s'", "--ignore-environment"); };
     if (longprefix(key, "--ignore-signal")) { c::fprintf(c::stderr, " '%s'", "--ignore-signal"); };
-    c::fprintf(c::stderr, "\n");
+    io::eprintln("");
     tryhelp();
     return true;
 };
@@ -93,7 +93,7 @@ fn help() void = {
 };
 
 fn tryhelp() void = {
-    c::fprintf(c::stderr, "Try 'env --help' for more information.\n");
+    io::eprintln("Try 'env --help' for more information.");
 };
 
 fn badshort(option: u8) void = {
@@ -186,7 +186,7 @@ fn split_string(value: str, tokens: &mut vec::Vec[String]) bool = {
             let mut end: usize = i + 2usize;
             while (end < value.len && value.data[end] != 125u8) { end += 1usize; };
             if (end >= value.len) {
-                c::fprintf(c::stderr, "env: invalid variable expansion in -S\n");
+                io::eprintln("env: invalid variable expansion in -S");
                 return false;
             };
             let variable: str = value[i + 2usize..end];
@@ -218,7 +218,7 @@ fn split_string(value: str, tokens: &mut vec::Vec[String]) bool = {
         buffer[written] = b; written += 1usize; started = true; i += 1usize;
     };
     if (quote != 0u8) {
-        c::fprintf(c::stderr, "env: no terminating quote in -S string\n");
+        io::eprintln("env: no terminating quote in -S string");
         return false;
     };
     if (started) { store_split_token(buffer, written, tokens); };
@@ -334,7 +334,7 @@ export fn run(start: usize, argc: usize) i32 = {
             };
             if (longprefix(arg, "--version")) {
                 if (longhasvalue(arg)) { badlongargument("--version"); return 125; };
-                io::println("env (zovutils) 0.6.0");
+                io::println("env (zovutils) 0.6.1");
                 if (!stream::finishoutput("env")) { return 125; };
                 return 0;
             };
@@ -372,7 +372,7 @@ export fn run(start: usize, argc: usize) i32 = {
         i += 1usize;
     };
 
-    if (ignore_environment && debug) { c::fprintf(c::stderr, "cleaning environ\n"); };
+    if (ignore_environment && debug) { io::eprintln("cleaning environ"); };
     if (ignore_environment && process::zov_env_clear() != 0i32) {
         c::fprintf(c::stderr, "env: cannot clear environment: %s\n", cstr::strerror(process::zov_get_errno()));
         return 125;
@@ -392,7 +392,7 @@ export fn run(start: usize, argc: usize) i32 = {
     while (command_index < all_operands.len() && assignment(all_operands.get(command_index))) {
         if (debug) { c::fprintf(c::stderr, "setenv:   %s\n", all_operands.get(command_index)); };
         if (!assign(all_operands.get(command_index))) {
-            c::fprintf(c::stderr, "env: invalid variable name\n");
+            io::eprintln("env: invalid variable name");
             return 125;
         };
         command_index += 1usize;
@@ -405,7 +405,7 @@ export fn run(start: usize, argc: usize) i32 = {
         return 0;
     };
     if (zero) {
-        c::fprintf(c::stderr, "env: cannot specify --null (-0) with command\n");
+        io::eprintln("env: cannot specify --null (-0) with command");
         tryhelp(); return 125;
     };
 

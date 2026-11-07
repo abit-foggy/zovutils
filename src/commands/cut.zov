@@ -5,7 +5,7 @@ use <cut_backend.h> as backend;
 use shared::io as stream;
 
 fn usage_error() void = {
-    c::fprintf(c::stderr, "Try 'cut --help' for more information.\n");
+    io::eprintln("Try 'cut --help' for more information.");
 };
 
 fn longkey(arg: str) str = {
@@ -76,21 +76,21 @@ export fn run(start: usize, argc: usize) i32 = {
         if (!options_done && arg.len > 2usize && arg[0usize..2usize] == "--") {
             let key: str = longkey(arg);
             if (key == "--bytes" || is_prefix(key, "--bytes")) {
-                if (arg.len == key.len && i + 1usize >= argc) { c::fprintf(c::stderr, "cut: option '--bytes' requires an argument\n"); usage_error(); return 1; };
+                if (arg.len == key.len && i + 1usize >= argc) { io::eprintln("cut: option '--bytes' requires an argument"); usage_error(); return 1; };
                 let mut value: str = "";
                 if (arg.len > key.len) { value = arg[key.len + 1usize..arg.len]; i += 1usize; }
                 else { value = args::argat(i + 1usize); i += 2usize; };
                 list = value; mode = 1i32; list_count += 1usize; continue;
             };
             if (key == "--characters" || is_prefix(key, "--characters")) {
-                if (arg.len == key.len && i + 1usize >= argc) { c::fprintf(c::stderr, "cut: option '--characters' requires an argument\n"); usage_error(); return 1; };
+                if (arg.len == key.len && i + 1usize >= argc) { io::eprintln("cut: option '--characters' requires an argument"); usage_error(); return 1; };
                 let mut value: str = "";
                 if (arg.len > key.len) { value = arg[key.len + 1usize..arg.len]; i += 1usize; }
                 else { value = args::argat(i + 1usize); i += 2usize; };
                 list = value; mode = 3i32; list_count += 1usize; continue;
             };
             if (key == "--fields" || is_prefix(key, "--fields")) {
-                if (arg.len == key.len && i + 1usize >= argc) { c::fprintf(c::stderr, "cut: option '--fields' requires an argument\n"); usage_error(); return 1; };
+                if (arg.len == key.len && i + 1usize >= argc) { io::eprintln("cut: option '--fields' requires an argument"); usage_error(); return 1; };
                 let mut value: str = "";
                 if (arg.len > key.len) { value = arg[key.len + 1usize..arg.len]; i += 1usize; }
                 else { value = args::argat(i + 1usize); i += 2usize; };
@@ -101,15 +101,15 @@ export fn run(start: usize, argc: usize) i32 = {
                 list_count += 1usize; continue;
             };
             if (key == "--delimiter" || is_prefix(key, "--delimiter")) {
-                if (arg.len == key.len && i + 1usize >= argc) { c::fprintf(c::stderr, "cut: option '--delimiter' requires an argument\n"); usage_error(); return 1; };
+                if (arg.len == key.len && i + 1usize >= argc) { io::eprintln("cut: option '--delimiter' requires an argument"); usage_error(); return 1; };
                 let mut value: str = "";
                 if (arg.len > key.len) { value = arg[key.len + 1usize..arg.len]; i += 1usize; }
                 else { value = args::argat(i + 1usize); i += 2usize; };
-                if (value.len != 1usize) { c::fprintf(c::stderr, "cut: the delimiter must be a single character\n"); return 1; };
+                if (value.len != 1usize) { io::eprintln("cut: the delimiter must be a single character"); return 1; };
                 delimiter = value.data[0usize] as i32; has_delimiter = true; continue;
             };
             if (key == "--output-delimiter" || is_prefix(key, "--output-delimiter")) {
-                if (arg.len == key.len && i + 1usize >= argc) { c::fprintf(c::stderr, "cut: option '--output-delimiter' requires an argument\n"); usage_error(); return 1; };
+                if (arg.len == key.len && i + 1usize >= argc) { io::eprintln("cut: option '--output-delimiter' requires an argument"); usage_error(); return 1; };
                 let mut value: str = "";
                 if (arg.len > key.len) { value = arg[key.len + 1usize..arg.len]; i += 1usize; }
                 else { value = args::argat(i + 1usize); i += 2usize; };
@@ -120,7 +120,7 @@ export fn run(start: usize, argc: usize) i32 = {
                     let value: str = arg[key.len + 1usize..arg.len];
                     if (value != "trimmed") {
                         c::fprintf(c::stderr, "cut: invalid argument '%s' for '--whitespace-delimited'\n", value);
-                        c::fprintf(c::stderr, "Valid arguments are:\n  - 'trimmed'\n");
+                        io::eprintln("Valid arguments are:\n  - 'trimmed'");
                         usage_error(); return 1;
                     };
                     mode = 5i32; whitespace = true; whitespace_trimmed = true;
@@ -132,7 +132,7 @@ export fn run(start: usize, argc: usize) i32 = {
             if (key == "--only-delimited" || is_prefix(key, "--only-delimited")) { suppress = true; i += 1usize; continue; };
             if (key == "--zero-terminated" || is_prefix(key, "--zero-terminated")) { zero_terminated = true; i += 1usize; continue; };
             if (key == "--help" || is_prefix(key, "--help")) { help(); stream::finishoutput("cut"); return 0; };
-            if (key == "--version" || is_prefix(key, "--version")) { io::println("cut (zovutils) 0.6.0"); stream::finishoutput("cut"); return 0; };
+            if (key == "--version" || is_prefix(key, "--version")) { io::println("cut (zovutils) 0.6.1"); stream::finishoutput("cut"); return 0; };
             c::fprintf(c::stderr, "cut: unrecognized option '%s'\n", arg); usage_error(); return 1;
         };
         if (!options_done && arg.len > 1usize && arg.data[0usize] == 45u8) {
@@ -153,7 +153,7 @@ export fn run(start: usize, argc: usize) i32 = {
                     if (option == 79u8) {
                         output_delimiter = value.data as *i8; has_output_delimiter = 1i32; explicit_output_delimiter = true;
                     } else if (option == 100u8) {
-                        if (value.len != 1usize) { c::fprintf(c::stderr, "cut: the delimiter must be a single character\n"); return 1; };
+                        if (value.len != 1usize) { io::eprintln("cut: the delimiter must be a single character"); return 1; };
                         delimiter = value.data[0usize] as i32; has_delimiter = true;
                     } else {
                         if (option == 70u8) {
@@ -175,25 +175,25 @@ export fn run(start: usize, argc: usize) i32 = {
             };
             i += 1usize; continue;
         };
-        if (file_count >= 256usize) { c::fprintf(c::stderr, "cut: too many input files\n"); return 1; };
+        if (file_count >= 256usize) { io::eprintln("cut: too many input files"); return 1; };
         files[file_count] = arg; file_count += 1usize; i += 1usize;
     };
-    if (list_count == 0usize) { c::fprintf(c::stderr, "cut: you must specify a list of bytes, characters, or fields\n"); usage_error(); return 1; };
-    if (list_count > 1usize) { c::fprintf(c::stderr, "cut: only one list may be specified\n"); usage_error(); return 1; };
+    if (list_count == 0usize) { io::eprintln("cut: you must specify a list of bytes, characters, or fields"); usage_error(); return 1; };
+    if (list_count > 1usize) { io::eprintln("cut: only one list may be specified"); usage_error(); return 1; };
     if (force_space_fields && has_delimiter) { mode = 2i32; whitespace = false; };
     let is_field_mode: bool = mode == 2i32 || mode == 4i32 || mode == 5i32;
-    if (whitespace && !force_space_fields && !is_field_mode) { c::fprintf(c::stderr, "cut: an input delimiter makes sense\n\tonly when operating on fields\n"); usage_error(); return 1; };
-    if (has_delimiter && whitespace && !force_space_fields) { c::fprintf(c::stderr, "cut: -d and -w are mutually exclusive\n"); usage_error(); return 1; };
-    if (has_delimiter && mode != 2i32 && !force_space_fields) { c::fprintf(c::stderr, "cut: an input delimiter makes sense\n\tonly when operating on fields\n"); usage_error(); return 1; };
-    if (suppress && !is_field_mode) { c::fprintf(c::stderr, "cut: suppressing non-delimited lines makes sense\n\tonly when operating on fields\n"); usage_error(); return 1; };
+    if (whitespace && !force_space_fields && !is_field_mode) { io::eprintln("cut: an input delimiter makes sense\n\tonly when operating on fields"); usage_error(); return 1; };
+    if (has_delimiter && whitespace && !force_space_fields) { io::eprintln("cut: -d and -w are mutually exclusive"); usage_error(); return 1; };
+    if (has_delimiter && mode != 2i32 && !force_space_fields) { io::eprintln("cut: an input delimiter makes sense\n\tonly when operating on fields"); usage_error(); return 1; };
+    if (suppress && !is_field_mode) { io::eprintln("cut: suppressing non-delimited lines makes sense\n\tonly when operating on fields"); usage_error(); return 1; };
     let list_status: i32 = backend::zov_cut_validate_list(list.data as *i8);
     if (list_status == 2i32) {
-        if (mode == 2i32) { c::fprintf(c::stderr, "cut: fields are numbered from 1\n"); }
-        else { c::fprintf(c::stderr, "cut: byte/character positions are numbered from 1\n"); };
+        if (mode == 2i32) { io::eprintln("cut: fields are numbered from 1"); }
+        else { io::eprintln("cut: byte/character positions are numbered from 1"); };
         usage_error(); return 1;
     };
-    if (list_status == 3i32) { c::fprintf(c::stderr, "cut: invalid decreasing range\n"); usage_error(); return 1; };
-    if (list_status != 1i32) { c::fprintf(c::stderr, "cut: invalid range with no endpoint: -\n"); usage_error(); return 1; };
+    if (list_status == 3i32) { io::eprintln("cut: invalid decreasing range"); usage_error(); return 1; };
+    if (list_status != 1i32) { io::eprintln("cut: invalid range with no endpoint: -"); usage_error(); return 1; };
     if (file_count == 0usize) { return backend::zov_cut_process("-", list.data as *i8, mode, delimiter, output_delimiter, has_output_delimiter, no_partial as i32, complement as i32, suppress as i32, zero_terminated as i32); };
     let mut status: i32 = 0i32;
     for (let fi in 0usize..file_count) {

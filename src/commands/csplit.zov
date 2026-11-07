@@ -49,7 +49,7 @@ export fn run(start: usize, argc: usize) i32 = {
         if (!options_done && arg.len > 2usize && arg[0usize..2usize] == "--") {
             let option: str = key(arg);
             if (option == "--help" || prefix(option, "--help")) { help(); stream::finishoutput("csplit"); return 0; };
-            if (option == "--version" || prefix(option, "--version")) { io::println("csplit (zovutils) 0.6.0"); stream::finishoutput("csplit"); return 0; };
+            if (option == "--version" || prefix(option, "--version")) { io::println("csplit (zovutils) 0.6.1"); stream::finishoutput("csplit"); return 0; };
             if (option == "--keep-files" || prefix(option, "--keep-files")) { keep_files = true; i += 1usize; continue; };
             if (option == "--suppress-matched" || prefix(option, "--suppress-matched")) { suppress_matched = true; i += 1usize; continue; };
             if (option == "--elide-empty-files" || prefix(option, "--elide-empty-files")) { elide_empty = true; i += 1usize; continue; };
@@ -88,10 +88,10 @@ export fn run(start: usize, argc: usize) i32 = {
             };
             i += 1usize; continue;
         };
-        if (count >= 258usize) { c::fprintf(c::stderr, "csplit: too many operands\n"); return 1; };
+        if (count >= 258usize) { io::eprintln("csplit: too many operands"); return 1; };
         operands[count] = arg; count += 1usize; i += 1usize;
     };
-    if (count < 2usize) { c::fprintf(c::stderr, "csplit: missing operand\nTry 'csplit --help' for more information.\n"); return 1; };
+    if (count < 2usize) { io::eprintln("csplit: missing operand\nTry 'csplit --help' for more information."); return 1; };
     let mut patterns: [256]*i8;
     for (let pi in 1usize..count) { patterns[pi - 1usize] = operands[pi].data as *i8; };
     return backend::zov_csplit_run(operands[0usize].data as *i8, prefix_value.data as *i8,

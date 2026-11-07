@@ -5,7 +5,7 @@ use <sort_backend.h> as backend;
 use shared::io as stream;
 
 fn usage_error() void = {
-    c::fprintf(c::stderr, "Try 'sort --help' for more information.\n");
+    io::eprintln("Try 'sort --help' for more information.");
 };
 
 fn longkey(arg: str) str = {
@@ -119,7 +119,7 @@ export fn run(start: usize, argc: usize) i32 = {
             if (key == "--stable" || is_prefix(key, "--stable")) { stable = true; i += 1usize; continue; };
             if (key == "--zero-terminated" || is_prefix(key, "--zero-terminated")) { zero_terminated = true; i += 1usize; continue; };
             if (key == "--key" || is_prefix(key, "--key")) {
-                if (arg.len == key.len && i + 1usize >= argc) { c::fprintf(c::stderr, "sort: option '--key' requires an argument\n"); usage_error(); return 2; };
+                if (arg.len == key.len && i + 1usize >= argc) { io::eprintln("sort: option '--key' requires an argument"); usage_error(); return 2; };
                 if (arg.len > key.len) { keydef = arg[key.len + 1usize..arg.len]; i += 1usize; }
                 else { keydef = args::argat(i + 1usize); i += 2usize; };
                 apply_key_options(key, &mut reverse, &mut ignore_blanks, &mut dictionary,
@@ -127,16 +127,16 @@ export fn run(start: usize, argc: usize) i32 = {
                 continue;
             };
             if (key == "--field-separator" || is_prefix(key, "--field-separator")) {
-                if (arg.len == key.len && i + 1usize >= argc) { c::fprintf(c::stderr, "sort: option '--field-separator' requires an argument\n"); usage_error(); return 2; };
+                if (arg.len == key.len && i + 1usize >= argc) { io::eprintln("sort: option '--field-separator' requires an argument"); usage_error(); return 2; };
                 let mut sep: str = "";
                 if (arg.len > key.len) { sep = arg[key.len + 1usize..arg.len]; i += 1usize; }
                 else { sep = args::argat(i + 1usize); i += 2usize; };
-                if (sep.len != 1usize) { c::fprintf(c::stderr, "sort: field separator must be a single character\n"); usage_error(); return 2; };
+                if (sep.len != 1usize) { io::eprintln("sort: field separator must be a single character"); usage_error(); return 2; };
                 field_separator = sep.data[0usize] as i32; continue;
             };
             if (key == "--sort") {
                 if (arg.len == key.len && i + 1usize < argc) { i += 1usize; }
-                else if (arg.len == key.len) { c::fprintf(c::stderr, "sort: option '--sort' requires an argument\n"); usage_error(); return 2; };
+                else if (arg.len == key.len) { io::eprintln("sort: option '--sort' requires an argument"); usage_error(); return 2; };
                 let mut value: str = args::argat(i);
                 if (arg.len > key.len) { value = arg[key.len + 1usize..arg.len]; };
                 if (value == "numeric") { numeric = true; }
@@ -146,7 +146,7 @@ export fn run(start: usize, argc: usize) i32 = {
                 i += 1usize; continue;
             };
             if (key == "--help" || is_prefix(key, "--help")) { help(); stream::finishoutput("sort"); return 0; };
-            if (key == "--version" || is_prefix(key, "--version")) { io::println("sort (zovutils) 0.6.0"); stream::finishoutput("sort"); return 0; };
+            if (key == "--version" || is_prefix(key, "--version")) { io::println("sort (zovutils) 0.6.1"); stream::finishoutput("sort"); return 0; };
             c::fprintf(c::stderr, "sort: unrecognized option '%s'\n", arg); usage_error(); return 2;
         };
         if (!options_done && arg.len > 1usize && arg.data[0usize] == 45u8) {
@@ -175,7 +175,7 @@ export fn run(start: usize, argc: usize) i32 = {
                             &mut fold, &mut numeric, &mut general_numeric, &mut month, &mut ignore_nonprinting);
                     }
                     else {
-                        if (value.len != 1usize) { c::fprintf(c::stderr, "sort: field separator must be a single character\n"); usage_error(); return 2; };
+                        if (value.len != 1usize) { io::eprintln("sort: field separator must be a single character"); usage_error(); return 2; };
                         field_separator = value.data[0usize] as i32;
                     };
                     j = arg.len; continue;
@@ -185,7 +185,7 @@ export fn run(start: usize, argc: usize) i32 = {
             };
             i += 1usize; continue;
         };
-        if (file_count >= 256usize) { c::fprintf(c::stderr, "sort: too many input files\n"); return 2; };
+        if (file_count >= 256usize) { io::eprintln("sort: too many input files"); return 2; };
         files[file_count] = arg; file_count += 1usize; i += 1usize;
     };
     if (file_count == 0usize) { files[0usize] = "-"; file_count = 1usize; };

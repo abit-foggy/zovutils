@@ -85,7 +85,7 @@ fn escapes(value: str, start: usize, octal_zero_required: bool, stopped: &mut bo
                 if (next == 120u8 && count == 2usize) { break; };
             };
             if (count == 0usize) {
-                c::fprintf(c::stderr, "printf: missing hexadecimal number in escape\n");
+                io::eprintln("printf: missing hexadecimal number in escape");
                 *status = 1; return value.len;
             };
             if (!emitbyte(codepoint as u8)) { *status = 1; };
@@ -105,7 +105,7 @@ fn escapes(value: str, start: usize, octal_zero_required: bool, stopped: &mut bo
                 j += 1usize; count += 1usize;
             };
             if (count < digits) {
-                c::fprintf(c::stderr, "printf: missing hexadecimal number in escape\n");
+                io::eprintln("printf: missing hexadecimal number in escape");
                 *status = 1; return value.len;
             };
             if (!emitbyte(92u8) || !emitbyte(next)) { *status = 1; };
@@ -237,13 +237,13 @@ fn help() void = {
 
 export fn run(start: usize, argc: usize) i32 = {
     if (start >= argc) {
-        c::fprintf(c::stderr, "printf: missing operand\nTry 'printf --help' for more information.\n");
+        io::eprintln("printf: missing operand\nTry 'printf --help' for more information.");
         return 1;
     };
     if (argc == start + 1usize) {
         let only: str = args::argat(start);
         if (only == "--help") { help(); stream::finishoutput("printf"); return 0; };
-        if (only == "--version") { io::println("printf (zovutils) 0.6.0"); stream::finishoutput("printf"); return 0; };
+        if (only == "--version") { io::println("printf (zovutils) 0.6.1"); stream::finishoutput("printf"); return 0; };
     };
     let format: str = args::argat(start);
     let mut argument_index: usize = start + 1usize;

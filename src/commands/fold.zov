@@ -4,7 +4,7 @@ use <stdio.h> as c;
 use <fold_backend.h> as backend;
 use shared::io as stream;
 
-fn usage_error() void = { c::fprintf(c::stderr, "Try 'fold --help' for more information.\n"); };
+fn usage_error() void = { io::eprintln("Try 'fold --help' for more information."); };
 
 fn longkey(arg: str) str = {
     for (let i in 0usize..arg.len) { if (arg.data[i] == 61u8) { return arg[0usize..i]; }; };
@@ -67,7 +67,7 @@ export fn run(start: usize, argc: usize) i32 = {
                 let mut value: str = "";
                 if (arg.len > key.len) { value = arg[key.len + 1usize..arg.len]; i += 1usize; }
                 else if (i + 1usize < argc) { value = args::argat(i + 1usize); i += 2usize; }
-                else { c::fprintf(c::stderr, "fold: option '--width' requires an argument\n"); usage_error(); return 1; };
+                else { io::eprintln("fold: option '--width' requires an argument"); usage_error(); return 1; };
                 width = parse_width(value); if (width == 0usize) { width_error(value); return 1; };
                 continue;
             };
@@ -75,7 +75,7 @@ export fn run(start: usize, argc: usize) i32 = {
             if (key == "--characters" || is_prefix(key, "--characters")) { characters = true; bytes = false; i += 1usize; continue; };
             if (key == "--spaces" || is_prefix(key, "--spaces")) { spaces = true; i += 1usize; continue; };
             if (key == "--help" || is_prefix(key, "--help")) { help(); stream::finishoutput("fold"); return 0; };
-            if (key == "--version" || is_prefix(key, "--version")) { io::println("fold (zovutils) 0.6.0"); stream::finishoutput("fold"); return 0; };
+            if (key == "--version" || is_prefix(key, "--version")) { io::println("fold (zovutils) 0.6.1"); stream::finishoutput("fold"); return 0; };
             c::fprintf(c::stderr, "fold: unrecognized option '%s'\n", arg); usage_error(); return 1;
         };
         if (!options_done && arg.len > 1usize && arg.data[0usize] == 45u8) {
@@ -97,7 +97,7 @@ export fn run(start: usize, argc: usize) i32 = {
                     let mut value: str = "";
                     if (j + 1usize < arg.len) { value = arg[j + 1usize..arg.len]; }
                     else if (i + 1usize < argc) { i += 1usize; value = args::argat(i); }
-                    else { c::fprintf(c::stderr, "fold: option requires an argument -- 'w'\n"); usage_error(); return 1; };
+                    else { io::eprintln("fold: option requires an argument -- 'w'"); usage_error(); return 1; };
                     width = parse_width(value); if (width == 0usize) { width_error(value); return 1; };
                     j = arg.len; continue;
                 };
@@ -105,7 +105,7 @@ export fn run(start: usize, argc: usize) i32 = {
             };
             i += 1usize; continue;
         };
-        if (file_count >= 256usize) { c::fprintf(c::stderr, "fold: too many input files\n"); return 1; };
+        if (file_count >= 256usize) { io::eprintln("fold: too many input files"); return 1; };
         files[file_count] = arg; file_count += 1usize; i += 1usize;
     };
     if (file_count == 0usize) { files[0usize] = "-"; file_count = 1usize; };

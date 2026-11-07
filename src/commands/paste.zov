@@ -5,7 +5,7 @@ use <paste_backend.h> as backend;
 use shared::io as stream;
 
 fn usage_error() void = {
-    c::fprintf(c::stderr, "Try 'paste --help' for more information.\n");
+    io::eprintln("Try 'paste --help' for more information.");
 };
 
 fn longkey(arg: str) str = {
@@ -54,7 +54,7 @@ export fn run(start: usize, argc: usize) i32 = {
         if (!options_done && arg.len > 2usize && arg[0usize..2usize] == "--") {
             let key: str = longkey(arg);
             if (key == "--delimiters" || is_prefix(key, "--delimiters")) {
-                if (arg.len == key.len && i + 1usize >= argc) { c::fprintf(c::stderr, "paste: option '--delimiters' requires an argument\n"); usage_error(); return 1; };
+                if (arg.len == key.len && i + 1usize >= argc) { io::eprintln("paste: option '--delimiters' requires an argument"); usage_error(); return 1; };
                 if (arg.len > key.len) { delimiter = arg[key.len + 1usize..arg.len]; i += 1usize; }
                 else { delimiter = args::argat(i + 1usize); i += 2usize; };
                 continue;
@@ -62,7 +62,7 @@ export fn run(start: usize, argc: usize) i32 = {
             if (key == "--serial" || is_prefix(key, "--serial")) { serial = true; i += 1usize; continue; };
             if (key == "--zero-terminated" || is_prefix(key, "--zero-terminated")) { zero_terminated = true; i += 1usize; continue; };
             if (key == "--help" || is_prefix(key, "--help")) { help(); stream::finishoutput("paste"); return 0; };
-            if (key == "--version" || is_prefix(key, "--version")) { io::println("paste (zovutils) 0.6.0"); stream::finishoutput("paste"); return 0; };
+            if (key == "--version" || is_prefix(key, "--version")) { io::println("paste (zovutils) 0.6.1"); stream::finishoutput("paste"); return 0; };
             c::fprintf(c::stderr, "paste: unrecognized option '%s'\n", arg); usage_error(); return 1;
         };
         if (!options_done && arg.len > 1usize && arg.data[0usize] == 45u8) {
@@ -74,14 +74,14 @@ export fn run(start: usize, argc: usize) i32 = {
                 if (option == 100u8) {
                     if (j + 1usize < arg.len) { delimiter = arg[j + 1usize..arg.len]; }
                     else if (i + 1usize < argc) { i += 1usize; delimiter = args::argat(i); }
-                    else { c::fprintf(c::stderr, "paste: option requires an argument -- 'd'\n"); usage_error(); return 1; };
+                    else { io::eprintln("paste: option requires an argument -- 'd'"); usage_error(); return 1; };
                     j = arg.len; continue;
                 };
                 c::fprintf(c::stderr, "paste: invalid option -- '%c'\n", option as i32); usage_error(); return 1;
             };
             i += 1usize; continue;
         };
-        if (file_count >= 256usize) { c::fprintf(c::stderr, "paste: too many input files\n"); return 1; };
+        if (file_count >= 256usize) { io::eprintln("paste: too many input files"); return 1; };
         files[file_count] = arg; file_count += 1usize; i += 1usize;
     };
     if (file_count == 0usize) {

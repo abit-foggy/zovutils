@@ -39,25 +39,25 @@ export fn run(start: usize, argc: usize) i32 = {
         if (!options_done && arg.len > 2usize && arg[0usize..2usize] == "--") {
             let option: str = key(arg);
             if (option == "--help" || prefix(option, "--help")) {
-                if (arg.len != option.len) { c::fprintf(c::stderr, "tac: option '--help' doesn't allow an argument\nTry 'tac --help' for more information.\n"); return 1; };
+                if (arg.len != option.len) { io::eprintln("tac: option '--help' doesn't allow an argument\nTry 'tac --help' for more information."); return 1; };
                 help(); return 0;
             };
             if (option == "--version" || prefix(option, "--version")) {
-                if (arg.len != option.len) { c::fprintf(c::stderr, "tac: option '--version' doesn't allow an argument\nTry 'tac --help' for more information.\n"); return 1; };
-                io::println("tac (zovutils) 0.6.0"); return 0;
+                if (arg.len != option.len) { io::eprintln("tac: option '--version' doesn't allow an argument\nTry 'tac --help' for more information."); return 1; };
+                io::println("tac (zovutils) 0.6.1"); return 0;
             };
             if (option == "--before" || prefix(option, "--before")) {
-                if (arg.len != option.len) { c::fprintf(c::stderr, "tac: option '--before' doesn't allow an argument\nTry 'tac --help' for more information.\n"); return 1; };
+                if (arg.len != option.len) { io::eprintln("tac: option '--before' doesn't allow an argument\nTry 'tac --help' for more information."); return 1; };
                 before = true; i += 1usize; continue;
             };
             if (option == "--regex" || prefix(option, "--regex")) {
-                if (arg.len != option.len) { c::fprintf(c::stderr, "tac: option '--regex' doesn't allow an argument\nTry 'tac --help' for more information.\n"); return 1; };
+                if (arg.len != option.len) { io::eprintln("tac: option '--regex' doesn't allow an argument\nTry 'tac --help' for more information."); return 1; };
                 use_regex = true; i += 1usize; continue;
             };
             if (option == "--separator" || prefix(option, "--separator")) {
                 if (arg.len > option.len) { separator = arg[option.len + 1usize..arg.len]; i += 1usize; }
                 else if (i + 1usize < argc) { i += 1usize; separator = args::argat(i); i += 1usize; }
-                else { c::fprintf(c::stderr, "tac: option '--separator' requires an argument\nTry 'tac --help' for more information.\n"); return 1; };
+                else { io::eprintln("tac: option '--separator' requires an argument\nTry 'tac --help' for more information."); return 1; };
                 continue;
             };
             c::fprintf(c::stderr, "tac: unrecognized option '%s'\nTry 'tac --help' for more information.\n", arg.data as *i8); return 1;
@@ -71,22 +71,22 @@ export fn run(start: usize, argc: usize) i32 = {
                 if (option == 115u8) {
                     if (j + 1usize < arg.len) { separator = arg[j + 1usize..arg.len]; j = arg.len; }
                     else if (i + 1usize < argc) { i += 1usize; separator = args::argat(i); j = arg.len; }
-                    else { c::fprintf(c::stderr, "tac: option requires an argument -- 's'\nTry 'tac --help' for more information.\n"); return 1; };
+                    else { io::eprintln("tac: option requires an argument -- 's'\nTry 'tac --help' for more information."); return 1; };
                     break;
                 };
                 c::fprintf(c::stderr, "tac: invalid option -- '%c'\nTry 'tac --help' for more information.\n", option as i32); return 1;
             };
             i += 1usize; continue;
         };
-        if (operand_count >= 256usize) { c::fprintf(c::stderr, "tac: too many operands\n"); return 1; };
+        if (operand_count >= 256usize) { io::eprintln("tac: too many operands"); return 1; };
         operands[operand_count] = arg; operand_count += 1usize; i += 1usize;
     };
     let mut regex: nullable *void = null;
     let mut regex_error: [256]u8;
     if (use_regex) {
-        if (separator.len == 0usize) { c::fprintf(c::stderr, "tac: separator cannot be empty\n"); return 1; };
+        if (separator.len == 0usize) { io::eprintln("tac: separator cannot be empty"); return 1; };
         regex = backend::zov_tac_regex_init(separator.data as *i8, (&regex_error[0usize]) as *i8, 256usize);
-        if (regex == null) { c::fprintf(c::stderr, "tac: Invalid regular expression\n"); return 1; };
+        if (regex == null) { io::eprintln("tac: Invalid regular expression"); return 1; };
     };
     let mut status: i32 = 0i32;
     if (operand_count == 0usize) {

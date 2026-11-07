@@ -29,7 +29,7 @@ fn help() void = {
 };
 
 fn usage_error() void = {
-    c::fprintf(c::stderr, "Try 'pwd --help' for more information.\n");
+    io::eprintln("Try 'pwd --help' for more information.");
 };
 
 fn longkey(arg: str) str = {
@@ -64,7 +64,7 @@ export fn run(start: usize, argc: usize) i32 = {
             };
             if (key == "--version" || (key.len > 2usize && key.len < 9usize && key == "--version"[0usize..key.len])) {
                 if (arg.len != key.len) { c::fprintf(c::stderr, "pwd: option '%s' doesn't allow an argument\n", "--version"); usage_error(); return 1; };
-                io::println("pwd (zovutils) 0.6.0"); stream::finishoutput("pwd"); return 0;
+                io::println("pwd (zovutils) 0.6.1"); stream::finishoutput("pwd"); return 0;
             };
             c::fprintf(c::stderr, "pwd: unrecognized option '%s'\n", arg); usage_error(); return 1;
         };
@@ -82,7 +82,7 @@ export fn run(start: usize, argc: usize) i32 = {
         operands = true;
         i += 1usize;
     };
-    if (operands) { c::fprintf(c::stderr, "pwd: ignoring non-option arguments\n"); };
+    if (operands) { io::eprintln("pwd: ignoring non-option arguments"); };
     let mut is_physical: i32 = 0i32;
     if (physical) { is_physical = 1i32; };
     let directory: nullable *i8 = backend::zov_pwd_get(is_physical);

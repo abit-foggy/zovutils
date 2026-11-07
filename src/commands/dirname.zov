@@ -42,7 +42,7 @@ fn help() void = {
 };
 
 fn tryhelp() void = {
-    c::fprintf(c::stderr, "Try 'dirname --help' for more information.\n");
+    io::eprintln("Try 'dirname --help' for more information.");
 };
 
 fn badshort(option: u8) void = {
@@ -61,7 +61,7 @@ fn badlongargument(option: str) void = {
 };
 
 fn missingoperand() void = {
-    c::fprintf(c::stderr, "dirname: missing operand\n");
+    io::eprintln("dirname: missing operand");
     tryhelp();
 };
 
@@ -111,7 +111,7 @@ export fn run(start: usize, argc: usize) i32 = {
             };
             if (longprefix(arg, "--version")) {
                 if (longhasvalue(arg)) { badlongargument("--version"); return 1; };
-                io::println("dirname (zovutils) 0.6.0");
+                io::println("dirname (zovutils) 0.6.1");
                 if (!stream::finishoutput("dirname")) { return 1; };
                 return 0;
             };
