@@ -21,6 +21,9 @@ use commands::chown;
 use commands::chgrp;
 use commands::cut;
 use commands::basename;
+use commands::base32;
+use commands::base64;
+use commands::basenc;
 use commands::dirname;
 use commands::echo;
 use commands::expand;
@@ -65,6 +68,9 @@ fn program_name(path: str) str = {
 };
 
 fn dispatch(name: str, start: usize, argc: usize) i32 = {
+    if (name == "base32") { return base32::run(start, argc); };
+    if (name == "base64") { return base64::run(start, argc); };
+    if (name == "basenc") { return basenc::run(start, argc); };
     if (name == "basename") { return basename::run(start, argc); };
     if (name == "dirname") { return dirname::run(start, argc); };
     if (name == "echo") { return echo::run(start, argc); };
@@ -134,16 +140,16 @@ export fn main() i32 = {
     };
     if (argc < 2usize) {
         io::eprintln("usage: zovutils <utility> [arguments...]");
-        io::eprintln("utilities: basename cat chgrp chmod chown comm cp csplit cut dirname echo env expand false factor fold fmt head join link ln mkdir mkfifo mktemp mv nl nproc numfmt od paste pathchk printenv printf pwd readlink realpath rm rmdir seq sleep sort split tac tail test touch tr true uniq unlink unexpand wc yes");
+        io::eprintln("utilities: base32 base64 basenc basename cat chgrp chmod chown comm cp csplit cut dirname echo env expand false factor fold fmt head join link ln mkdir mkfifo mktemp mv nl nproc numfmt od paste pathchk printenv printf pwd readlink realpath rm rmdir seq sleep sort split tac tail test touch tr true uniq unlink unexpand wc yes");
         return 1;
     };
     if (env::argat(1usize) == "--help" || env::argat(1usize) == "-h") {
         io::println("usage: zovutils <utility> [arguments...]");
-        io::println("utilities: basename cat chgrp chmod chown comm cp csplit cut dirname echo env expand false factor fold fmt head join link ln mkdir mkfifo mktemp mv nl nproc numfmt od paste pathchk printenv printf pwd readlink realpath rm rmdir seq sleep sort split tac tail test touch tr true uniq unlink unexpand wc yes");
+        io::println("utilities: base32 base64 basenc basename cat chgrp chmod chown comm cp csplit cut dirname echo env expand false factor fold fmt head join link ln mkdir mkfifo mktemp mv nl nproc numfmt od paste pathchk printenv printf pwd readlink realpath rm rmdir seq sleep sort split tac tail test touch tr true uniq unlink unexpand wc yes");
         return 0;
     };
     if (argc >= 2usize && (env::argat(1usize) == "--version" || env::argat(1usize) == "-V")) {
-        io::println("zovutils 0.7.1 (GNU Coreutils 9.11 compatibility target)");
+        io::println("zovutils 0.8.0 (GNU Coreutils 9.11 compatibility target)");
         return 0;
     };
     return dispatch(env::argat(1usize), 2usize, argc);

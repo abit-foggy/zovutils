@@ -60,7 +60,7 @@ static inline int zov_mkfifo_run(int argc, int8_t **argv) {
                     free(paths); return 1;
                 }
                 if (strcmp(name, "--help") == 0) zov_mkfifo_help();
-                else puts("mkfifo (zovutils) 0.7.1");
+                else puts("mkfifo (zovutils) 0.8.0");
                 free(paths); return 0;
             }
             if (MKFIFO_LONG("--mode")) {
