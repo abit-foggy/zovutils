@@ -7,7 +7,7 @@ Options are collected from each pinned GNU 9.11 executable’s `--help` output. 
 | Utility | GNU 9.11 option surface | Parity suite (current cases) | Status |
 |---|---|---|---|
 | `[` | No GNU options (operand-driven) | `test_util.py (44)` | Audit pending |
-| `b2sum` | `-b`, `--binary`, `-c`, `--check`, `-l`, `--length=BITS`, `--tag`, `-t`, `--text`, `-z`, `--zero`, `--ignore-missing`, `--quiet`, `--status`, `--strict`, `-w`, `--warn` | `b2sum_util.py (18)` | In progress: default hash and check/tag/zero modes covered; length and validation edge cases pending |
+| `b2sum` | `-b`, `--binary`, `-c`, `--check`, `-l`, `--length=BITS`, `--tag`, `-t`, `--text`, `-z`, `--zero`, `--ignore-missing`, `--quiet`, `--status`, `--strict`, `-w`, `--warn` | `b2sum_util.py (23)` | In progress: variable digest lengths and check/tag/zero modes covered; validation and platform edges pending |
 | `base32` | `-d`, `--decode`, `-i`, `--ignore-garbage`, `-w`, `--wrap=COLS` | `base32_util.py (11)` | Audit pending |
 | `base64` | `-d`, `--decode`, `-i`, `--ignore-garbage`, `-w`, `--wrap=COLS` | `base64_util.py (9)` | Audit pending |
 | `basename` | `-a`, `--multiple`, `-s`, `--suffix=SUFFIX`, `-z`, `--zero` | `basename.py (43)` | Audit pending |

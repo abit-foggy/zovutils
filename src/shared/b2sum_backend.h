@@ -15,18 +15,34 @@ static inline void zb2_compress(zov_b2ctx*c,int last){static const uint64_t iv[8
 for(int r=0;r<12;r++){const unsigned char*q=s[r];G(0,4,8,12,m[q[0]],m[q[1]]);G(1,5,9,13,m[q[2]],m[q[3]]);G(2,6,10,14,m[q[4]],m[q[5]]);G(3,7,11,15,m[q[6]],m[q[7]]);G(0,5,10,15,m[q[8]],m[q[9]]);G(1,6,11,12,m[q[10]],m[q[11]]);G(2,7,8,13,m[q[12]],m[q[13]]);G(3,4,9,14,m[q[14]],m[q[15]]);}for(int i=0;i<8;i++)c->h[i]^=v[i]^v[i+8];
 #undef G
 }
-static inline void zb2_init(zov_b2ctx*c){static const uint64_t iv[8]={0x6a09e667f3bcc908ULL,0xbb67ae8584caa73bULL,0x3c6ef372fe94f82bULL,0xa54ff53a5f1d36f1ULL,0x510e527fade682d1ULL,0x9b05688c2b3e6c1fULL,0x1f83d9abfb41bd6bULL,0x5be0cd19137e2179ULL};memset(c,0,sizeof(*c));memcpy(c->h,iv,sizeof(iv));c->h[0]^=0x01010040ULL;}
+static inline void zb2_init(zov_b2ctx*c,size_t outlen){static const uint64_t iv[8]={0x6a09e667f3bcc908ULL,0xbb67ae8584caa73bULL,0x3c6ef372fe94f82bULL,0xa54ff53a5f1d36f1ULL,0x510e527fade682d1ULL,0x9b05688c2b3e6c1fULL,0x1f83d9abfb41bd6bULL,0x5be0cd19137e2179ULL};memset(c,0,sizeof(*c));memcpy(c->h,iv,sizeof(iv));c->h[0]^=0x01010000ULL|(uint64_t)outlen;}
 static inline void zb2_update(zov_b2ctx*c,const unsigned char*p,size_t n){while(n){if(c->used==128){c->t+=128;zb2_compress(c,0);c->used=0;}size_t z=128-c->used;if(z>n)z=n;memcpy(c->b+c->used,p,z);c->used+=z;p+=z;n-=z;}}
-static inline void zb2_final(zov_b2ctx*c,unsigned char*out){c->t+=c->used;memset(c->b+c->used,0,128-c->used);zb2_compress(c,1);for(int i=0;i<8;i++)zb2_store(out+i*8,c->h[i]);}
+static inline void zb2_final(zov_b2ctx*c,unsigned char*out,size_t outlen){unsigned char full[64];c->t+=c->used;memset(c->b+c->used,0,128-c->used);zb2_compress(c,1);for(int i=0;i<8;i++)zb2_store(full+i*8,c->h[i]);memcpy(out,full,outlen);}
 static inline int zov_b2_digest_file(const char *name,int alg,unsigned char *out,size_t *outlen){
- (void)alg;FILE *f=stdin;if(strcmp(name,"-")){f=fopen(name,"rb");if(!f)return -1;}
- zov_b2ctx c;zb2_init(&c);unsigned char buf[16384];size_t n;
+ size_t digest_len=alg?((size_t)alg):64;if(digest_len<1||digest_len>64){errno=EINVAL;return -1;}FILE *f=stdin;if(strcmp(name,"-")){f=fopen(name,"rb");if(!f)return -1;}
+ zov_b2ctx c;zb2_init(&c,digest_len);unsigned char buf[16384];size_t n;
  while((n=fread(buf,1,sizeof buf,f)))zb2_update(&c,buf,n);
  if(ferror(f)){int e=errno?errno:EIO;if(f!=stdin)fclose(f);errno=e;return -1;}
- if(f!=stdin)fclose(f);zb2_final(&c,out);*outlen=64;return 0;
+ if(f!=stdin)fclose(f);zb2_final(&c,out,digest_len);*outlen=digest_len;return 0;
 }
 static inline int zov_b2sum_run(int argc,char**argv){
- for(int i=0;i<argc;i++)if(!strcmp(argv[i],"-c")||!strcmp(argv[i],"--check"))return zov_checksum_check_run("b2sum","BLAKE2b",0,64,argc,argv,zov_b2_digest_file);
- int tag=0,zero=0;
- char**files=(char**)malloc((size_t)(argc+1)*sizeof(char*));if(!files)return 1;int nf=0,status=0;for(int i=0;i<argc;i++){if(!strcmp(argv[i],"--tag")){tag=1;continue;}if(!strcmp(argv[i],"--zero")||!strcmp(argv[i],"-z")){zero=1;continue;}if(!strcmp(argv[i],"-b")||!strcmp(argv[i],"--binary")||!strcmp(argv[i],"-t")||!strcmp(argv[i],"--text"))continue;if(!strcmp(argv[i],"--version")){puts("b2sum (zovutils) 0.10.5");free(files);return 0;}if(!strcmp(argv[i],"--help")){puts("Usage: b2sum [OPTION]... [FILE]...\nPrint or check BLAKE2b checksums.\nWith no FILE, or when FILE is -, read standard input.\n  --help     display this help and exit\n  --version  output version information and exit");free(files);return 0;}if(argv[i][0]=='-'&&strcmp(argv[i],"-")){fprintf(stderr,"b2sum: unrecognized option '%s'\nTry 'b2sum --help' for more information.\n",argv[i]);free(files);return 1;}files[nf++]=argv[i];}int implicit=!nf;if(implicit)files[nf++]="-";for(int j=0;j<nf;j++){const char*name=files[j];FILE*f=stdin;if(strcmp(name,"-")){f=fopen(name,"rb");if(!f){fprintf(stderr,"b2sum: %s: %s\n",name,strerror(errno));status=1;continue;}}zov_b2ctx c;zb2_init(&c);unsigned char b[16384],d[64];size_t n;while((n=fread(b,1,sizeof(b),f)))zb2_update(&c,b,n);if(ferror(f)){fprintf(stderr,"b2sum: %s: read error: %s\n",name,strerror(errno));status=1;}if(f!=stdin)fclose(f);zb2_final(&c,d);zov_checksum_print("b2sum","BLAKE2b",d,64,implicit?"-":name,tag,zero);}free(files);return status;}
+ int tag=0,zero=0,check=0,digest_len=64;
+ for(int i=0;i<argc;i++)if(!strcmp(argv[i],"-c")||!strcmp(argv[i],"--check"))check=1;
+ char**files=(char**)malloc((size_t)(argc+1)*sizeof(char*));if(!files)return 1;char**check_args=(char**)malloc((size_t)(argc+1)*sizeof(char*));if(!check_args){free(files);return 1;}int nf=0,ncheck=0,status=0;
+ for(int i=0;i<argc;i++){
+  const char*a=argv[i];
+  if(!strcmp(a,"-l")||!strcmp(a,"--length")){if(i+1>=argc){fprintf(stderr,"b2sum: option requires an argument -- 'l'\nTry 'b2sum --help' for more information.\n");free(files);free(check_args);return 1;}a=argv[++i];}
+  else if(!strncmp(a,"--length=",9))a+=9;
+  else if(!strncmp(a,"-l",2)&&a[2])a+=2;
+  else goto no_length;
+  {char*end=NULL;errno=0;unsigned long bits=strtoul(a,&end,10);if(errno||!a[0]||*end||bits<8||bits>512||bits%8){fprintf(stderr,"b2sum: invalid length: ‘%s’\n",a);if(bits%8)fprintf(stderr,"b2sum: length is not a multiple of 8\n");else if(bits>512)fprintf(stderr,"b2sum: maximum digest length for ‘BLAKE2b’ is 512 bits\n");free(files);free(check_args);return 1;}digest_len=(int)(bits/8);continue;}
+ no_length:
+  if(check){check_args[ncheck++]=(char*)a;continue;}
+  if(!strcmp(a,"--tag")){tag=1;continue;}if(!strcmp(a,"--zero")||!strcmp(a,"-z")){zero=1;continue;}if(!strcmp(a,"-b")||!strcmp(a,"--binary")||!strcmp(a,"-t")||!strcmp(a,"--text"))continue;
+  if(!strcmp(a,"--version")){puts("b2sum (zovutils) 0.10.6");free(files);free(check_args);return 0;}if(!strcmp(a,"--help")){puts("Usage: b2sum [OPTION]... [FILE]...\nPrint or check BLAKE2b checksums.\nWith no FILE, or when FILE is -, read standard input.\n  -l, --length=BITS  digest length in bits\n  --tag              create a BSD-style checksum\n  -z, --zero         end each output line with NUL\n      --help         display this help and exit\n      --version      output version information and exit");free(files);free(check_args);return 0;}
+  if(a[0]=='-'&&strcmp(a,"-")){fprintf(stderr,"b2sum: unrecognized option '%s'\nTry 'b2sum --help' for more information.\n",a);free(files);free(check_args);return 1;}files[nf++]=(char*)a;
+ }
+ if(check){int r=zov_checksum_check_run("b2sum","BLAKE2b",digest_len,digest_len,ncheck,check_args,zov_b2_digest_file);free(files);free(check_args);return r;}
+ {int implicit=!nf;if(implicit)files[nf++]="-";for(int j=0;j<nf;j++){const char*name=files[j];FILE*f=stdin;if(strcmp(name,"-")){f=fopen(name,"rb");if(!f){fprintf(stderr,"b2sum: %s: %s\n",name,strerror(errno));status=1;continue;}}zov_b2ctx c;zb2_init(&c,(size_t)digest_len);unsigned char b[16384],d[64];size_t n;while((n=fread(b,1,sizeof(b),f)))zb2_update(&c,b,n);if(ferror(f)){fprintf(stderr,"b2sum: %s: read error: %s\n",name,strerror(errno));status=1;}if(f!=stdin)fclose(f);zb2_final(&c,d,(size_t)digest_len);zov_checksum_print("b2sum","BLAKE2b",d,(size_t)digest_len,implicit?"-":name,tag,zero);}}
+ free(files);free(check_args);return status;}
 #endif
