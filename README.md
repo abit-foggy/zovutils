@@ -82,6 +82,7 @@ The project is in alpha (`0.9.0`). The current command set is:
 - `sha384sum`
 - `sha512sum`
 - `seq`
+- `shuf`
 - `sleep`
 - `sort`
 - `stat`
