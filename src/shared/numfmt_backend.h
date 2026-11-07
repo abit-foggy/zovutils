@@ -381,7 +381,7 @@ static inline int zov_numfmt_run(int argc, int8_t **argv) {
         const char *a=(const char*)argv[i];
         if(options&&!strcmp(a,"--")){options=0;continue;}
         if(options&&!strcmp(a,"--help")){zov_numfmt_help();return 0;}
-        if(options&&!strcmp(a,"--version")){puts("numfmt (zovutils) 0.10.15");return 0;}
+        if(options&&!strcmp(a,"--version")){puts("numfmt (zovutils) 0.10.16");return 0;}
         if(options&&(!strcmp(a,"-z")||!strcmp(a,"--zero-terminated"))){zero=1;continue;}
         if(options&&!strncmp(a,"--",2)) {
             const char *eq=strchr(a,'='); size_t keylen=eq?(size_t)(eq-a):strlen(a); const char *v=eq?eq+1:NULL;

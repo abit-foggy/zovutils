@@ -27,6 +27,21 @@ def _created(s: Suite, args: list[str], *, directory: bool = False) -> None:
         raise AssertionError(f"mktemp creation differs for {args!r}: {outputs!r}")
 
 
+def _dry_run(s: Suite, args: list[str]) -> None:
+    outputs = []
+    for command, env in (
+        ([str(s.zovutils), "mktemp", *args], s.env),
+        (["mktemp", *args], {**s.env, "PATH": str(s.gnu_dir) + os.pathsep + os.environ.get("PATH", "")}),
+    ):
+        result = subprocess.run(command, cwd=s.root, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=5)
+        path = result.stdout.decode().rstrip("\n")
+        outputs.append((result.returncode, result.stderr, Path(path).name, Path(path).exists()))
+    s.count += 1
+    import re
+    if any(result[0] != 0 or result[1] or result[3] or not re.fullmatch(r"unsafe\.[A-Za-z0-9]{6}", result[2]) for result in outputs):
+        raise AssertionError(f"mktemp dry-run differs for {args!r}: {outputs!r}")
+
+
 def run(s: Suite) -> None:
     for args in (["--bad-option"], ["abc"], ["--suffix=/bad", "tmp.XXXXXX"]):
         s.case("mktemp", args)
@@ -35,5 +50,9 @@ def run(s: Suite) -> None:
     _created(s, ["file.XXXXXXXXXX"])
     _created(s, ["--directory", "dir.XXXXXXXXXX"], directory=True)
     _created(s, [f"--tmpdir={s.root}", "tmp.XXXXXXXXXX"])
+    _created(s, ["-p", str(s.root), "tmp.XXXXXXXXXX"])
+    _created(s, ["-t", "tmp.XXXXXXXXXX"])
     _created(s, ["--suffix=.log", "tmp.XXXXXXXXXX"])
     _created(s, [])
+    _dry_run(s, ["--dry-run", "unsafe.XXXXXX"])
+    _dry_run(s, ["-u", "unsafe.XXXXXX"])

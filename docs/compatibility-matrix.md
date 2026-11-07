@@ -52,7 +52,7 @@ Options are collected from each pinned GNU 9.11 executable’s `--help` output. 
 | `mkdir` | `-m`, `--mode=MODE`, `-p`, `--parents`, `-v`, `--verbose`, `--context` | `mkdir_util.py (39)` | Audit pending |
 | `mkfifo` | `-m`, `--mode=MODE`, `--context` | `mkfifo_util.py (12)` | Audit pending |
 | `mknod` | `-m`, `--mode=MODE`, `--context` | `mknod_util.py (2)` | Audit pending |
-| `mktemp` | `-d`, `--directory`, `-u`, `--dry-run`, `-q`, `--quiet`, `--suffix=SUFF` | `mktemp_util.py (9)` | Audit pending |
+| `mktemp` | `-d`, `--directory`, `-u`, `--dry-run`, `-q`, `--quiet`, `-p`, `--tmpdir[=DIR]`, `-t`, `--suffix=SUFF` | `mktemp_util.py (13)` | In progress: file/directory creation, tmpdir, single-component, suffix and dry-run paths covered; failure and permission cases pending |
 | `mv` | `--backup`, `--debug`, `--exchange`, `-f`, `--force`, `-i`, `--interactive`, `-n`, `--no-clobber`, `--no-copy`, `--strip-trailing-slashes`, `-S`, `--suffix=SUFFIX`, `-t`, `--target-directory=DIRECTORY`, `-T`, `--no-target-directory`, `--update`, `-v`, `--verbose`, `-Z`, `--context` | `mv_util.py (20)` | Audit pending |
 | `nice` | `-n`, `--adjustment=N` | `nice_util.py (6)` | Audit pending |
 | `nl` | `-b`, `--body-numbering=STYLE`, `-d`, `--section-delimiter=CC`, `-f`, `--footer-numbering=STYLE`, `-h`, `--header-numbering=STYLE`, `-i`, `--line-increment=NUMBER`, `-l`, `--join-blank-lines=NUMBER`, `-n`, `--number-format=FORMAT`, `-p`, `--no-renumber`, `-s`, `--number-separator=STRING`, `-v`, `--starting-line-number=NUMBER`, `-w`, `--number-width=NUMBER` | `nl_util.py (21)` | Audit pending |
