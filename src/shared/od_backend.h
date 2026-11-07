@@ -213,7 +213,7 @@ static inline size_t zov_od_field_width(zov_od_type type) {
     if (type.kind == 'x') return type.size * 2;
     if (type.kind == 'o') return type.size * 3;
     if (type.kind == 'f') return type.size == 2 ? 15 : type.size == 4 ? 15 : type.size == 8 ? 24 :
-        (LDBL_MANT_DIG > 64 ? 46 : 29);
+        (LDBL_MANT_DIG > 64 ? 44 : 29);
     if (type.kind == 'd') return type.size == 1 ? 4 : type.size == 2 ? 6 : type.size == 4 ? 11 : 20;
     return type.size == 1 ? 3 : type.size == 2 ? 5 : type.size == 4 ? 10 : 20;
 }
@@ -460,7 +460,7 @@ static inline int zov_od_run(int argc, int8_t **argv) {
                     return 1;
                 }
                 if (strcmp(name, "--help") == 0) { zov_od_help(); free(files); return 0; }
-                if (strcmp(name, "--version") == 0) { puts("od (zovutils) 0.1.210"); free(files); return 0; }
+                if (strcmp(name, "--version") == 0) { puts("od (zovutils) 0.1.211"); free(files); return 0; }
                 if (strcmp(name, "--output-duplicates") == 0) { show_duplicates = 1; continue; }
                 continue;
             }

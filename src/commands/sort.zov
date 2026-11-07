@@ -146,7 +146,7 @@ export fn run(start: usize, argc: usize) i32 = {
                 i += 1usize; continue;
             };
             if (key == "--help" || is_prefix(key, "--help")) { help(); stream::finishoutput("sort"); return 0; };
-            if (key == "--version" || is_prefix(key, "--version")) { io::println("sort (zovutils) 0.1.210"); stream::finishoutput("sort"); return 0; };
+            if (key == "--version" || is_prefix(key, "--version")) { io::println("sort (zovutils) 0.1.211"); stream::finishoutput("sort"); return 0; };
             c::fprintf(c::stderr, "sort: unrecognized option '%s'\n", arg); usage_error(); return 2;
         };
         if (!options_done && arg.len > 1usize && arg.data[0usize] == 45u8) {

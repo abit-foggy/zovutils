@@ -58,7 +58,7 @@ export fn run(start: usize, argc: usize) i32 = {
             };
             if (key == "--initial" || is_prefix(key, "--initial")) { initial_only = true; i += 1usize; continue; };
             if (key == "--help" || is_prefix(key, "--help")) { help(); stream::finishoutput("expand"); return 0; };
-            if (key == "--version" || is_prefix(key, "--version")) { io::println("expand (zovutils) 0.1.210"); stream::finishoutput("expand"); return 0; };
+            if (key == "--version" || is_prefix(key, "--version")) { io::println("expand (zovutils) 0.1.211"); stream::finishoutput("expand"); return 0; };
             c::fprintf(c::stderr, "expand: unrecognized option '%s'\n", arg); usage_error(); return 1;
         };
         if (!options_done && arg.len > 1usize && arg.data[0usize] == 45u8) {
