@@ -70,6 +70,7 @@ The project is in alpha (`0.8.0`). The current command set is:
 - `sleep`
 - `sort`
 - `sum`
+- `sync`
 - `split`
 - `tac`
 - `tail`
@@ -80,6 +81,7 @@ The project is in alpha (`0.8.0`). The current command set is:
 - `tr`
 - `unexpand`
 - `true`
+- `tty`
 - `unlink`
 - `uname`
 - `uniq`
