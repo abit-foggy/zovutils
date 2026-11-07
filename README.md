@@ -25,6 +25,7 @@ The project is in alpha (`0.9.0`). The current command set is:
 - `cat`
 - `cksum`
 - `chgrp`
+- `chcon`
 - `chroot`
 - `chmod`
 - `chown`
@@ -76,6 +77,7 @@ The project is in alpha (`0.9.0`). The current command set is:
 - `realpath`
 - `rm`
 - `rmdir`
+- `runcon`
 - `sha1sum`
 - `sha224sum`
 - `sha256sum`
