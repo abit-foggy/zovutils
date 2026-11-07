@@ -62,7 +62,7 @@ export fn run(start: usize, argc: usize) i32 = {
             if (key == "--serial" || is_prefix(key, "--serial")) { serial = true; i += 1usize; continue; };
             if (key == "--zero-terminated" || is_prefix(key, "--zero-terminated")) { zero_terminated = true; i += 1usize; continue; };
             if (key == "--help" || is_prefix(key, "--help")) { help(); stream::finishoutput("paste"); return 0; };
-            if (key == "--version" || is_prefix(key, "--version")) { io::println("paste (zovutils) 0.6.2"); stream::finishoutput("paste"); return 0; };
+            if (key == "--version" || is_prefix(key, "--version")) { io::println("paste (zovutils) 0.7.0"); stream::finishoutput("paste"); return 0; };
             io::eprintln("paste: unrecognized option '" + arg + "'"); usage_error(); return 1;
         };
         if (!options_done && arg.len > 1usize && arg.data[0usize] == 45u8) {

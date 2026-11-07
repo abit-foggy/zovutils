@@ -243,7 +243,7 @@ export fn run(start: usize, argc: usize) i32 = {
     if (argc == start + 1usize) {
         let only: str = args::argat(start);
         if (only == "--help") { help(); stream::finishoutput("printf"); return 0; };
-        if (only == "--version") { io::println("printf (zovutils) 0.6.2"); stream::finishoutput("printf"); return 0; };
+        if (only == "--version") { io::println("printf (zovutils) 0.7.0"); stream::finishoutput("printf"); return 0; };
     };
     let format: str = args::argat(start);
     let mut argument_index: usize = start + 1usize;
