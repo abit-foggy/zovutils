@@ -123,7 +123,7 @@ export fn run(start: usize, argc: usize) i32 = {
             };
             if (key == "--version" || is_prefix(key, "--version")) {
                 if (arg.len != key.len) { io::eprintln("seq: option '--version' doesn't allow an argument"); usage_error(); return 1; };
-                io::println("seq (zovutils) 0.10.25"); stream::finishoutput("seq"); return 0;
+                io::println("seq (zovutils) 0.10.26"); stream::finishoutput("seq"); return 0;
             };
             io::eprintln("seq: unrecognized option '" + arg + "'"); usage_error(); return 1;
         };
