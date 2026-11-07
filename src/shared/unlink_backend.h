@@ -47,7 +47,7 @@ static inline int zov_unlink_run(int argc, int8_t **argv) {
             }
             if (key[0] != '\0' && zov_unlink_long(key, "--version")) {
                 if (equal != NULL) { fputs("unlink: option '--version' doesn't allow an argument\nTry 'unlink --help' for more information.\n", stderr); return 1; }
-                puts("unlink (zovutils) 0.10.2"); return 0;
+                puts("unlink (zovutils) 0.10.3"); return 0;
             }
             fprintf(stderr, "unlink: unrecognized option '%s'\nTry 'unlink --help' for more information.\n", arg);
             return 1;
