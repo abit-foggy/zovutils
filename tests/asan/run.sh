@@ -8,6 +8,7 @@ trap 'rm -rf "$wrapper_dir"' EXIT HUP INT TERM
 cat > "$wrapper_dir/cc" <<'WRAPPER'
 #!/bin/sh
 exec "$ZOVUTILS_REAL_CC" -Wno-parentheses-equality -Wno-pointer-sign \
+    -Wno-incompatible-pointer-types \
     -fsanitize=address,undefined \
     -fno-omit-frame-pointer "$@"
 WRAPPER
