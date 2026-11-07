@@ -132,7 +132,7 @@ static inline int zov_ptx_run(int argc, char **argv) {
     int nf = 0;
     for (int i = 0; i < argc; i++) {
         const char *a = argv[i];
-        if (!strcmp(a, "--version")) { puts("ptx (zovutils) 0.10.32"); free(files); return 0; }
+        if (!strcmp(a, "--version")) { puts("ptx (zovutils) 0.10.33"); free(files); return 0; }
         if (!strcmp(a, "--help")) {
             puts("Usage: ptx [OPTION]... [INPUT]...\nOutput a permuted index, including context, of the words in the input files.\n  -A, --auto-reference       output automatically generated references\n  -G, --traditional          use traditional System V output\n  -b, --break-file=FILE      use word break characters from FILE\n  -f, --ignore-case          fold lower case to upper case for sorting\n  -g, --gap-size=NUMBER      gap size between output fields\n  -i, --ignore-file=FILE     read words to ignore from FILE\n  -o, --only-file=FILE       read words to include from FILE\n  -r, --references           first field of each line is a reference\n  -R, --right-side-refs      put references at the right\n  -t, --typeset-mode         use a default width of 100 columns\n  -w, --width=NUMBER         output width in columns\n      --help                 display this help and exit\n      --version              output version information and exit");
             free(files); return 0;
@@ -151,7 +151,10 @@ static inline int zov_ptx_run(int argc, char **argv) {
         } else if (!strncmp(a,"--format=",9)) {
             if (!strcmp(a+9,"roff")) roff=1;
             else if (!strcmp(a+9,"tex")) tex=1;
-            else { fprintf(stderr,"ptx: invalid format '%s'\n",a+9); free(files); return 1; }
+            else {
+                fprintf(stderr,"ptx: invalid argument '%s' for '--format'\nValid arguments are:\n  - 'roff'\n  - 'tex'\nTry 'ptx --help' for more information.\n",a+9);
+                free(files); return 1;
+            }
             continue;
         } else if (!strncmp(a,"--flag-truncation=",18)) { opt='F'; value=a+18;
         } else if (!strncmp(a,"--macro-name=",13)) { opt='M'; value=a+13;
@@ -167,11 +170,15 @@ static inline int zov_ptx_run(int argc, char **argv) {
             if (i+1<argc) value=argv[++i];
         }
         if (opt) {
-            if (!value) { fprintf(stderr,"ptx: option requires an argument -- '%c'\nTry 'ptx --help' for more information.\n",opt); free(files); return 1; }
+            if (!value) {
+                if (!strncmp(a, "--", 2)) fprintf(stderr,"ptx: option '%s' requires an argument\nTry 'ptx --help' for more information.\n",a);
+                else fprintf(stderr,"ptx: option requires an argument -- '%c'\nTry 'ptx --help' for more information.\n",opt);
+                free(files); return 1;
+            }
             if (opt=='g' || opt=='w') {
                 char *end=NULL; errno=0; long v=strtol(value,&end,10);
                 if (errno || end==value || *end || v<0 || v>10000 || (opt=='w'&&v<1)) {
-                    fprintf(stderr,"ptx: invalid number: '%s'\n",value); free(files); return 1;
+                    fprintf(stderr,"ptx: invalid %s: '%s'\n",opt=='w'?"line width":"gap width",value); free(files); return 1;
                 }
                 if (opt=='g') gap=(int)v; else { width=(int)v; width_set=1; }
             } else if (opt=='b') break_file=value;
@@ -202,8 +209,8 @@ static inline int zov_ptx_run(int argc, char **argv) {
     if (ignore_file && !zov_ptx_load_words(ignore_file,&ignored,&ignored_n)) { free(files); return 1; }
     if (only_file && !zov_ptx_load_words(only_file,&only,&only_n)) { free(files); return 1; }
     regex_t word_re, sentence_re; int has_word_re=0,has_sentence_re=0;
-    if(word_pattern){int rc=regcomp(&word_re,word_pattern,REG_EXTENDED);if(rc){fprintf(stderr,"ptx: invalid word regular expression\n");free(files);return 1;}has_word_re=1;}
-    if(sentence_pattern){int rc=regcomp(&sentence_re,sentence_pattern,REG_EXTENDED);if(rc){fprintf(stderr,"ptx: invalid sentence regular expression\n");if(has_word_re)regfree(&word_re);free(files);return 1;}has_sentence_re=1;}
+    if(word_pattern){int rc=regcomp(&word_re,word_pattern,REG_EXTENDED);if(rc){fprintf(stderr,"ptx: Invalid regular expression (for regexp '%s')\n",word_pattern);free(files);return 1;}has_word_re=1;}
+    if(sentence_pattern){int rc=regcomp(&sentence_re,sentence_pattern,REG_EXTENDED);if(rc){fprintf(stderr,"ptx: Invalid regular expression (for regexp '%s')\n",sentence_pattern);if(has_word_re)regfree(&word_re);free(files);return 1;}has_sentence_re=1;}
     zov_ptx_entry *entries=NULL; size_t used=0, capacity=0; int status=0;
     for (int fi=0;fi<nf;fi++) {
         FILE *in=!strcmp(files[fi],"-")?stdin:fopen(files[fi],"r");
@@ -301,7 +308,7 @@ static inline int zov_ptx_run(int argc, char **argv) {
         }
         if (auto_ref && !right_ref && (int)pl > target) {
             fputs(prefix, stdout);
-            if (leftlen) fputs(" /   ", stdout);
+            if (leftlen) { fputc(' ', stdout); fputs(truncation_flag, stdout); fputs("   ", stdout); }
             else for (int j = 0; j < 4; j++) putchar(' ');
             fputs(e->word, stdout);
             if (*e->right) fputs(truncation_flag, stdout);
@@ -317,12 +324,14 @@ static inline int zov_ptx_run(int argc, char **argv) {
         for (int j=0;j<before;j++) putchar(' ');
         fputs(e->word,stdout);
         if (*e->right) {
-            int after=leftlen?(ispunct((unsigned char)e->left[leftlen-1])?1:gap):1;
+            /* The configured gap separates left context from the pivot.
+               Pivot-to-right-context spacing is always one blank. */
+            int after=*e->right && ispunct((unsigned char)e->right[0]) ? 0 : (*e->right ? 1 : 0);
             for (int j=0;j<after;j++) putchar(' ');
             fputs(e->right,stdout);
         }
         if (right_ref && (auto_ref || refs_in)) {
-            int after=*e->right?(leftlen?gap:1):0;
+            int after=*e->right && ispunct((unsigned char)e->right[0]) ? 0 : (*e->right ? 1 : 0);
             int usedcols=target+(int)strlen(e->word)+after+(int)strlen(e->right);
             int pad=width+gap-usedcols;
             for (int j=0;j<pad;j++) putchar(' ');
