@@ -45,11 +45,13 @@ The project is in alpha (`0.8.0`). The current command set is:
 - `join`
 - `link`
 - `ln`
+- `logname`
 - `md5sum`
 - `mkdir`
 - `mkfifo`
 - `mktemp`
 - `mv`
+- `nice`
 - `nl`
 - `nproc`
 - `numfmt`
