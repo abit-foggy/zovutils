@@ -360,7 +360,7 @@ static inline int zov_ownership_run(int argc, int8_t **argv, int group_only) {
             const char *eq = strchr(arg, '='); size_t len = eq ? (size_t)(eq - arg) : strlen(arg);
             const char *value = eq ? eq + 1 : NULL;
             if (zov_owner_long(arg, "--help", len)) { if (value != NULL) { fprintf(stderr, "%s: option '--help' doesn't allow an argument\nTry '%s --help' for more information.\n", name, name); free(operands); return 1; } if (group_only) zov_chgrp_help(); else zov_chown_help(); free(operands); return 0; }
-            if (zov_owner_long(arg, "--version", len)) { printf("%s (zovutils) 0.10.35\n", name); free(operands); return 0; }
+            if (zov_owner_long(arg, "--version", len)) { printf("%s (zovutils) 0.10.37\n", name); free(operands); return 0; }
             if (zov_owner_long(arg, "--recursive", len)) { opt.recursive = 1; continue; }
             if (zov_owner_long(arg, "--verbose", len)) { opt.verbose = 1; continue; }
             if (zov_owner_long(arg, "--changes", len)) { opt.verbose = opt.changes_only = 1; continue; }
