@@ -88,6 +88,7 @@ The project is in alpha (`0.9.0`). The current command set is:
 - `shred`
 - `shuf`
 - `sleep`
+- `stty`
 - `sort`
 - `stat`
 - `sum`
@@ -108,8 +109,10 @@ The project is in alpha (`0.9.0`). The current command set is:
 - `unlink`
 - `uname`
 - `vdir`
+- `users`
 - `uniq`
 - `wc`
+- `who`
 - `whoami`
 - `yes`
 
