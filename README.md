@@ -80,8 +80,10 @@ The project is in alpha (`0.8.0`). The current command set is:
 - `unexpand`
 - `true`
 - `unlink`
+- `uname`
 - `uniq`
 - `wc`
+- `whoami`
 - `yes`
 
 Each command is available through `zovutils <command>` and, after installation,
