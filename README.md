@@ -17,6 +17,7 @@ is copied, ported, or linked into this project.
 
 The project is in alpha (`0.8.0`). The current command set is:
 
+- `b2sum`
 - `base32`
 - `base64`
 - `basenc`
