@@ -14,11 +14,11 @@ fn badshort(opt: u8) void = {
 };
 
 fn badlong(arg: str) void = {
-    c::fprintf(c::stderr, "cat: unrecognized option '%s'\nTry 'cat --help' for more information.\n", arg);
+    io::eprintln("cat: unrecognized option '" + arg + "'\nTry 'cat --help' for more information.");
 };
 
 fn badargument(option: str) void = {
-    c::fprintf(c::stderr, "cat: option '%s' doesn't allow an argument\nTry 'cat --help' for more information.\n", option);
+    io::eprintln("cat: option '" + option + "' doesn't allow an argument\nTry 'cat --help' for more information.");
 };
 
 fn longprefix(arg: str, option: str) bool = {
@@ -38,14 +38,14 @@ fn longambiguity(arg: str) bool = {
     if (longprefix(key, "--show-tabs")) { count += 1usize; };
     if (longprefix(key, "--show-all")) { count += 1usize; };
     if (count <= 1usize) { return false; };
-    c::fprintf(c::stderr, "cat: option '%s' is ambiguous; possibilities:", arg);
-    if (longprefix(key, "--number-nonblank")) { c::fprintf(c::stderr, " '%s'", "--number-nonblank"); };
-    if (longprefix(key, "--number")) { c::fprintf(c::stderr, " '%s'", "--number"); };
-    if (longprefix(key, "--squeeze-blank")) { c::fprintf(c::stderr, " '%s'", "--squeeze-blank"); };
-    if (longprefix(key, "--show-nonprinting")) { c::fprintf(c::stderr, " '%s'", "--show-nonprinting"); };
-    if (longprefix(key, "--show-ends")) { c::fprintf(c::stderr, " '%s'", "--show-ends"); };
-    if (longprefix(key, "--show-tabs")) { c::fprintf(c::stderr, " '%s'", "--show-tabs"); };
-    if (longprefix(key, "--show-all")) { c::fprintf(c::stderr, " '%s'", "--show-all"); };
+    io::eprint("cat: option '" + arg + "' is ambiguous; possibilities:");
+    if (longprefix(key, "--number-nonblank")) { io::eprint(" '" + "--number-nonblank" + "'"); };
+    if (longprefix(key, "--number")) { io::eprint(" '" + "--number" + "'"); };
+    if (longprefix(key, "--squeeze-blank")) { io::eprint(" '" + "--squeeze-blank" + "'"); };
+    if (longprefix(key, "--show-nonprinting")) { io::eprint(" '" + "--show-nonprinting" + "'"); };
+    if (longprefix(key, "--show-ends")) { io::eprint(" '" + "--show-ends" + "'"); };
+    if (longprefix(key, "--show-tabs")) { io::eprint(" '" + "--show-tabs" + "'"); };
+    if (longprefix(key, "--show-all")) { io::eprint(" '" + "--show-all" + "'"); };
     io::eprintln("\nTry 'cat --help' for more information.");
     return true;
 };
@@ -289,8 +289,8 @@ export fn run(start: usize, argc: usize) i32 = {
         if (longprefix(arg, "--show-tabs")) { show_tabs = true; i += 1usize; continue; };
         if (longprefix(arg, "--show-nonprinting")) { show_nonprinting = true; i += 1usize; continue; };
         if (arg == "--help" || longprefix(arg, "--help")) { help(); if (!stream::finishoutput("cat")) { return 1; }; return 0; };
-        if (longprefix(arg, "--version")) { io::println("cat (zovutils) 0.6.1"); if (!stream::finishoutput("cat")) { return 1; }; return 0; };
-        if (arg == "--version") { io::println("cat (zovutils) 0.6.1"); if (!stream::finishoutput("cat")) { return 1; }; return 0; };
+        if (longprefix(arg, "--version")) { io::println("cat (zovutils) 0.6.2"); if (!stream::finishoutput("cat")) { return 1; }; return 0; };
+        if (arg == "--version") { io::println("cat (zovutils) 0.6.2"); if (!stream::finishoutput("cat")) { return 1; }; return 0; };
         if (arg.len >= 2usize && arg[0usize..2usize] == "--" && badlongargument(arg)) { return 1; };
         if (arg.len < 2usize || arg.data[1usize] != 45u8) {
             for (let j in 1usize..arg.len) {

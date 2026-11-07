@@ -31,7 +31,7 @@ fn parse_width(value: str) usize = {
 fn width_error(value: str) void = {
     let parsed: usize = parse_width(value);
     if (parsed == 0usize && value == "0") { backend::zov_fold_zero_width_error(); }
-    else { c::fprintf(c::stderr, "fold: invalid number of columns: '%s'\n", value); };
+    else { io::eprintln("fold: invalid number of columns: '" + value + "'"); };
 };
 
 fn help() void = {
@@ -75,8 +75,8 @@ export fn run(start: usize, argc: usize) i32 = {
             if (key == "--characters" || is_prefix(key, "--characters")) { characters = true; bytes = false; i += 1usize; continue; };
             if (key == "--spaces" || is_prefix(key, "--spaces")) { spaces = true; i += 1usize; continue; };
             if (key == "--help" || is_prefix(key, "--help")) { help(); stream::finishoutput("fold"); return 0; };
-            if (key == "--version" || is_prefix(key, "--version")) { io::println("fold (zovutils) 0.6.1"); stream::finishoutput("fold"); return 0; };
-            c::fprintf(c::stderr, "fold: unrecognized option '%s'\n", arg); usage_error(); return 1;
+            if (key == "--version" || is_prefix(key, "--version")) { io::println("fold (zovutils) 0.6.2"); stream::finishoutput("fold"); return 0; };
+            io::eprintln("fold: unrecognized option '" + arg + "'"); usage_error(); return 1;
         };
         if (!options_done && arg.len > 1usize && arg.data[0usize] == 45u8) {
             let mut j: usize = 1usize;

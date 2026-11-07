@@ -48,27 +48,27 @@ export fn run(start: usize, argc: usize) i32 = {
             let key: str = longkey(arg);
             if (key == "--null" || (key.len > 2usize && key.len < 6usize && key == "--null"[0usize..key.len])) {
                 if (arg.len != key.len) {
-                    c::fprintf(c::stderr, "printenv: option '%s' doesn't allow an argument\n", "--null");
+                    io::eprintln("printenv: option '" + "--null" + "' doesn't allow an argument");
                     usage_error(); return 2;
                 };
                 zero = true; i += 1usize; continue;
             };
             if (key == "--help" || (key.len > 2usize && key.len < 6usize && key == "--help"[0usize..key.len])) {
                 if (arg.len != key.len) {
-                    c::fprintf(c::stderr, "printenv: option '%s' doesn't allow an argument\n", "--help");
+                    io::eprintln("printenv: option '" + "--help" + "' doesn't allow an argument");
                     usage_error(); return 2;
                 };
                 help(); stream::finishoutput("printenv"); return 0;
             };
             if (key == "--version" || (key.len > 2usize && key.len < 9usize && key == "--version"[0usize..key.len])) {
                 if (arg.len != key.len) {
-                    c::fprintf(c::stderr, "printenv: option '%s' doesn't allow an argument\n", "--version");
+                    io::eprintln("printenv: option '" + "--version" + "' doesn't allow an argument");
                     usage_error(); return 2;
                 };
-                io::println("printenv (zovutils) 0.6.1");
+                io::println("printenv (zovutils) 0.6.2");
                 stream::finishoutput("printenv"); return 0;
             };
-            c::fprintf(c::stderr, "printenv: unrecognized option '%s'\n", arg);
+            io::eprintln("printenv: unrecognized option '" + arg + "'");
             usage_error(); return 2;
         };
         let mut j: usize = 1usize;

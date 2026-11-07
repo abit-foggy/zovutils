@@ -71,7 +71,7 @@ export fn run(start: usize, argc: usize) i32 = {
         if (!options_done && arg.len > 2usize && arg[0usize..2usize] == "--") {
             let option: str = key(arg);
             if (option == "--help" || prefix(option, "--help")) { help(); stream::finishoutput("split"); return 0; };
-            if (option == "--version" || prefix(option, "--version")) { io::println("split (zovutils) 0.6.1"); stream::finishoutput("split"); return 0; };
+            if (option == "--version" || prefix(option, "--version")) { io::println("split (zovutils) 0.6.2"); stream::finishoutput("split"); return 0; };
             if (option == "--verbose" || prefix(option, "--verbose")) { verbose = true; i += 1usize; continue; };
             if (option == "--elide-empty-files" || prefix(option, "--elide-empty-files")) { elide_empty = true; i += 1usize; continue; };
             if (option == "--unbuffered" || prefix(option, "--unbuffered")) { i += 1usize; continue; };
@@ -94,29 +94,29 @@ export fn run(start: usize, argc: usize) i32 = {
                 let mut value: str = "";
                 if (arg.len > option.len) { value = arg[option.len + 1usize..arg.len]; i += 1usize; }
                 else if (i + 1usize < argc) { value = args::argat(i + 1usize); i += 2usize; }
-                else { c::fprintf(c::stderr, "split: option '%s' requires an argument\n", option.data as *i8); return 1; };
-                if (kind == 1u8 || kind == 4u8) { if (!parse_size(value, &mut amount)) { c::fprintf(c::stderr, "split: invalid number of bytes: '%s'\n", value.data as *i8); return 1; }; if (kind == 1u8) { mode = 0u8; } else { mode = 3u8; }; }
-                else if (kind == 2u8) { if (!parse_number(value, &mut amount) || amount == 0u64) { c::fprintf(c::stderr, "split: invalid number of lines: '%s'\n", value.data as *i8); return 1; }; mode = 1u8; }
+                else { io::eprintln("split: option '" + option + "' requires an argument"); return 1; };
+                if (kind == 1u8 || kind == 4u8) { if (!parse_size(value, &mut amount)) { io::eprintln("split: invalid number of bytes: '" + value + "'"); return 1; }; if (kind == 1u8) { mode = 0u8; } else { mode = 3u8; }; }
+                else if (kind == 2u8) { if (!parse_number(value, &mut amount) || amount == 0u64) { io::eprintln("split: invalid number of lines: '" + value + "'"); return 1; }; mode = 1u8; }
                 else if (kind == 3u8) {
                     let mut n: u64 = 0u64;
                     if (value == "") { return 1; };
                     let mut a: usize = 0usize; while (a < value.len && value.data[a] != 47u8) { a += 1usize; };
-                    if (a == value.len) { if (!parse_number(value, &mut amount)) { c::fprintf(c::stderr, "split: invalid number of chunks: '%s'\n", value.data as *i8); return 1; }; mode = 2u8; }
+                    if (a == value.len) { if (!parse_number(value, &mut amount)) { io::eprintln("split: invalid number of chunks: '" + value + "'"); return 1; }; mode = 2u8; }
                     else if (a == 1usize && (value.data[0usize] == 108u8 || value.data[0usize] == 114u8)) {
                         let round: bool = value.data[0usize] == 114u8; let mut b: usize = a + 1usize; while (b < value.len && value.data[b] != 47u8) { b += 1usize; };
                         if (b == value.len) { if (!parse_number(value[a + 1usize..value.len], &mut amount)) { return 1; }; if (round) { mode = 4u8; } else { mode = 5u8; }; }
-                        else { if (!parse_number(value[a + 1usize..b], &mut n) || n == 0u64 || !parse_number(value[b + 1usize..value.len], &mut amount)) { c::fprintf(c::stderr, "split: invalid number of chunks: '%s'\n", value.data as *i8); return 1; }; selector = n; if (round) { mode = 4u8; } else { mode = 5u8; }; };
+                        else { if (!parse_number(value[a + 1usize..b], &mut n) || n == 0u64 || !parse_number(value[b + 1usize..value.len], &mut amount)) { io::eprintln("split: invalid number of chunks: '" + value + "'"); return 1; }; selector = n; if (round) { mode = 4u8; } else { mode = 5u8; }; };
                     } else {
-                        if (!parse_number(value[0usize..a], &mut n) || n == 0u64 || !parse_number(value[a + 1usize..value.len], &mut amount)) { c::fprintf(c::stderr, "split: invalid number of chunks: '%s'\n", value.data as *i8); return 1; }; selector = n; mode = 2u8;
+                        if (!parse_number(value[0usize..a], &mut n) || n == 0u64 || !parse_number(value[a + 1usize..value.len], &mut amount)) { io::eprintln("split: invalid number of chunks: '" + value + "'"); return 1; }; selector = n; mode = 2u8;
                     };
-                    if (amount == 0u64) { c::fprintf(c::stderr, "split: invalid number of chunks: '%s'\n", value.data as *i8); return 1; };
-                } else if (kind == 5u8) { let mut n: u64 = 0u64; if (!parse_number(value, &mut n) || n == 0u64 || n > 32u64) { c::fprintf(c::stderr, "split: invalid suffix length: '%s'\n", value.data as *i8); return 1; }; width = n as usize; }
+                    if (amount == 0u64) { io::eprintln("split: invalid number of chunks: '" + value + "'"); return 1; };
+                } else if (kind == 5u8) { let mut n: u64 = 0u64; if (!parse_number(value, &mut n) || n == 0u64 || n > 32u64) { io::eprintln("split: invalid suffix length: '" + value + "'"); return 1; }; width = n as usize; }
                 else if (kind == 6u8) { additional = value; }
-                else if (kind == 7u8) { if (value == "\\0") { separator = 0u8; } else if (value.len == 1usize) { separator = value.data[0usize]; } else { c::fprintf(c::stderr, "split: multi-character separator '%s'\n", value.data as *i8); return 1; } }
+                else if (kind == 7u8) { if (value == "\\0") { separator = 0u8; } else if (value.len == 1usize) { separator = value.data[0usize]; } else { io::eprintln("split: multi-character separator '" + value + "'"); return 1; } }
                 else { filter_command = value; };
                 continue;
             };
-            c::fprintf(c::stderr, "split: unrecognized option '%s'\nTry 'split --help' for more information.\n", arg.data as *i8); return 1;
+            io::eprintln("split: unrecognized option '" + arg + "'\nTry 'split --help' for more information."); return 1;
         };
         if (!options_done && arg.len > 1usize && arg.data[0usize] == 45u8) {
             let mut j: usize = 1usize;
@@ -132,7 +132,7 @@ export fn run(start: usize, argc: usize) i32 = {
                     else if (i + 1usize < argc) { i += 1usize; value = args::argat(i); j = arg.len; }
                     else { c::fprintf(c::stderr, "split: option requires an argument -- '%c'\n", option as i32); return 1; };
                     if (option == 97u8) { let mut n: u64 = 0u64; if (!parse_number(value, &mut n) || n == 0u64 || n > 32u64) { return 1; }; width = n as usize; }
-                    else if (option == 98u8 || option == 67u8) { if (!parse_size(value, &mut amount)) { c::fprintf(c::stderr, "split: invalid number of bytes: '%s'\n", value.data as *i8); return 1; }; if (option == 98u8) { mode = 0u8; } else { mode = 3u8; }; }
+                    else if (option == 98u8 || option == 67u8) { if (!parse_size(value, &mut amount)) { io::eprintln("split: invalid number of bytes: '" + value + "'"); return 1; }; if (option == 98u8) { mode = 0u8; } else { mode = 3u8; }; }
                     else if (option == 108u8) { if (!parse_number(value, &mut amount) || amount == 0u64) { return 1; }; mode = 1u8; }
                     else if (option == 110u8) {
                         let mut slash: usize = 0usize; while (slash < value.len && value.data[slash] != 47u8) { slash += 1usize; };
@@ -150,7 +150,7 @@ export fn run(start: usize, argc: usize) i32 = {
             };
             i += 1usize; continue;
         };
-        if (operand_count >= 2usize) { c::fprintf(c::stderr, "split: extra operand '%s'\nTry 'split --help' for more information.\n", arg.data as *i8); return 1; };
+        if (operand_count >= 2usize) { io::eprintln("split: extra operand '" + arg + "'\nTry 'split --help' for more information."); return 1; };
         operands[operand_count] = arg; operand_count += 1usize; i += 1usize;
     };
     let mut input: str = "-";

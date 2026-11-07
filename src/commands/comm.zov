@@ -35,7 +35,7 @@ export fn run(start: usize, argc: usize) i32 = {
         if (!options_done && arg.len > 2usize && arg[0usize..2usize] == "--") {
             let option: str = key(arg);
             if (option == "--help" || prefix(option, "--help")) { help(); stream::finishoutput("comm"); return 0; };
-            if (option == "--version" || prefix(option, "--version")) { io::println("comm (zovutils) 0.6.1"); stream::finishoutput("comm"); return 0; };
+            if (option == "--version" || prefix(option, "--version")) { io::println("comm (zovutils) 0.6.2"); stream::finishoutput("comm"); return 0; };
             if (option == "--check-order" || prefix(option, "--check-order")) { check_order = true; i += 1usize; continue; };
             if (option == "--nocheck-order" || prefix(option, "--nocheck-order")) { check_order = false; i += 1usize; continue; };
             if (option == "--total" || prefix(option, "--total")) { total = true; i += 1usize; continue; };
@@ -43,10 +43,10 @@ export fn run(start: usize, argc: usize) i32 = {
             if (option == "--output-delimiter" || prefix(option, "--output-delimiter")) {
                 if (arg.len > option.len) { delimiter = arg[option.len + 1usize..arg.len]; i += 1usize; }
                 else if (i + 1usize < argc) { delimiter = args::argat(i + 1usize); i += 2usize; }
-                else { c::fprintf(c::stderr, "comm: option '%s' requires an argument\n", option.data as *i8); return 1; };
+                else { io::eprintln("comm: option '" + option + "' requires an argument"); return 1; };
                 continue;
             };
-            c::fprintf(c::stderr, "comm: unrecognized option '%s'\nTry 'comm --help' for more information.\n", arg.data as *i8); return 1;
+            io::eprintln("comm: unrecognized option '" + arg + "'\nTry 'comm --help' for more information."); return 1;
         };
         if (!options_done && arg.len > 1usize && arg.data[0usize] == 45u8) {
             let mut j: usize = 1usize;
@@ -60,7 +60,7 @@ export fn run(start: usize, argc: usize) i32 = {
             };
             i += 1usize; continue;
         };
-        if (count >= 2usize) { c::fprintf(c::stderr, "comm: extra operand '%s'\nTry 'comm --help' for more information.\n", arg.data as *i8); return 1; };
+        if (count >= 2usize) { io::eprintln("comm: extra operand '" + arg + "'\nTry 'comm --help' for more information."); return 1; };
         files[count] = arg; count += 1usize; i += 1usize;
     };
     if (count != 2usize) { io::eprintln("comm: missing operand\nTry 'comm --help' for more information."); return 1; };

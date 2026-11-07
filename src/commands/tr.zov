@@ -65,8 +65,8 @@ export fn run(start: usize, argc: usize) i32 = {
             if (key == "--squeeze-repeats" || is_prefix(key, "--squeeze-repeats")) { squeeze = true; i += 1usize; continue; };
             if (key == "--truncate-set1" || is_prefix(key, "--truncate-set1")) { truncate = true; i += 1usize; continue; };
             if (key == "--help" || is_prefix(key, "--help")) { help(); stream::finishoutput("tr"); return 0; };
-            if (key == "--version" || is_prefix(key, "--version")) { io::println("tr (zovutils) 0.6.1"); stream::finishoutput("tr"); return 0; };
-            c::fprintf(c::stderr, "tr: unrecognized option '%s'\n", arg); usage_error(); return 1;
+            if (key == "--version" || is_prefix(key, "--version")) { io::println("tr (zovutils) 0.6.2"); stream::finishoutput("tr"); return 0; };
+            io::eprintln("tr: unrecognized option '" + arg + "'"); usage_error(); return 1;
         };
         if (!options_done && arg.len > 1usize && arg.data[0usize] == 45u8) {
             for (let j in 1usize..arg.len) {
@@ -79,11 +79,11 @@ export fn run(start: usize, argc: usize) i32 = {
             };
             i += 1usize; continue;
         };
-        if (operand_count >= 2usize) { c::fprintf(c::stderr, "tr: extra operand '%s'\n", arg); usage_error(); return 1; };
+        if (operand_count >= 2usize) { io::eprintln("tr: extra operand '" + arg + "'"); usage_error(); return 1; };
         operands[operand_count] = arg; operand_count += 1usize; i += 1usize;
     };
     if (operand_count == 0usize) { io::eprintln("tr: missing operand"); usage_error(); return 1; };
-    if (delete_mode && operand_count > 1usize && (!squeeze || operand_count > 2usize)) { c::fprintf(c::stderr, "tr: extra operand '%s'\n", operands[1usize]); usage_error(); return 1; };
+    if (delete_mode && operand_count > 1usize && (!squeeze || operand_count > 2usize)) { io::eprintln("tr: extra operand '" + operands[1usize] + "'"); usage_error(); return 1; };
     if (!delete_mode && !squeeze && operand_count != 2usize) { io::eprintln("tr: missing operand"); usage_error(); return 1; };
     let mut set2: str = "";
     let mut has_set2: bool = false;

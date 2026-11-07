@@ -75,10 +75,10 @@ export fn run(start: usize, argc: usize) i32 = {
                 let mut value: str = "";
                 if (arg.len > key.len) { value = arg[key.len + 1usize..arg.len]; i += 1usize; }
                 else if (i + 1usize < argc) { value = args::argat(i + 1usize); i += 2usize; }
-                else { c::fprintf(c::stderr, "fmt: option '%s' requires an argument\n", key); usage_error(); return 1; };
+                else { io::eprintln("fmt: option '" + key + "' requires an argument"); usage_error(); return 1; };
                 if (key == "--prefix" || is_prefix(key, "--prefix")) { prefix = value; continue; };
                 let parsed: usize = parse_width(value);
-                if (!decimal(value)) { c::fprintf(c::stderr, "fmt: invalid width: '%s'\n", value); return 1; };
+                if (!decimal(value)) { io::eprintln("fmt: invalid width: '" + value + "'"); return 1; };
                 if (key == "--goal" || is_prefix(key, "--goal")) { goal = parsed; goal_explicit = true; }
                 else { width = parsed; if (width == 0usize) { width = 1usize; }; if (!goal_explicit) { goal = width * 93usize / 100usize; if (goal == 0usize) { goal = 1usize; }; } };
                 continue;
@@ -88,13 +88,13 @@ export fn run(start: usize, argc: usize) i32 = {
             if (key == "--split-only" || is_prefix(key, "--split-only")) { split_only = true; i += 1usize; continue; };
             if (key == "--uniform-spacing" || is_prefix(key, "--uniform-spacing")) { uniform = true; i += 1usize; continue; };
             if (key == "--help" || is_prefix(key, "--help")) { help(); stream::finishoutput("fmt"); return 0; };
-            if (key == "--version" || is_prefix(key, "--version")) { io::println("fmt (zovutils) 0.6.1"); stream::finishoutput("fmt"); return 0; };
-            c::fprintf(c::stderr, "fmt: unrecognized option '%s'\n", arg); usage_error(); return 1;
+            if (key == "--version" || is_prefix(key, "--version")) { io::println("fmt (zovutils) 0.6.2"); stream::finishoutput("fmt"); return 0; };
+            io::eprintln("fmt: unrecognized option '" + arg + "'"); usage_error(); return 1;
         };
         if (!options_done && arg.len > 1usize && arg.data[0usize] == 45u8) {
             if (arg.data[1usize] >= 48u8 && arg.data[1usize] <= 57u8) {
                 width = parse_width(arg[1usize..arg.len]);
-                if (!decimal(arg[1usize..arg.len])) { c::fprintf(c::stderr, "fmt: invalid width: '%s'\n", arg[1usize..arg.len]); return 1; };
+                if (!decimal(arg[1usize..arg.len])) { io::eprintln("fmt: invalid width: '" + arg[1usize..arg.len] + "'"); return 1; };
                 if (width == 0usize) { width = 1usize; };
                 if (!goal_explicit) { goal = width * 93usize / 100usize; if (goal == 0usize) { goal = 1usize; }; };
                 i += 1usize; continue;
@@ -114,7 +114,7 @@ export fn run(start: usize, argc: usize) i32 = {
                     if (option == 112u8) { prefix = value; }
                     else {
                         let parsed: usize = parse_width(value);
-                        if (!decimal(value)) { c::fprintf(c::stderr, "fmt: invalid width: '%s'\n", value); return 1; };
+                        if (!decimal(value)) { io::eprintln("fmt: invalid width: '" + value + "'"); return 1; };
                         if (option == 103u8) { goal = parsed; goal_explicit = true; }
                         else { width = parsed; if (width == 0usize) { width = 1usize; }; if (!goal_explicit) { goal = width * 93usize / 100usize; if (goal == 0usize) { goal = 1usize; }; } };
                     };

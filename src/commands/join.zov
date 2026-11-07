@@ -55,7 +55,7 @@ export fn run(start: usize, argc: usize) i32 = {
         if (!options_done && arg.len > 2usize && arg[0usize..2usize] == "--") {
             let key: str = longkey(arg);
             if (key == "--help" || prefix(key, "--help")) { help(); stream::finishoutput("join"); return 0; };
-            if (key == "--version" || prefix(key, "--version")) { io::println("join (zovutils) 0.6.1"); stream::finishoutput("join"); return 0; };
+            if (key == "--version" || prefix(key, "--version")) { io::println("join (zovutils) 0.6.2"); stream::finishoutput("join"); return 0; };
             if (key == "--ignore-case" || prefix(key, "--ignore-case")) { ignore_case = true; i += 1usize; continue; };
             if (key == "--header" || prefix(key, "--header")) { header = true; i += 1usize; continue; };
             if (key == "--check-order" || prefix(key, "--check-order")) { check_order = true; i += 1usize; continue; };
@@ -65,8 +65,8 @@ export fn run(start: usize, argc: usize) i32 = {
                 let mut value: str = "";
                 if (arg.len > key.len) { value = arg[key.len + 1usize..arg.len]; i += 1usize; }
                 else if (i + 1usize < argc) { value = args::argat(i + 1usize); i += 2usize; }
-                else { c::fprintf(c::stderr, "join: option '%s' requires an argument\n", key.data as *i8); return 1; };
-                let n: usize = number(value); if (n == 0usize) { c::fprintf(c::stderr, "join: invalid field number: '%s'\n", value.data as *i8); return 1; };
+                else { io::eprintln("join: option '" + key + "' requires an argument"); return 1; };
+                let n: usize = number(value); if (n == 0usize) { io::eprintln("join: invalid field number: '" + value + "'"); return 1; };
                 field1 = n; field2 = n; continue;
             };
             let mut recognized: u8 = 0u8;
@@ -79,14 +79,14 @@ export fn run(start: usize, argc: usize) i32 = {
                 let mut value: str = "";
                 if (arg.len > key.len) { value = arg[key.len + 1usize..arg.len]; i += 1usize; }
                 else if (i + 1usize < argc) { value = args::argat(i + 1usize); i += 2usize; }
-                else { c::fprintf(c::stderr, "join: option '%s' requires an argument\n", key.data as *i8); return 1; };
-                if (recognized == 1u8 || recognized == 2u8) { let n: usize = number(value); if (n == 0usize) { c::fprintf(c::stderr, "join: invalid field number: '%s'\n", value.data as *i8); return 1; }; if (recognized == 1u8) { field1 = n; } else { field2 = n; }; }
+                else { io::eprintln("join: option '" + key + "' requires an argument"); return 1; };
+                if (recognized == 1u8 || recognized == 2u8) { let n: usize = number(value); if (n == 0usize) { io::eprintln("join: invalid field number: '" + value + "'"); return 1; }; if (recognized == 1u8) { field1 = n; } else { field2 = n; }; }
                 else if (recognized == 3u8) { format = value; has_format = true; }
                 else if (recognized == 4u8) { empty = value; }
-                else { if (value.len != 1usize) { c::fprintf(c::stderr, "join: multi-character tab '%s'\n", value.data as *i8); return 1; }; delimiter = value.data[0usize] as i32; separator = value.data[0usize]; };
+                else { if (value.len != 1usize) { io::eprintln("join: multi-character tab '" + value + "'"); return 1; }; delimiter = value.data[0usize] as i32; separator = value.data[0usize]; };
                 continue;
             };
-            c::fprintf(c::stderr, "join: unrecognized option '%s'\nTry 'join --help' for more information.\n", arg.data as *i8); return 1;
+            io::eprintln("join: unrecognized option '" + arg + "'\nTry 'join --help' for more information."); return 1;
         };
         if (!options_done && arg.len > 1usize && arg.data[0usize] == 45u8) {
             let mut j: usize = 1usize;
@@ -99,18 +99,18 @@ export fn run(start: usize, argc: usize) i32 = {
                     if (j + 1usize < arg.len) { value = arg[j + 1usize..arg.len]; j = arg.len; }
                     else if (i + 1usize < argc) { i += 1usize; value = args::argat(i); j = arg.len; }
                     else { c::fprintf(c::stderr, "join: option requires an argument -- '%c'\n", opt as i32); return 1; };
-                    if (opt == 97u8 || opt == 118u8) { let n: usize = number(value); if (n != 1usize && n != 2usize) { c::fprintf(c::stderr, "join: invalid file number: '%s'\n", value.data as *i8); return 1; }; if (n == 1usize) { unpaired1 = true; } else { unpaired2 = true; }; if (opt == 118u8) { suppress_joined = true; }; }
+                    if (opt == 97u8 || opt == 118u8) { let n: usize = number(value); if (n != 1usize && n != 2usize) { io::eprintln("join: invalid file number: '" + value + "'"); return 1; }; if (n == 1usize) { unpaired1 = true; } else { unpaired2 = true; }; if (opt == 118u8) { suppress_joined = true; }; }
                     else if (opt == 101u8) { empty = value; }
                     else if (opt == 111u8) { format = value; has_format = true; }
-                    else if (opt == 116u8) { if (value.len != 1usize) { c::fprintf(c::stderr, "join: multi-character tab '%s'\n", value.data as *i8); return 1; }; delimiter = value.data[0usize] as i32; separator = value.data[0usize]; }
-                    else { let n: usize = number(value); if (n == 0usize) { c::fprintf(c::stderr, "join: invalid field number: '%s'\n", value.data as *i8); return 1; }; if (opt == 49u8 || opt == 106u8) { field1 = n; }; if (opt == 50u8 || opt == 106u8) { field2 = n; }; };
+                    else if (opt == 116u8) { if (value.len != 1usize) { io::eprintln("join: multi-character tab '" + value + "'"); return 1; }; delimiter = value.data[0usize] as i32; separator = value.data[0usize]; }
+                    else { let n: usize = number(value); if (n == 0usize) { io::eprintln("join: invalid field number: '" + value + "'"); return 1; }; if (opt == 49u8 || opt == 106u8) { field1 = n; }; if (opt == 50u8 || opt == 106u8) { field2 = n; }; };
                     break;
                 };
                 c::fprintf(c::stderr, "join: invalid option -- '%c'\nTry 'join --help' for more information.\n", opt as i32); return 1;
             };
             i += 1usize; continue;
         };
-        if (file_count >= 2usize) { c::fprintf(c::stderr, "join: extra operand '%s'\nTry 'join --help' for more information.\n", arg.data as *i8); return 1; };
+        if (file_count >= 2usize) { io::eprintln("join: extra operand '" + arg + "'\nTry 'join --help' for more information."); return 1; };
         files[file_count] = arg; file_count += 1usize; i += 1usize;
     };
     if (file_count != 2usize) { io::eprintln("join: missing operand\nTry 'join --help' for more information."); return 1; };

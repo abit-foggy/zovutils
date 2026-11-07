@@ -65,9 +65,9 @@ fn looks_numeric(value: str) bool = {
 };
 
 fn numeric_error(value: str, kind: i32) void = {
-    if (kind == 1i32) { c::fprintf(c::stderr, "seq: invalid floating point argument: '%s'\n", value); }
-    else if (kind == 2i32) { c::fprintf(c::stderr, "seq: invalid 'not-a-number' argument: '%s'\n", value); }
-    else { c::fprintf(c::stderr, "seq: invalid floating point argument: '%s'\n", value); };
+    if (kind == 1i32) { io::eprintln("seq: invalid floating point argument: '" + value + "'"); }
+    else if (kind == 2i32) { io::eprintln("seq: invalid 'not-a-number' argument: '" + value + "'"); }
+    else { io::eprintln("seq: invalid floating point argument: '" + value + "'"); };
     usage_error();
 };
 
@@ -123,9 +123,9 @@ export fn run(start: usize, argc: usize) i32 = {
             };
             if (key == "--version" || is_prefix(key, "--version")) {
                 if (arg.len != key.len) { io::eprintln("seq: option '--version' doesn't allow an argument"); usage_error(); return 1; };
-                io::println("seq (zovutils) 0.6.1"); stream::finishoutput("seq"); return 0;
+                io::println("seq (zovutils) 0.6.2"); stream::finishoutput("seq"); return 0;
             };
-            c::fprintf(c::stderr, "seq: unrecognized option '%s'\n", arg); usage_error(); return 1;
+            io::eprintln("seq: unrecognized option '" + arg + "'"); usage_error(); return 1;
         };
         if (!options_done && arg.len > 1usize && arg.data[0usize] == 45u8 && !looks_numeric(arg)) {
             let mut j: usize = 1usize;
@@ -150,7 +150,7 @@ export fn run(start: usize, argc: usize) i32 = {
             i += 1usize; continue;
         };
         if (operand_count >= 3usize) {
-            c::fprintf(c::stderr, "seq: extra operand '%s'\n", arg); usage_error(); return 1;
+            io::eprintln("seq: extra operand '" + arg + "'"); usage_error(); return 1;
         };
         operands[operand_count] = arg;
         operand_count += 1usize;
@@ -181,7 +181,7 @@ export fn run(start: usize, argc: usize) i32 = {
     let last_status: i32 = number_status(last_text, &mut last);
     if (last_status != 0i32) { numeric_error(last_text, last_status); return 1; };
     if (increment == 0.0f64) {
-        c::fprintf(c::stderr, "seq: invalid Zero increment value: '%s'\n", increment_text); usage_error(); return 1;
+        io::eprintln("seq: invalid Zero increment value: '" + increment_text + "'"); usage_error(); return 1;
     };
 
     let mut fixed: bool = true;
@@ -199,15 +199,15 @@ export fn run(start: usize, argc: usize) i32 = {
         let mut bad_conversion: i32 = 0i32;
         let format_status: i32 = backend::zov_seq_validate_format(format.data as *i8, &mut bad_conversion);
         if (format_status == 1i32) {
-            c::fprintf(c::stderr, "seq: format '%s' has no %% directive\n", format); return 1;
+            io::eprintln("seq: format '" + format + "' has no %" + " directive"); return 1;
         };
         if (format_status == 2i32) {
             if (bad_conversion == 0i32) { c::fprintf(c::stderr, "seq: format '%%' has unknown %% directive\n"); }
             else { c::fprintf(c::stderr, "seq: format '%s' has unknown %%%c directive\n", format, bad_conversion); };
             return 1;
         };
-        if (format_status == 3i32) { c::fprintf(c::stderr, "seq: format '%s' has too many %% directives\n", format); return 1; };
-        if (format_status == 4i32) { c::fprintf(c::stderr, "seq: format '%s' ends in %%\n", format); return 1; };
+        if (format_status == 3i32) { io::eprintln("seq: format '" + format + "' has too many %" + " directives"); return 1; };
+        if (format_status == 4i32) { io::eprintln("seq: format '" + format + "' ends in %"); return 1; };
         normalized_format = backend::zov_seq_normalize_format(format.data as *i8);
     };
     let mut format_ptr: *i8 = format.data as *i8;

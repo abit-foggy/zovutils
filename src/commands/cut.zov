@@ -119,7 +119,7 @@ export fn run(start: usize, argc: usize) i32 = {
                 if (arg.len > key.len) {
                     let value: str = arg[key.len + 1usize..arg.len];
                     if (value != "trimmed") {
-                        c::fprintf(c::stderr, "cut: invalid argument '%s' for '--whitespace-delimited'\n", value);
+                        io::eprintln("cut: invalid argument '" + value + "' for '--whitespace-delimited'");
                         io::eprintln("Valid arguments are:\n  - 'trimmed'");
                         usage_error(); return 1;
                     };
@@ -132,8 +132,8 @@ export fn run(start: usize, argc: usize) i32 = {
             if (key == "--only-delimited" || is_prefix(key, "--only-delimited")) { suppress = true; i += 1usize; continue; };
             if (key == "--zero-terminated" || is_prefix(key, "--zero-terminated")) { zero_terminated = true; i += 1usize; continue; };
             if (key == "--help" || is_prefix(key, "--help")) { help(); stream::finishoutput("cut"); return 0; };
-            if (key == "--version" || is_prefix(key, "--version")) { io::println("cut (zovutils) 0.6.1"); stream::finishoutput("cut"); return 0; };
-            c::fprintf(c::stderr, "cut: unrecognized option '%s'\n", arg); usage_error(); return 1;
+            if (key == "--version" || is_prefix(key, "--version")) { io::println("cut (zovutils) 0.6.2"); stream::finishoutput("cut"); return 0; };
+            io::eprintln("cut: unrecognized option '" + arg + "'"); usage_error(); return 1;
         };
         if (!options_done && arg.len > 1usize && arg.data[0usize] == 45u8) {
             let mut j: usize = 1usize;

@@ -67,17 +67,17 @@ fn badshort(option: u8) void = {
 };
 
 fn badlong(option: str) void = {
-    c::fprintf(c::stderr, "basename: unrecognized option '%s'\n", option);
+    io::eprintln("basename: unrecognized option '" + option + "'");
     tryhelp();
 };
 
 fn badlongargument(option: str) void = {
-    c::fprintf(c::stderr, "basename: option '%s' doesn't allow an argument\n", option);
+    io::eprintln("basename: option '" + option + "' doesn't allow an argument");
     tryhelp();
 };
 
 fn missinglongargument(option: str) void = {
-    c::fprintf(c::stderr, "basename: option '%s' requires an argument\n", option);
+    io::eprintln("basename: option '" + option + "' requires an argument");
     tryhelp();
 };
 
@@ -149,7 +149,7 @@ export fn run(start: usize, argc: usize) i32 = {
             };
             if (longprefix(arg, "--version")) {
                 if (longhasvalue(arg)) { badlongargument("--version"); return 1; };
-                io::println("basename (zovutils) 0.6.1");
+                io::println("basename (zovutils) 0.6.2");
                 if (!stream::finishoutput("basename")) { return 1; };
                 return 0;
             };
@@ -175,7 +175,7 @@ export fn run(start: usize, argc: usize) i32 = {
 
     if (operands.len() == 0usize) { missingoperand(); return 1; };
     if (!multiple && operands.len() > 2usize) {
-        c::fprintf(c::stderr, "basename: extra operand '%s'\n", operands.get(2usize));
+        io::eprintln("basename: extra operand '" + operands.get(2usize) + "'");
         tryhelp(); return 1;
     };
     let mut status: i32 = 0;

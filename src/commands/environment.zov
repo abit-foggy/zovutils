@@ -34,11 +34,11 @@ fn ambiguouslong(arg: str) bool = {
     if (longprefix(key, "--ignore-environment")) { count += 1usize; };
     if (longprefix(key, "--ignore-signal")) { count += 1usize; };
     if (count <= 1usize) { return false; };
-    c::fprintf(c::stderr, "env: option '%s' is ambiguous; possibilities:", key);
-    if (longprefix(key, "--default-signal")) { c::fprintf(c::stderr, " '%s'", "--default-signal"); };
-    if (longprefix(key, "--debug")) { c::fprintf(c::stderr, " '%s'", "--debug"); };
-    if (longprefix(key, "--ignore-environment")) { c::fprintf(c::stderr, " '%s'", "--ignore-environment"); };
-    if (longprefix(key, "--ignore-signal")) { c::fprintf(c::stderr, " '%s'", "--ignore-signal"); };
+    io::eprint("env: option '" + arg + "' is ambiguous; possibilities:");
+    if (longprefix(key, "--default-signal")) { io::eprint(" '" + "--default-signal" + "'"); };
+    if (longprefix(key, "--debug")) { io::eprint(" '" + "--debug" + "'"); };
+    if (longprefix(key, "--ignore-environment")) { io::eprint(" '" + "--ignore-environment" + "'"); };
+    if (longprefix(key, "--ignore-signal")) { io::eprint(" '" + "--ignore-signal" + "'"); };
     io::eprintln("");
     tryhelp();
     return true;
@@ -102,17 +102,17 @@ fn badshort(option: u8) void = {
 };
 
 fn badlong(option: str) void = {
-    c::fprintf(c::stderr, "env: unrecognized option '%s'\n", option);
+    io::eprintln("env: unrecognized option '" + option + "'");
     tryhelp();
 };
 
 fn badlongargument(option: str) void = {
-    c::fprintf(c::stderr, "env: option '%s' doesn't allow an argument\n", option);
+    io::eprintln("env: option '" + option + "' doesn't allow an argument");
     tryhelp();
 };
 
 fn missinglongargument(option: str) void = {
-    c::fprintf(c::stderr, "env: option '%s' requires an argument\n", option);
+    io::eprintln("env: option '" + option + "' requires an argument");
     tryhelp();
 };
 
@@ -141,7 +141,7 @@ fn signaloption(mode: i32, signals: str, all: bool) bool = {
     if (all) { all_value = 1i32; };
     let result: i32 = process::zov_signal_apply(mode, signals.data as *i8, all_value);
     if (result == 0i32) { return true; };
-    if (result > 0i32) { c::fprintf(c::stderr, "env: '%s': invalid signal\n", signals); }
+    if (result > 0i32) { io::eprintln("env: '" + signals + "': invalid signal"); }
     else { c::fprintf(c::stderr, "env: cannot change signal handling: %s\n", cstr::strerror(process::zov_get_errno())); };
     tryhelp();
     return false;
@@ -180,7 +180,7 @@ fn split_string(value: str, tokens: &mut vec::Vec[String]) bool = {
         };
         if (b == 36u8) {
             if (i + 1usize >= value.len || value.data[i + 1usize] != 123u8) {
-                c::fprintf(c::stderr, "env: only $%cVARNAME%c expansion is supported, error at: %s\n", 123i32, 125i32, value[i..value.len]);
+                io::eprintln("env: only $" + "\{VARNAME} expansion is supported, error at: " + value[i..value.len]);
                 return false;
             };
             let mut end: usize = i + 2usize;
@@ -227,7 +227,7 @@ fn split_string(value: str, tokens: &mut vec::Vec[String]) bool = {
 
 fn execstatus(command: str, error: i32) i32 = {
     if (error == 2i32) {
-        c::fprintf(c::stderr, "env: '%s': No such file or directory\n", command);
+        io::eprintln("env: '" + command + "': No such file or directory");
         return 127;
     };
     c::fprintf(c::stderr, "env: '%s': %s\n", command, cstr::strerror(error));
@@ -270,7 +270,7 @@ export fn run(start: usize, argc: usize) i32 = {
                     if (i + 1usize >= argc) { missinglongargument("--unset"); return 125; };
                     i += 1usize; name = args::argat(i);
                 };
-                if (debug) { c::fprintf(c::stderr, "unset:    %s\n", name); };
+                if (debug) { io::eprintln("unset:    " + name); };
                 if (process::zov_env_unset(name.data as *i8) != 0i32) {
                     c::fprintf(c::stderr, "env: cannot unset '%s': %s\n", name, cstr::strerror(process::zov_get_errno()));
                     return 125;
@@ -334,7 +334,7 @@ export fn run(start: usize, argc: usize) i32 = {
             };
             if (longprefix(arg, "--version")) {
                 if (longhasvalue(arg)) { badlongargument("--version"); return 125; };
-                io::println("env (zovutils) 0.6.1");
+                io::println("env (zovutils) 0.6.2");
                 if (!stream::finishoutput("env")) { return 125; };
                 return 0;
             };
@@ -354,7 +354,7 @@ export fn run(start: usize, argc: usize) i32 = {
                     i += 1usize; value = args::argat(i); j = arg.len;
                 };
                 if (option == 117u8) {
-                    if (debug) { c::fprintf(c::stderr, "unset:    %s\n", value); };
+                    if (debug) { io::eprintln("unset:    " + value); };
                     if (process::zov_env_unset(value.data as *i8) != 0i32) {
                         c::fprintf(c::stderr, "env: cannot unset '%s': %s\n", value, cstr::strerror(process::zov_get_errno()));
                         return 125;
@@ -377,7 +377,7 @@ export fn run(start: usize, argc: usize) i32 = {
         c::fprintf(c::stderr, "env: cannot clear environment: %s\n", cstr::strerror(process::zov_get_errno()));
         return 125;
     };
-    if (chdir.len > 0usize && debug) { c::fprintf(c::stderr, "chdir:    '%s'\n", chdir); };
+    if (chdir.len > 0usize && debug) { io::eprintln("chdir:    '" + chdir + "'"); };
     if (chdir.len > 0usize && process::zov_change_directory(chdir.data as *i8) != 0i32) {
         c::fprintf(c::stderr, "env: cannot change directory to '%s': %s\n", chdir, cstr::strerror(process::zov_get_errno()));
         return 125;
@@ -390,7 +390,7 @@ export fn run(start: usize, argc: usize) i32 = {
     while (i < argc) { all_operands.push(args::argat(i)); i += 1usize; };
     let mut command_index: usize = 0usize;
     while (command_index < all_operands.len() && assignment(all_operands.get(command_index))) {
-        if (debug) { c::fprintf(c::stderr, "setenv:   %s\n", all_operands.get(command_index)); };
+        if (debug) { io::eprintln("setenv:   " + all_operands.get(command_index)); };
         if (!assign(all_operands.get(command_index))) {
             io::eprintln("env: invalid variable name");
             return 125;
@@ -417,11 +417,13 @@ export fn run(start: usize, argc: usize) i32 = {
     let mut arg_index: usize = command_index + 1usize;
     while (arg_index < all_operands.len()) { argv.push(all_operands.get(arg_index).data as nullable *i8); arg_index += 1usize; };
     argv.push(null);
-    if (debug && argv0_given) { c::fprintf(c::stderr, "argv0:     '%s'\n", argv0); };
+    if (debug && argv0_given) { io::eprintln("argv0:     '" + argv0 + "'"); };
     if (debug) {
-        c::fprintf(c::stderr, "executing: %s\n", command);
+        io::eprintln("executing: " + command);
         for (let k in 0usize..argv.len() - 1usize) {
-            c::fprintf(c::stderr, "   arg[%zu]= '%s'\n", k, argv.get(k)!);
+            let mut shown: str = all_operands.get(command_index + k);
+            if (k == 0usize && argv0_given) { shown = argv0; };
+            io::eprintln("   arg[" + k + "]= '" + shown + "'");
         };
     };
     let error: i32 = process::zov_exec_command(command.data as *i8, argv.data! as *void);

@@ -78,7 +78,7 @@ fn parse_primary(start: usize, count: usize, pos: &mut usize, invalid: &mut bool
                 if (valid != 1i32) {
                     let mut bad: str = right;
                     if (valid == -1i32) { bad = left; };
-                    c::fprintf(c::stderr, "test: invalid integer '%s'\n", bad);
+                    io::eprintln("test: invalid integer '" + bad + "'");
                     *invalid = true;
                     return false;
                 };
@@ -108,7 +108,7 @@ export fn run(start: usize, argc: usize, is_bracket: bool) i32 = {
     let mut invalid: bool = false;
     let value: bool = parse_or(start, count, &mut pos, &mut invalid);
     if (pos != count) {
-        c::fprintf(c::stderr, "test: extra argument '%s'\n", args::argat(start + pos));
+        io::eprintln("test: extra argument '" + args::argat(start + pos) + "'");
         return 2;
     };
     if (invalid) { return 2; };

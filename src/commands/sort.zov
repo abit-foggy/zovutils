@@ -142,12 +142,12 @@ export fn run(start: usize, argc: usize) i32 = {
                 if (value == "numeric") { numeric = true; }
                 else if (value == "general-numeric") { general_numeric = true; }
                 else if (value == "month") { month = true; }
-                else { c::fprintf(c::stderr, "sort: invalid argument '%s' for '--sort'\n", value); usage_error(); return 2; };
+                else { io::eprintln("sort: invalid argument '" + value + "' for '--sort'"); usage_error(); return 2; };
                 i += 1usize; continue;
             };
             if (key == "--help" || is_prefix(key, "--help")) { help(); stream::finishoutput("sort"); return 0; };
-            if (key == "--version" || is_prefix(key, "--version")) { io::println("sort (zovutils) 0.6.1"); stream::finishoutput("sort"); return 0; };
-            c::fprintf(c::stderr, "sort: unrecognized option '%s'\n", arg); usage_error(); return 2;
+            if (key == "--version" || is_prefix(key, "--version")) { io::println("sort (zovutils) 0.6.2"); stream::finishoutput("sort"); return 0; };
+            io::eprintln("sort: unrecognized option '" + arg + "'"); usage_error(); return 2;
         };
         if (!options_done && arg.len > 1usize && arg.data[0usize] == 45u8) {
             let mut j: usize = 1usize;

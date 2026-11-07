@@ -23,7 +23,7 @@ fn help() void = {
 };
 
 fn invalid_interval(value: str) void = {
-    c::fprintf(c::stderr, "sleep: invalid time interval '%s'\n", value);
+    io::eprintln("sleep: invalid time interval '" + value + "'");
     io::eprintln("Try 'sleep --help' for more information.");
 };
 
@@ -57,9 +57,9 @@ export fn run(start: usize, argc: usize) i32 = {
                     io::eprintln("Try 'sleep --help' for more information.");
                     return 1;
                 };
-                io::println("sleep (zovutils) 0.6.1"); stream::finishoutput("sleep"); return 0;
+                io::println("sleep (zovutils) 0.6.2"); stream::finishoutput("sleep"); return 0;
             };
-            c::fprintf(c::stderr, "sleep: unrecognized option '%s'\n", arg);
+            io::eprintln("sleep: unrecognized option '" + arg + "'");
             io::eprintln("Try 'sleep --help' for more information.");
             return 1;
         };
@@ -72,7 +72,7 @@ export fn run(start: usize, argc: usize) i32 = {
         let result: i32 = backend::zov_sleep_interval(arg.data as *i8);
         if (result == 1i32) { invalid_interval(arg); return 1; };
         if (result != 0i32) {
-            c::fprintf(c::stderr, "sleep: time interval '%s' is too large\n", arg);
+            io::eprintln("sleep: time interval '" + arg + "' is too large");
             io::eprintln("Try 'sleep --help' for more information.");
             return 1;
         };

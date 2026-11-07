@@ -51,22 +51,22 @@ export fn run(start: usize, argc: usize) i32 = {
         if (arg.len >= 2usize && arg[0usize..2usize] == "--") {
             let key: str = longkey(arg);
             if (key == "--logical" || (key.len > 2usize && key.len < 9usize && key == "--logical"[0usize..key.len])) {
-                if (arg.len != key.len) { c::fprintf(c::stderr, "pwd: option '%s' doesn't allow an argument\n", "--logical"); usage_error(); return 1; };
+                if (arg.len != key.len) { io::eprintln("pwd: option '" + "--logical" + "' doesn't allow an argument"); usage_error(); return 1; };
                 physical = false; i += 1usize; continue;
             };
             if (key == "--physical" || (key.len > 2usize && key.len < 10usize && key == "--physical"[0usize..key.len])) {
-                if (arg.len != key.len) { c::fprintf(c::stderr, "pwd: option '%s' doesn't allow an argument\n", "--physical"); usage_error(); return 1; };
+                if (arg.len != key.len) { io::eprintln("pwd: option '" + "--physical" + "' doesn't allow an argument"); usage_error(); return 1; };
                 physical = true; i += 1usize; continue;
             };
             if (key == "--help" || (key.len > 2usize && key.len < 6usize && key == "--help"[0usize..key.len])) {
-                if (arg.len != key.len) { c::fprintf(c::stderr, "pwd: option '%s' doesn't allow an argument\n", "--help"); usage_error(); return 1; };
+                if (arg.len != key.len) { io::eprintln("pwd: option '" + "--help" + "' doesn't allow an argument"); usage_error(); return 1; };
                 help(); stream::finishoutput("pwd"); return 0;
             };
             if (key == "--version" || (key.len > 2usize && key.len < 9usize && key == "--version"[0usize..key.len])) {
-                if (arg.len != key.len) { c::fprintf(c::stderr, "pwd: option '%s' doesn't allow an argument\n", "--version"); usage_error(); return 1; };
-                io::println("pwd (zovutils) 0.6.1"); stream::finishoutput("pwd"); return 0;
+                if (arg.len != key.len) { io::eprintln("pwd: option '" + "--version" + "' doesn't allow an argument"); usage_error(); return 1; };
+                io::println("pwd (zovutils) 0.6.2"); stream::finishoutput("pwd"); return 0;
             };
-            c::fprintf(c::stderr, "pwd: unrecognized option '%s'\n", arg); usage_error(); return 1;
+            io::eprintln("pwd: unrecognized option '" + arg + "'"); usage_error(); return 1;
         };
         if (arg.len > 1usize && arg.data[0usize] == 45u8) {
             for (let j in 1usize..arg.len) {
