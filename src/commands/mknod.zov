@@ -1,0 +1,9 @@
+use std::env as args;
+use <mknod_backend.h> as backend;
+export fn run(start: usize, argc: usize) i32 = {
+    let count: usize = argc - start;
+    if (count > 4096usize) { return 1; };
+    let mut argv: [4096]*i8;
+    for (let i in 0usize..count) { argv[i] = args::argat(start + i).data as *i8; };
+    return backend::zov_mknod_run(count as i32, (&argv[0usize]) as **i8);
+};

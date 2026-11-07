@@ -44,6 +44,7 @@ The project is in alpha (`0.8.0`). The current command set is:
 - `fmt`
 - `groups`
 - `head`
+- `id`
 - `join`
 - `link`
 - `ln`
@@ -51,6 +52,7 @@ The project is in alpha (`0.8.0`). The current command set is:
 - `md5sum`
 - `mkdir`
 - `mkfifo`
+- `mknod`
 - `mktemp`
 - `mv`
 - `nice`
