@@ -152,15 +152,39 @@ static inline int zov_chmod_apply(const char *mode_text, const char *path,
     return 0;
 }
 
+static inline int zov_chmod_apply_link(const char *mode_text, const char *path,
+                                       const struct stat *link_info,
+                                       const zov_chmod_options *opt) {
+#if defined(__APPLE__)
+    mode_t old_mask = umask(0); umask(old_mask); mode_t desired;
+    if (!zov_chmod_parse_mode(mode_text, link_info->st_mode, old_mask, 0, &desired)) return 1;
+    int changed = (link_info->st_mode & 07777) != desired;
+    if (changed && lchmod(path, desired) != 0) {
+        if (!opt->force) zov_chmod_error(path, errno);
+        return 1;
+    }
+    if (opt->verbose && (!opt->changes_only || changed)) {
+        char before[10], after[10]; zov_chmod_mode_text(link_info->st_mode & 07777, before);
+        zov_chmod_mode_text(desired, after);
+        fputs("mode of ", stdout); zov_quote_shell(stdout, path);
+        if (changed) fprintf(stdout, " changed from %04o (%s) to %04o (%s)\n", (unsigned)(link_info->st_mode & 07777), before, (unsigned)desired, after);
+        else fprintf(stdout, " retained as %04o (%s)\n", (unsigned)desired, after);
+    }
+#else
+    (void)mode_text; (void)path; (void)link_info; (void)opt;
+#endif
+    return 0;
+}
+
 static inline int zov_chmod_path(const char *mode, const char *path,
                                  const zov_chmod_options *opt, int is_root,
                                  int command_line) {
     struct stat link_info, info;
     if (lstat(path, &link_info) != 0) return zov_chmod_apply(mode, path, opt, is_root);
     if (S_ISLNK(link_info.st_mode)) {
-        if (!opt->dereference) return 0;
-        if (opt->recursive && !command_line && opt->traverse_mode != 1) return 0;
-        if (opt->recursive && command_line && opt->traverse_mode == 2) return 0;
+        if (!opt->dereference || (opt->recursive && !command_line && opt->traverse_mode != 1)
+            || (opt->recursive && command_line && opt->traverse_mode == 2))
+            return zov_chmod_apply_link(mode, path, &link_info, opt);
     }
     if (stat(path, &info) != 0) return zov_chmod_apply(mode, path, opt, is_root);
     if (!S_ISDIR(info.st_mode) || !opt->recursive) return zov_chmod_apply(mode, path, opt, is_root);
@@ -184,7 +208,6 @@ static inline int zov_chmod_path(const char *mode, const char *path,
         memcpy(child, path, a); if (slash) child[a++] = '/'; memcpy(child + a, entry->d_name, b + 1);
         struct stat child_info;
         if (lstat(child, &child_info) != 0) status = 1;
-        else if (S_ISLNK(child_info.st_mode) && opt->traverse_mode != 1) { }
         else if (zov_chmod_path(mode, child, opt, 0, 0) != 0) status = 1;
         free(child);
     }
@@ -212,7 +235,7 @@ static inline int zov_chmod_run(int argc, int8_t **argv) {
             const char *eq = strchr(arg, '='); size_t len = eq ? (size_t)(eq - arg) : strlen(arg);
             const char *value = eq ? eq + 1 : NULL;
             if (zov_chmod_long(arg, "--help", len)) { if (value != NULL) { fputs("chmod: option '--help' doesn't allow an argument\nTry 'chmod --help' for more information.\n", stderr); free(operands); return 1; } zov_chmod_help(); free(operands); return 0; }
-            if (zov_chmod_long(arg, "--version", len)) { puts("chmod (zovutils) 0.5.5"); free(operands); return 0; }
+            if (zov_chmod_long(arg, "--version", len)) { puts("chmod (zovutils) 0.5.6"); free(operands); return 0; }
             if (zov_chmod_long(arg, "--recursive", len)) { opt.recursive = 1; continue; }
             if (zov_chmod_long(arg, "--changes", len)) { opt.verbose = opt.changes_only = 1; continue; }
             if (zov_chmod_long(arg, "--verbose", len)) { opt.verbose = 1; continue; }

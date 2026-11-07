@@ -75,7 +75,7 @@ export fn run(start: usize, argc: usize) i32 = {
             if (key == "--characters" || is_prefix(key, "--characters")) { characters = true; bytes = false; i += 1usize; continue; };
             if (key == "--spaces" || is_prefix(key, "--spaces")) { spaces = true; i += 1usize; continue; };
             if (key == "--help" || is_prefix(key, "--help")) { help(); stream::finishoutput("fold"); return 0; };
-            if (key == "--version" || is_prefix(key, "--version")) { io::println("fold (zovutils) 0.5.5"); stream::finishoutput("fold"); return 0; };
+            if (key == "--version" || is_prefix(key, "--version")) { io::println("fold (zovutils) 0.5.6"); stream::finishoutput("fold"); return 0; };
             c::fprintf(c::stderr, "fold: unrecognized option '%s'\n", arg); usage_error(); return 1;
         };
         if (!options_done && arg.len > 1usize && arg.data[0usize] == 45u8) {
