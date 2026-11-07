@@ -354,7 +354,7 @@ static inline int zov_ln_run(int argc, int8_t **argv) {
                 int is_help = zov_ln_long(arg, "--help", keylen);
                 if (value != NULL) { fprintf(stderr, "ln: option '%s' doesn't allow an argument\nTry 'ln --help' for more information.\n", is_help ? "--help" : "--version"); free(operands); return 1; }
                 if (is_help) { zov_ln_help(); free(operands); return 0; }
-                puts("ln (zovutils) 0.10.12"); free(operands); return 0;
+                puts("ln (zovutils) 0.10.13"); free(operands); return 0;
             }
             if (zov_ln_long(arg, "--backup", keylen)) {
                 backup = 1;

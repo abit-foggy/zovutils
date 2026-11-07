@@ -8,5 +8,6 @@ def run(s: Suite) -> None:
     s.case("base64", ["-d", "-i"], stdin=b"Y!WJj\n")
     s.case("base64", ["-w", "0"], stdin=bytes(range(128)))
     s.case("base64", ["--bad-option"])
+    s.case("base64", ["--base32"])
     s.product_version("base64")
     s.symlink_dispatch("base64", ["-w", "0"])

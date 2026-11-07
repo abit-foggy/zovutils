@@ -8,8 +8,8 @@ Options are collected from each pinned GNU 9.11 executable’s `--help` output. 
 |---|---|---|---|
 | `[` | No GNU options (operand-driven) | `test_util.py (44)` | Audit pending |
 | `b2sum` | `-b`, `--binary`, `-c`, `--check`, `-l`, `--length=BITS`, `--tag`, `-t`, `--text`, `-z`, `--zero`, `--ignore-missing`, `--quiet`, `--status`, `--strict`, `-w`, `--warn` | `b2sum_util.py (23)` | In progress: variable digest lengths and check/tag/zero modes covered; validation and platform edges pending |
-| `base32` | `-d`, `--decode`, `-i`, `--ignore-garbage`, `-w`, `--wrap=COLS` | `base32_util.py (11)` | Audit pending |
-| `base64` | `-d`, `--decode`, `-i`, `--ignore-garbage`, `-w`, `--wrap=COLS` | `base64_util.py (9)` | Audit pending |
+| `base32` | `-d`, `--decode`, `-i`, `--ignore-garbage`, `-w`, `--wrap=COLS` | `base32_util.py (12)` | Audit pending |
+| `base64` | `-d`, `--decode`, `-i`, `--ignore-garbage`, `-w`, `--wrap=COLS` | `base64_util.py (10)` | Audit pending |
 | `basename` | `-a`, `--multiple`, `-s`, `--suffix=SUFFIX`, `-z`, `--zero` | `basename.py (43)` | Audit pending |
 | `basenc` | `--base64`, `--base64url`, `--base58`, `--base32`, `--base32hex`, `--base16`, `--base2msbf`, `--base2lsbf`, `-d`, `--decode`, `-i`, `--ignore-garbage`, `-w`, `--wrap=COLS`, `--z85` | `basenc_util.py (22)` | In progress: documented encodings, invalid lengths, malformed input and wrapping covered; broader byte and option interactions pending |
 | `cat` | `-A`, `--show-all`, `-v`, `-b`, `--number-nonblank`, `-n`, `-E`, `--show-ends`, `--number`, `-s`, `--squeeze-blank`, `-T`, `--show-tabs`, `--show-nonprinting` | `cat.py (4601)` | Audit pending |

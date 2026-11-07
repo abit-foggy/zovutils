@@ -21,18 +21,18 @@ static inline int zov_basenc_run(const char *program, int argc, char **argv) {
     for (int i=0;i<argc;i++) {
         const char *a=argv[i];
         if (!strcmp(a,"--help")) { fprintf(stdout,"Usage: %s [OPTION]... [FILE]\nBase-encode or decode FILE, or standard input, to standard output.\n  -d, --decode          decode data\n  -i, --ignore-garbage  when decoding, ignore non-alphabet characters\n  -w, --wrap=COLS       wrap encoded lines after COLS character (default 76)\n      --help            display this help and exit\n      --version         output version information and exit\n",program); return 0; }
-        if (!strcmp(a,"--version")) { printf("%s (zovutils) 0.10.12\n",program); return 0; }
+        if (!strcmp(a,"--version")) { printf("%s (zovutils) 0.10.13\n",program); return 0; }
         if (!strcmp(a,"-d")||!strcmp(a,"--decode")) {decode=1;continue;}
         if (!strcmp(a,"-i")||!strcmp(a,"--ignore-garbage")) {ignore=1;continue;}
-        if (!strcmp(a,"-u")||!strcmp(a,"--base64url")) {mode=0;url=1;continue;}
-        if (!strcmp(a,"--base32")) {mode=1;url=0;continue;}
-        if (!strcmp(a,"--base32hex")) {mode=2;url=0;continue;}
-        if (!strcmp(a,"--base16")) {mode=3;url=0;continue;}
-        if (!strcmp(a,"--base2msbf")) {mode=4;url=0;continue;}
-        if (!strcmp(a,"--base2lsbf")) {mode=5;url=0;continue;}
-        if (!strcmp(a,"--base58")) {mode=6;url=0;continue;}
-        if (!strcmp(a,"--z85")) {mode=7;url=0;continue;}
-        if (!strcmp(a,"--base64")) {mode=0;url=0;continue;}
+        if (!strcmp(program,"basenc")&&(!strcmp(a,"--base64url"))) {mode=0;url=1;continue;}
+        if (!strcmp(program,"basenc")&&!strcmp(a,"--base32")) {mode=1;url=0;continue;}
+        if (!strcmp(program,"basenc")&&!strcmp(a,"--base32hex")) {mode=2;url=0;continue;}
+        if (!strcmp(program,"basenc")&&!strcmp(a,"--base16")) {mode=3;url=0;continue;}
+        if (!strcmp(program,"basenc")&&!strcmp(a,"--base2msbf")) {mode=4;url=0;continue;}
+        if (!strcmp(program,"basenc")&&!strcmp(a,"--base2lsbf")) {mode=5;url=0;continue;}
+        if (!strcmp(program,"basenc")&&!strcmp(a,"--base58")) {mode=6;url=0;continue;}
+        if (!strcmp(program,"basenc")&&!strcmp(a,"--z85")) {mode=7;url=0;continue;}
+        if (!strcmp(program,"basenc")&&!strcmp(a,"--base64")) {mode=0;url=0;continue;}
         if (!strcmp(a,"-w")||!strncmp(a,"--wrap=",7)) { const char *v=!strcmp(a,"-w")?(i+1<argc?argv[++i]:NULL):a+7; if(!v){fprintf(stderr,"%s: option requires an argument -- 'w'\n",program);return 1;} char *e; long n=strtol(v,&e,10);if(*e||n<0){fprintf(stderr,"%s: invalid wrap size: %s\n",program,v);return 1;}wrap=(int)n;continue; }
         if (a[0]=='-' && strcmp(a,"-")) {fprintf(stderr,"%s: unrecognized option '%s'\nTry '%s --help' for more information.\n",program,a,program);return 1;}
         if(file){fprintf(stderr,"%s: extra operand '%s'\nTry '%s --help' for more information.\n",program,a,program);return 1;} file=a;
