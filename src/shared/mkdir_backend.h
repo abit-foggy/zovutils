@@ -10,6 +10,7 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include "platform_quote.h"
 
 #ifndef S_ISVTX
 #define S_ISVTX 01000
@@ -128,69 +129,15 @@ static inline int zov_mkdir_existing_directory(const char *path) {
     return S_ISDIR(info.st_mode);
 }
 
-static inline int zov_mkdir_shell_meta(unsigned char c) {
-    return c == '!' || c == '"' || c == '$' || c == '&' || c == '(' ||
-           c == ')' || c == '*' || c == ':' || c == ';' || c == '<' ||
-           c == '=' || c == '>' || c == '?' || c == '[' || c == '\\' ||
-           c == '^' || c == '`' || c == '|';
-}
-
-static inline void zov_mkdir_quote_segment(FILE *stream, const char *text, size_t length) {
-    int apostrophe = 0, backslash = 0, special = 0;
-    for (size_t i = 0; i < length; ++i) {
-        unsigned char c = (unsigned char)text[i];
-        if (c == '\'') apostrophe = 1;
-        if (c == '\\') backslash = 1;
-        if (zov_mkdir_shell_meta(c)) special = 1;
-    }
-    if (apostrophe && !backslash && !special) {
-        fputc('"', stream);
-        fwrite(text, 1, length, stream);
-        fputc('"', stream);
-        return;
-    }
-    fputc('\'', stream);
-    for (size_t i = 0; i < length; ++i) {
-        if (text[i] == '\'') fputs("'\\''", stream);
-        else fputc((unsigned char)text[i], stream);
-    }
-    fputc('\'', stream);
-}
-
-static inline void zov_mkdir_quote(FILE *stream, const char *text) {
-    size_t length = strlen(text), i = 0;
-    while (i < length) {
-        if ((unsigned char)text[i] >= 32 && (unsigned char)text[i] < 127) {
-            size_t start = i++;
-            while (i < length && (unsigned char)text[i] >= 32 && (unsigned char)text[i] < 127) ++i;
-            zov_mkdir_quote_segment(stream, text + start, i - start);
-            continue;
-        }
-        fputs("$'", stream);
-        while (i < length && !((unsigned char)text[i] >= 32 && (unsigned char)text[i] < 127)) {
-            unsigned char c = (unsigned char)text[i++];
-            if (c == 7) fputs("\\a", stream);
-            else if (c == 8) fputs("\\b", stream);
-            else if (c == 9) fputs("\\t", stream);
-            else if (c == 10) fputs("\\n", stream);
-            else if (c == 11) fputs("\\v", stream);
-            else if (c == 12) fputs("\\f", stream);
-            else if (c == 13) fputs("\\r", stream);
-            else fprintf(stream, "\\%03o", (unsigned)c);
-        }
-        fputc('\'', stream);
-    }
-}
-
 static inline void zov_mkdir_error(const char *path, int error) {
     fputs("mkdir: cannot create directory ", stderr);
-    zov_mkdir_quote(stderr, path);
+    zov_quote_shell(stderr, path);
     fprintf(stderr, ": %s\n", strerror(error));
 }
 
 static inline int zov_mkdir_report_created(const char *path) {
     fputs("mkdir: created directory ", stdout);
-    zov_mkdir_quote(stdout, path);
+    zov_quote_shell(stdout, path);
     return fputc('\n', stdout) == EOF;
 }
 
@@ -201,7 +148,7 @@ static inline int zov_mkdir_make_one(const char *path, mode_t create_mode,
         if (apply_mode && chmod(path, final_mode) != 0) {
             int error = errno;
             fputs("mkdir: cannot set permissions of ", stderr);
-            zov_mkdir_quote(stderr, path);
+            zov_quote_shell(stderr, path);
             fprintf(stderr, ": %s\n", strerror(error));
             return 1;
         }
@@ -248,6 +195,16 @@ static inline int zov_mkdir_make_parents(const char *path, mode_t default_mode,
     }
     free(copy);
     return status;
+}
+
+static inline int zov_mkdir_context_enabled(void) {
+#if defined(__linux__)
+    return access("/sys/fs/selinux/enforce", F_OK) == 0 ||
+           access("/sys/fs/smackfs", F_OK) == 0 ||
+           access("/smack", F_OK) == 0;
+#else
+    return 0;
+#endif
 }
 
 static inline int zov_mkdir_run(int argc, int8_t **argv) {
@@ -327,10 +284,15 @@ static inline int zov_mkdir_run(int argc, int8_t **argv) {
         free(paths); return 1;
     }
     if (context_option && context != NULL && *context != '\0') {
-        fputs("mkdir: failed to set default file creation context to ", stderr);
-        zov_mkdir_quote(stderr, context);
-        fputs(": Invalid argument\n", stderr);
-        free(paths); return 1;
+        if (!zov_mkdir_context_enabled()) {
+            fputs("mkdir: warning: ignoring --context; it requires an SELinux/SMACK-enabled kernel\n", stderr);
+            context = NULL;
+        } else {
+            fputs("mkdir: failed to set default file creation context to ", stderr);
+            zov_quote_shell(stderr, context);
+            fputs(": Invalid argument\n", stderr);
+            free(paths); return 1;
+        }
     }
 
     mode_t mask = umask(0);
@@ -339,7 +301,7 @@ static inline int zov_mkdir_run(int argc, int8_t **argv) {
     int mode_set = mode_text != NULL;
     if (mode_set && !zov_mkdir_parse_mode(mode_text, &final_mode, mask)) {
         fputs("mkdir: invalid mode ", stderr);
-        zov_mkdir_quote(stderr, mode_text);
+        zov_quote_shell(stderr, mode_text);
         fputc('\n', stderr);
         free(paths); return 1;
     }
