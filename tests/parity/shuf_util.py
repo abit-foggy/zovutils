@@ -3,6 +3,10 @@ import os
 from support import Suite
 
 def run(s: Suite) -> None:
+    def setup(root):
+        (root / "input").write_bytes(b"alpha\nbeta\n")
+
+    s.case_filesystem("shuf", ["--head-count=0", "--output=output", "input"], setup=setup)
     s.case("shuf", ["-n", "0"], stdin=b"alpha\nbeta\n")
     s.case("shuf", ["-e", "-n", "1", "single"])
     s.case("shuf", ["-i", "5-5"])
