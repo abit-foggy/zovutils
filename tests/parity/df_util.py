@@ -7,6 +7,7 @@ def run(s: Suite) -> None:
     s.case("df",["-i",path])
     s.case("df",["-i","/"])
     s.case("df",["-T",path])
+    s.case("df",["-T","/"])
     s.case("df",["--bad-option"])
     s.product_version("df")
     s.symlink_dispatch("df",["-P",path])
