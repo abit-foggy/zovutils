@@ -127,8 +127,9 @@ through a command-name symlink. Compatibility work is ongoing; passing the
 current test suite is not a claim of complete GNU Coreutils compatibility.
 
 The parity workflow is configured for Linux and macOS on `x86_64` and
-`aarch64`. See the [compatibility policy](docs/compatibility.md) for test scope,
-platform behavior, and coverage limits.
+`aarch64`. See the [compatibility policy](docs/compatibility.md) and [per-utility
+inventory](docs/compatibility-matrix.md) for test scope, platform behavior,
+and coverage status.
 
 ## Build and run
 

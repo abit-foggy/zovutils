@@ -1,0 +1,112 @@
+# GNU Coreutils 9.11 Compatibility Inventory
+
+Target inventory: 104 executable names (`[` is an alias).
+
+Options are collected from each pinned GNU 9.11 executable’s `--help` output. They are an audit checklist, not proof of coverage. Case counts show the current parity suite total (grouped suites may cover multiple utilities). Every row begins **Audit pending** and must be updated only after checking options, interactions, errors, side effects, and applicable platform cases.
+
+| Utility | GNU 9.11 option surface | Parity suite (current cases) | Status |
+|---|---|---|---|
+| `[` | No GNU options (operand-driven) | `test_util.py (44)` | Audit pending |
+| `b2sum` | `-b`, `--binary`, `-c`, `--check`, `-l`, `--length=BITS`, `--tag`, `-t`, `--text`, `-z`, `--zero`, `--ignore-missing`, `--quiet`, `--status`, `--strict`, `-w`, `--warn` | `b2sum_util.py (8)` | Audit pending |
+| `base32` | `-d`, `--decode`, `-i`, `--ignore-garbage`, `-w`, `--wrap=COLS` | `base32_util.py (11)` | Audit pending |
+| `base64` | `-d`, `--decode`, `-i`, `--ignore-garbage`, `-w`, `--wrap=COLS` | `base64_util.py (9)` | Audit pending |
+| `basename` | `-a`, `--multiple`, `-s`, `--suffix=SUFFIX`, `-z`, `--zero` | `basename.py (43)` | Audit pending |
+| `basenc` | `--base64`, `--base64url`, `--base58`, `--base32`, `--base32hex`, `--base16`, `--base2msbf`, `--base2lsbf`, `-d`, `--decode`, `-i`, `--ignore-garbage`, `-w`, `--wrap=COLS`, `--z85` | `basenc_util.py (6)` | Audit pending |
+| `cat` | `-A`, `--show-all`, `-v`, `-b`, `--number-nonblank`, `-n`, `-E`, `--show-ends`, `--number`, `-s`, `--squeeze-blank`, `-T`, `--show-tabs`, `--show-nonprinting` | `cat.py (4601)` | Audit pending |
+| `chcon` | `--dereference`, `-h`, `--no-dereference`, `-u`, `--user=USER`, `-r`, `--role=ROLE`, `-t`, `--type=TYPE`, `-l`, `--range=RANGE`, `--no-preserve-root`, `--preserve-root`, `--reference=RFILE`, `-R`, `--recursive`, `-v`, `--verbose` | `chcon_util.py (2)` | Audit pending |
+| `chgrp` | `-c`, `--changes`, `-f`, `--silent`, `--quiet`, `-v`, `--verbose`, `--dereference`, `-h`, `--no-dereference`, `--from=CURRENT_OWNER`, `--no-preserve-root`, `--preserve-root`, `--reference=RFILE`, `-R`, `--recursive` | `ownership_util.py (50)` | Audit pending |
+| `chmod` | `-c`, `--changes`, `-f`, `--silent`, `--quiet`, `-v`, `--verbose`, `--dereference`, `-h`, `--no-dereference`, `--no-preserve-root`, `--preserve-root`, `--reference=RFILE`, `-R`, `--recursive` | `chmod_util.py (27)` | Audit pending |
+| `chown` | `-c`, `--changes`, `-f`, `--silent`, `--quiet`, `-v`, `--verbose`, `--dereference`, `-h`, `--no-dereference`, `--from=CURRENT_OWNER`, `--no-preserve-root`, `--preserve-root`, `--reference=RFILE`, `-R`, `--recursive` | `ownership_util.py (50)` | Audit pending |
+| `chroot` | `--groups=G_LIST`, `--userspec=USER`, `--skip-chdir` | `chroot_util.py (4)` | Audit pending |
+| `cksum` | `-a`, `--algorithm=TYPE`, `--base64`, `-c`, `--check`, `-l`, `--length=BITS`, `--raw`, `--tag`, `--untagged`, `-z`, `--zero`, `--ignore-missing`, `--quiet`, `--status`, `--strict`, `-w`, `--warn`, `--debug` | `cksum_util.py (8)` | Audit pending |
+| `comm` | `--check-order`, `--nocheck-order`, `--output-delimiter=STR`, `--total`, `-z`, `--zero-terminated` | `comm_util.py (26)` | Audit pending |
+| `cp` | `-a`, `--archive`, `--attributes-only`, `--backup`, `--copy-contents`, `--debug`, `-f`, `--force`, `-i`, `--interactive`, `-L`, `--dereference`, `-P`, `--no-dereference`, `--keep-directory-symlink`, `-l`, `--link`, `-n`, `--no-clobber`, `--preserve`, `--no-preserve=ATTR_LIST`, `--parents`, `-R`, `-r`, `--recursive`, `--reflink`, `--remove-destination`, `--sparse=WHEN`, `--strip-trailing-slashes`, `-s`, `--symbolic-link`, `-S`, `--suffix=SUFFIX`, `-t`, `--target-directory=DIRECTORY`, `-T`, `--no-target-directory`, `--update`, `-v`, `--verbose`, `-x`, `--one-file-system`, `--context` | `cp_util.py (35)` | Audit pending |
+| `csplit` | `-b`, `--suffix-format=FORMAT`, `-f`, `--prefix=PREFIX`, `-k`, `--keep-files`, `--suppress-matched`, `-n`, `--digits=DIGITS`, `-s`, `--quiet`, `--silent`, `-z`, `--elide-empty-files` | `csplit_util.py (18)` | Audit pending |
+| `cut` | `-b`, `--bytes=LIST`, `-c`, `--characters=LIST`, `--complement`, `-d`, `--delimiter=DELIM`, `-f`, `--fields=LIST`, `-n`, `--no-partial`, `-O`, `--output-delimiter=STRING`, `-s`, `--only-delimited`, `-w`, `--whitespace-delimited`, `-z`, `--zero-terminated` | `cut_util.py (43)` | Audit pending |
+| `date` | `-d`, `--date=STRING`, `--debug`, `-f`, `--file=DATEFILE`, `--resolution`, `-R`, `--rfc-email`, `--rfc-3339=FMT`, `-r`, `--reference=FILE`, `-s`, `--set=STRING`, `-u`, `--utc`, `--universal` | `date_util.py (6)` | Audit pending |
+| `dd` | No GNU options (operand-driven) | `dd_util.py (7)` | Audit pending |
+| `df` | `-a`, `--all`, `-B`, `--block-size=SIZE`, `-h`, `--human-readable`, `-H`, `--si`, `-i`, `--inodes`, `-l`, `--local`, `--no-sync`, `--output`, `-P`, `--portability`, `--sync`, `--total`, `-t`, `--type=TYPE`, `-T`, `--print-type`, `-x`, `--exclude-type=TYPE` | `df_util.py (3)` | Audit pending |
+| `dir` | `-a`, `--all`, `-A`, `--almost-all`, `--author`, `-b`, `--escape`, `--block-size=SIZE`, `-B`, `--ignore-backups`, `--color`, `-d`, `--directory`, `-D`, `--dired`, `-F`, `--classify`, `--file-type`, `--format=WORD`, `--full-time`, `--group-directories-first`, `-G`, `--no-group`, `-h`, `--human-readable`, `--si`, `-H`, `--dereference-command-line`, `--dereference-command-line-symlink-to-dir`, `--hide=PATTERN`, `--hyperlink`, `--indicator-style=WORD`, `-i`, `--inode`, `-I`, `--ignore=PATTERN`, `-k`, `--kibibytes`, `-L`, `--dereference`, `-n`, `--numeric-uid-gid`, `-N`, `--literal`, `-p`, `--indicator-style`, `-q`, `--hide-control-chars`, `--show-control-chars`, `-Q`, `--quote-name`, `--quoting-style=WORD`, `-r`, `--reverse`, `-R`, `--recursive`, `-s`, `--size`, `--sort=WORD`, `--time=WORD`, `--time-style=TIME_STYLE`, `-T`, `--tabsize=COLS`, `-w`, `--width=COLS`, `-Z`, `--context`, `--zero` | `ls_util.py (16)` | Audit pending |
+| `dircolors` | `-b`, `--sh`, `--bourne-shell`, `-c`, `--csh`, `--c-shell`, `-p`, `--print-database`, `--print-ls-colors` | `dircolors_util.py (4)` | Audit pending |
+| `dirname` | `-z`, `--zero` | `dirname.py (39)` | Audit pending |
+| `du` | `-0`, `--null`, `-a`, `--all`, `-A`, `--apparent-size`, `-B`, `--block-size=SIZE`, `-b`, `--bytes`, `-c`, `--total`, `-D`, `--dereference-args`, `-d`, `--max-depth=N`, `--files0-from=F`, `-h`, `--human-readable`, `--inodes`, `-L`, `--dereference`, `-l`, `--count-links`, `-P`, `--no-dereference`, `-S`, `--separate-dirs`, `--si`, `-s`, `--summarize`, `-t`, `--threshold=SIZE`, `--time`, `--time=WORD`, `--time-style=STYLE`, `-X`, `--exclude-from=FILE`, `--exclude=PATTERN`, `-x`, `--one-file-system` | `du_util.py (7)` | Audit pending |
+| `echo` | No GNU options (operand-driven) | `echo.py (29)` | Audit pending |
+| `env` | `-a`, `--argv0=ARG`, `-i`, `--ignore-environment`, `-0`, `--null`, `-u`, `--unset=NAME`, `-C`, `--chdir=DIR`, `-S`, `--split-string=S`, `--block-signal`, `--default-signal`, `--ignore-signal`, `--list-signal-handling`, `-v`, `--debug` | `env.py (52)` | Audit pending |
+| `expand` | `-i`, `--initial`, `-t`, `--tabs=N`, `--tabs=LIST` | `expand_util.py (25)` | Audit pending |
+| `expr` | No GNU options (operand-driven) | `expr_util.py (15)` | Audit pending |
+| `factor` | `-h`, `--exponents` | `factor_util.py (17)` | Audit pending |
+| `false` | No GNU options (operand-driven) | `false.py (11)` | Audit pending |
+| `fmt` | `-c`, `--crown-margin`, `-p`, `--prefix=STRING`, `-s`, `--split-only`, `-t`, `--tagged-paragraph`, `-u`, `--uniform-spacing`, `-w`, `--width=WIDTH`, `-g`, `--goal=WIDTH` | `fmt_util.py (22)` | Audit pending |
+| `fold` | `-b`, `--bytes`, `-c`, `--characters`, `-s`, `--spaces`, `-w`, `--width=WIDTH` | `fold_util.py (28)` | Audit pending |
+| `groups` | No GNU options (operand-driven) | `groups_util.py (4)` | Audit pending |
+| `head` | `-c`, `--bytes`, `-n`, `--lines`, `-q`, `--quiet`, `--silent`, `-v`, `--verbose`, `-z`, `--zero-terminated` | `head.py (848)` | Audit pending |
+| `hostid` | No GNU options (operand-driven) | `hostid_util.py (3)` | Audit pending |
+| `id` | `-Z`, `--context`, `-g`, `--group`, `-G`, `--groups`, `-n`, `--name`, `-r`, `--real`, `-u`, `--user`, `-z`, `--zero` | `id_util.py (11)` | Audit pending |
+| `install` | `--backup`, `-C`, `--compare`, `-d`, `--directory`, `--debug`, `-g`, `--group=GROUP`, `-m`, `--mode=MODE`, `-o`, `--owner=OWNER`, `-p`, `--preserve-timestamps`, `-s`, `--strip`, `--strip-program=PROGRAM`, `-S`, `--suffix=SUFFIX`, `-t`, `--target-directory=DIRECTORY`, `-T`, `--no-target-directory`, `-v`, `--verbose`, `--preserve-context`, `--context` | `install_util.py (2)` | Audit pending |
+| `join` | `-i`, `--ignore-case`, `--check-order`, `--nocheck-order`, `--header`, `-z`, `--zero-terminated` | `join_util.py (27)` | Audit pending |
+| `link` | No GNU options (operand-driven) | `link_util.py (11)` | Audit pending |
+| `ln` | `--backup`, `-d`, `-F`, `--directory`, `-f`, `--force`, `-i`, `--interactive`, `-L`, `--logical`, `-n`, `--no-dereference`, `-P`, `--physical`, `-r`, `--relative`, `-s`, `--symbolic`, `-S`, `--suffix=SUFFIX`, `-t`, `--target-directory=DIRECTORY`, `-T`, `--no-target-directory`, `-v`, `--verbose` | `ln_util.py (40)` | Audit pending |
+| `logname` | No GNU options (operand-driven) | `logname_util.py (3)` | Audit pending |
+| `ls` | `-a`, `--all`, `-A`, `--almost-all`, `--author`, `-b`, `--escape`, `--block-size=SIZE`, `-B`, `--ignore-backups`, `--color`, `-d`, `--directory`, `-D`, `--dired`, `-F`, `--classify`, `--file-type`, `--format=WORD`, `--full-time`, `--group-directories-first`, `-G`, `--no-group`, `-h`, `--human-readable`, `--si`, `-H`, `--dereference-command-line`, `--dereference-command-line-symlink-to-dir`, `--hide=PATTERN`, `--hyperlink`, `--indicator-style=WORD`, `-i`, `--inode`, `-I`, `--ignore=PATTERN`, `-k`, `--kibibytes`, `-L`, `--dereference`, `-n`, `--numeric-uid-gid`, `-N`, `--literal`, `-p`, `--indicator-style`, `-q`, `--hide-control-chars`, `--show-control-chars`, `-Q`, `--quote-name`, `--quoting-style=WORD`, `-r`, `--reverse`, `-R`, `--recursive`, `-s`, `--size`, `--sort=WORD`, `--time=WORD`, `--time-style=TIME_STYLE`, `-T`, `--tabsize=COLS`, `-w`, `--width=COLS`, `-Z`, `--context`, `--zero` | `ls_util.py (16)` | Audit pending |
+| `md5sum` | `-b`, `--binary`, `-c`, `--check`, `--tag`, `-t`, `--text`, `-z`, `--zero`, `--ignore-missing`, `--quiet`, `--status`, `--strict`, `-w`, `--warn` | `md5sum_util.py (9)` | Audit pending |
+| `mkdir` | `-m`, `--mode=MODE`, `-p`, `--parents`, `-v`, `--verbose`, `--context` | `mkdir_util.py (39)` | Audit pending |
+| `mkfifo` | `-m`, `--mode=MODE`, `--context` | `mkfifo_util.py (12)` | Audit pending |
+| `mknod` | `-m`, `--mode=MODE`, `--context` | `mknod_util.py (2)` | Audit pending |
+| `mktemp` | `-d`, `--directory`, `-u`, `--dry-run`, `-q`, `--quiet`, `--suffix=SUFF` | `mktemp_util.py (9)` | Audit pending |
+| `mv` | `--backup`, `--debug`, `--exchange`, `-f`, `--force`, `-i`, `--interactive`, `-n`, `--no-clobber`, `--no-copy`, `--strip-trailing-slashes`, `-S`, `--suffix=SUFFIX`, `-t`, `--target-directory=DIRECTORY`, `-T`, `--no-target-directory`, `--update`, `-v`, `--verbose`, `-Z`, `--context` | `mv_util.py (20)` | Audit pending |
+| `nice` | `-n`, `--adjustment=N` | `nice_util.py (6)` | Audit pending |
+| `nl` | `-b`, `--body-numbering=STYLE`, `-d`, `--section-delimiter=CC`, `-f`, `--footer-numbering=STYLE`, `-h`, `--header-numbering=STYLE`, `-i`, `--line-increment=NUMBER`, `-l`, `--join-blank-lines=NUMBER`, `-n`, `--number-format=FORMAT`, `-p`, `--no-renumber`, `-s`, `--number-separator=STRING`, `-v`, `--starting-line-number=NUMBER`, `-w`, `--number-width=NUMBER` | `nl_util.py (21)` | Audit pending |
+| `nohup` | No GNU options (operand-driven) | `nohup_util.py (4)` | Audit pending |
+| `nproc` | `--all`, `--ignore=N` | `nproc_util.py (8)` | Audit pending |
+| `numfmt` | `--debug`, `-d`, `--delimiter=X`, `--field=FIELDS`, `--format=FORMAT`, `--from=UNIT`, `--from-unit=N`, `--grouping`, `--header`, `--invalid=MODE`, `--padding=N`, `--round=METHOD`, `--suffix=SUFFIX`, `--unit-separator=SEP`, `--to=UNIT`, `--to-unit=N`, `-z`, `--zero-terminated` | `numfmt_util.py (64)` | Audit pending |
+| `od` | `-A`, `--address-radix=RADIX`, `--endian`, `-j`, `--skip-bytes=BYTES`, `-N`, `--read-bytes=BYTES`, `-t`, `--format=TYPE`, `-v`, `--output-duplicates`, `--traditional` | `od_util.py (110)` | Audit pending |
+| `paste` | `-d`, `--delimiters=LIST`, `-s`, `--serial`, `-z`, `--zero-terminated` | `paste_util.py (17)` | Audit pending |
+| `pathchk` | `--portability` | `pathchk_util.py (10)` | Audit pending |
+| `pinky` | `--lookup` | `pinky_util.py (4)` | Audit pending |
+| `pr` | `-a`, `--across`, `-c`, `--show-control-chars`, `-d`, `--double-space`, `-D`, `--date-format=FORMAT`, `-F`, `-f`, `--form-feed`, `-h`, `--header=HEADER`, `-J`, `--join-lines`, `-l`, `--length=PAGE_LENGTH`, `-m`, `--merge`, `-N`, `--first-line-number=NUMBER`, `-o`, `--indent=MARGIN`, `-r`, `--no-file-warnings`, `-t`, `--omit-header`, `-T`, `--omit-pagination`, `-v`, `--show-nonprinting`, `-w`, `--width=PAGE_WIDTH`, `-W`, `--page-width=PAGE_WIDTH` | `pr_util.py (6)` | Audit pending |
+| `printenv` | `-0`, `--null` | `printenv.py (18)` | Audit pending |
+| `printf` | No GNU options (operand-driven) | `printf.py (44)` | Audit pending |
+| `ptx` | `-A`, `--auto-reference`, `-G`, `--traditional`, `-F`, `--flag-truncation=STRING`, `-M`, `--macro-name=STRING`, `-O`, `--format`, `-R`, `--right-side-refs`, `-w`, `-S`, `--sentence-regexp=REGEXP`, `-T`, `-W`, `--word-regexp=REGEXP`, `-b`, `--break-file=FILE`, `-f`, `--ignore-case`, `-g`, `--gap-size=NUMBER`, `-i`, `--ignore-file=FILE`, `-o`, `--only-file=FILE`, `-r`, `--references`, `-t`, `--typeset-mode`, `--width=NUMBER` | `ptx_util.py (2)` | Audit pending |
+| `pwd` | `-L`, `--logical`, `-P`, `--physical` | `pwd_util.py (18)` | Audit pending |
+| `readlink` | `-f`, `--canonicalize`, `-e`, `--canonicalize-existing`, `-m`, `--canonicalize-missing`, `-n`, `--no-newline`, `-q`, `--quiet`, `-s`, `--silent`, `-v`, `--verbose`, `-z`, `--zero` | `readlink_util.py (12)` | Audit pending |
+| `realpath` | `-E`, `--canonicalize`, `-e`, `--canonicalize-existing`, `-m`, `--canonicalize-missing`, `-L`, `--logical`, `-P`, `--physical`, `-q`, `--quiet`, `--relative-to=DIR`, `--relative-base=DIR`, `-s`, `--strip`, `--no-symlinks`, `-z`, `--zero` | `realpath_util.py (12)` | Audit pending |
+| `rm` | `-f`, `--force`, `--interactive`, `--one-file-system`, `--no-preserve-root`, `--preserve-root`, `-r`, `-R`, `--recursive`, `-d`, `--dir`, `-v`, `--verbose` | `rm_util.py (23)` | Audit pending |
+| `rmdir` | `--ignore-fail-on-non-empty`, `-p`, `--parents`, `-v`, `--verbose` | `rmdir_util.py (25)` | Audit pending |
+| `runcon` | `-c`, `--compute`, `-t`, `--type=TYPE`, `-u`, `--user=USER`, `-r`, `--role=ROLE`, `-l`, `--range=RANGE` | `runcon_util.py (3)` | Audit pending |
+| `seq` | `-f`, `--format=FORMAT`, `-s`, `--separator=STRING`, `-w`, `--equal-width` | `seq_util.py (33)` | Audit pending |
+| `sha1sum` | `-b`, `--binary`, `-c`, `--check`, `--tag`, `-t`, `--text`, `-z`, `--zero`, `--ignore-missing`, `--quiet`, `--status`, `--strict`, `-w`, `--warn` | `sha1sum_util.py (9)` | Audit pending |
+| `sha224sum` | `-b`, `--binary`, `-c`, `--check`, `--tag`, `-t`, `--text`, `-z`, `--zero`, `--ignore-missing`, `--quiet`, `--status`, `--strict`, `-w`, `--warn` | `sha224sum_util.py (9)` | Audit pending |
+| `sha256sum` | `-b`, `--binary`, `-c`, `--check`, `--tag`, `-t`, `--text`, `-z`, `--zero`, `--ignore-missing`, `--quiet`, `--status`, `--strict`, `-w`, `--warn` | `sha256sum_util.py (9)` | Audit pending |
+| `sha384sum` | `-b`, `--binary`, `-c`, `--check`, `--tag`, `-t`, `--text`, `-z`, `--zero`, `--ignore-missing`, `--quiet`, `--status`, `--strict`, `-w`, `--warn` | `sha384sum_util.py (8)` | Audit pending |
+| `sha512sum` | `-b`, `--binary`, `-c`, `--check`, `--tag`, `-t`, `--text`, `-z`, `--zero`, `--ignore-missing`, `--quiet`, `--status`, `--strict`, `-w`, `--warn` | `sha512sum_util.py (8)` | Audit pending |
+| `shred` | `-f`, `--force`, `-n`, `--iterations=N`, `--random-source=FILE`, `-s`, `--size=N`, `--remove`, `-v`, `--verbose`, `-x`, `--exact`, `-z`, `--zero` | `shred_util.py (1)` | Audit pending |
+| `shuf` | `-e`, `--echo`, `-i`, `--input-range=LO-HI`, `-n`, `--head-count=COUNT`, `-o`, `--output=FILE`, `--random-source=FILE`, `-r`, `--repeat`, `-z`, `--zero-terminated` | `shuf_util.py (6)` | Audit pending |
+| `sleep` | No GNU options (operand-driven) | `sleep_util.py (20)` | Audit pending |
+| `sort` | `-b`, `--ignore-leading-blanks`, `-d`, `--dictionary-order`, `-f`, `--ignore-case`, `-g`, `--general-numeric-sort`, `-i`, `--ignore-nonprinting`, `-M`, `--month-sort`, `-h`, `--human-numeric-sort`, `-n`, `--numeric-sort`, `-R`, `--random-sort`, `--random-source=FILE`, `-r`, `--reverse`, `--sort=WORD`, `-V`, `--version-sort`, `--batch-size=NMERGE`, `-c`, `--check`, `-C`, `--compress-program=PROG`, `--debug`, `--files0-from=F`, `-k`, `--key=KEYDEF`, `-m`, `--merge`, `-o`, `--output=FILE`, `-s`, `--stable`, `-S`, `--buffer-size=SIZE`, `-t`, `--field-separator=SEP`, `-T`, `--temporary-directory=DIR`, `--parallel=N`, `-u`, `--unique`, `-z`, `--zero-terminated` | `sort_util.py (20)` | Audit pending |
+| `split` | `-a`, `--suffix-length=N`, `--additional-suffix=SUFFIX`, `-b`, `--bytes=SIZE`, `-C`, `--line-bytes=SIZE`, `--numeric-suffixes`, `--hex-suffixes`, `-e`, `--elide-empty-files`, `--filter=COMMAND`, `-l`, `--lines=NUMBER`, `-n`, `--number=CHUNKS`, `-t`, `--separator=SEP`, `-u`, `--unbuffered`, `--verbose` | `split_util.py (23)` | Audit pending |
+| `stat` | `-L`, `--dereference`, `-f`, `--file-system`, `--cached=MODE`, `-c`, `--format=FORMAT`, `--printf=FORMAT`, `-t`, `--terse` | `stat_util.py (5)` | Audit pending |
+| `stdbuf` | `-i`, `--input=MODE`, `-o`, `--output=MODE`, `-e`, `--error=MODE` | `stdbuf_util.py (3)` | Audit pending |
+| `stty` | `-a`, `--all`, `-g`, `--save`, `-F`, `--file=DEVICE` | `stty_util.py (4)` | Audit pending |
+| `sum` | `-s`, `--sysv` | `sum_util.py (15)` | Audit pending |
+| `sync` | `-d`, `--data`, `-f`, `--file-system` | `sync_util.py (5)` | Audit pending |
+| `tac` | `-b`, `--before`, `-r`, `--regex`, `-s`, `--separator=STRING` | `tac_util.py (77)` | Audit pending |
+| `tail` | `-c`, `--bytes`, `--debug`, `-f`, `--follow`, `-n`, `--lines`, `--max-unchanged-stats=N`, `--pid=PID`, `-q`, `--quiet`, `--silent`, `--retry`, `-s`, `--sleep-interval=N`, `-v`, `--verbose`, `-z`, `--zero-terminated` | `tail.py (889)` | Audit pending |
+| `tee` | `-a`, `--append`, `-i`, `--ignore-interrupts`, `--output-error` | `tee_util.py (8)` | Audit pending |
+| `test` | No GNU options (operand-driven) | `test_util.py (44)` | Audit pending |
+| `timeout` | `-f`, `--foreground`, `-k`, `--kill-after=DURATION`, `-p`, `--preserve-status`, `-s`, `--signal=SIGNAL`, `-v`, `--verbose` | `timeout_util.py (6)` | Audit pending |
+| `touch` | `-c`, `--no-create`, `-d`, `--date=STRING`, `-h`, `--no-dereference`, `-r`, `--reference=FILE`, `--time=WORD` | `touch_util.py (34)` | Audit pending |
+| `tr` | `-c`, `-C`, `--complement`, `-d`, `--delete`, `-s`, `--squeeze-repeats`, `-t`, `--truncate-set1` | `tr_util.py (16)` | Audit pending |
+| `true` | No GNU options (operand-driven) | `true.py (11)` | Audit pending |
+| `truncate` | `-c`, `--no-create`, `-o`, `--io-blocks`, `-r`, `--reference=RFILE`, `-s`, `--size=SIZE` | `truncate_util.py (3)` | Audit pending |
+| `tsort` | No GNU options (operand-driven) | `tsort_util.py (9)` | Audit pending |
+| `tty` | `-s`, `--silent`, `--quiet` | `tty_util.py (5)` | Audit pending |
+| `uname` | `-a`, `--all`, `-s`, `--kernel-name`, `-n`, `--nodename`, `-r`, `--kernel-release`, `-v`, `--kernel-version`, `-m`, `--machine`, `-p`, `--processor`, `-i`, `--hardware-platform`, `-o`, `--operating-system` | `uname_util.py (14)` | Audit pending |
+| `unexpand` | `-a`, `--all`, `--first-only`, `-t`, `--tabs=N`, `--tabs=LIST` | `unexpand_util.py (27)` | Audit pending |
+| `uniq` | `-c`, `--count`, `-d`, `--repeated`, `--all-repeated`, `-f`, `--skip-fields=N`, `--group`, `-i`, `--ignore-case`, `-s`, `--skip-chars=N`, `-u`, `--unique`, `-z`, `--zero-terminated`, `-w`, `--check-chars=N` | `uniq_util.py (17)` | Audit pending |
+| `unlink` | No GNU options (operand-driven) | `unlink_util.py (11)` | Audit pending |
+| `users` | No GNU options (operand-driven) | `users_util.py (2)` | Audit pending |
+| `vdir` | `-a`, `--all`, `-A`, `--almost-all`, `--author`, `-b`, `--escape`, `--block-size=SIZE`, `-B`, `--ignore-backups`, `--color`, `-d`, `--directory`, `-D`, `--dired`, `-F`, `--classify`, `--file-type`, `--format=WORD`, `--full-time`, `--group-directories-first`, `-G`, `--no-group`, `-h`, `--human-readable`, `--si`, `-H`, `--dereference-command-line`, `--dereference-command-line-symlink-to-dir`, `--hide=PATTERN`, `--hyperlink`, `--indicator-style=WORD`, `-i`, `--inode`, `-I`, `--ignore=PATTERN`, `-k`, `--kibibytes`, `-L`, `--dereference`, `-n`, `--numeric-uid-gid`, `-N`, `--literal`, `-p`, `--indicator-style`, `-q`, `--hide-control-chars`, `--show-control-chars`, `-Q`, `--quote-name`, `--quoting-style=WORD`, `-r`, `--reverse`, `-R`, `--recursive`, `-s`, `--size`, `--sort=WORD`, `--time=WORD`, `--time-style=TIME_STYLE`, `-T`, `--tabsize=COLS`, `-w`, `--width=COLS`, `-Z`, `--context`, `--zero` | `ls_util.py (16)` | Audit pending |
+| `wc` | `-c`, `--bytes`, `-m`, `--chars`, `-l`, `--lines`, `--debug`, `--files0-from=F`, `-L`, `--max-line-length`, `-w`, `--words`, `--total=WHEN` | `wc.py (2807)` | Audit pending |
+| `who` | `-a`, `--all`, `-b`, `-d`, `--login`, `-p`, `-r`, `-t`, `-T`, `-u`, `--boot`, `--dead`, `-H`, `--heading`, `-l`, `--lookup`, `--process`, `-q`, `--count`, `--runlevel`, `-s`, `--short`, `--time`, `-w`, `--mesg`, `--users`, `--message`, `--writable` | `who_util.py (5)` | Audit pending |
+| `whoami` | No GNU options (operand-driven) | `whoami_util.py (3)` | Audit pending |
+| `yes` | No GNU options (operand-driven) | `yes_util.py (12)` | Audit pending |

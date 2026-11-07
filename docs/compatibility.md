@@ -27,7 +27,12 @@ target. It pins the Zov compiler source revision used by the workflow. OS calls
 stay behind `src/shared/` helpers so support can expand when Zov's hosted
 runtime supports more platforms.
 
-The current implemented command set is listed in the project README. Each
-utility has command-specific parity cases in `tests/parity/`; passing the
-present cases does not yet claim full GNU Coreutils compatibility. The README
-tracks the broader command roadmap and the remaining planned utilities.
+The implemented command set is listed in the project README. The
+[compatibility inventory](compatibility-matrix.md) records the GNU 9.11 option
+surface, associated parity suite, current suite case count, and audit status for
+each executable name. Its option list is extracted from the pinned oracle's
+`--help` output; it is a checklist, not evidence that those options have passed.
+A utility is complete only after its documented options and relevant
+interactions, diagnostics, side effects, and platform cases have been audited
+and pass. The existing suite passes 17,510 cases locally, but current coverage
+does not yet establish full compatibility.
