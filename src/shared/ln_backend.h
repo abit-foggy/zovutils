@@ -19,8 +19,13 @@
 #define AT_SYMLINK_FOLLOW 0x400
 #endif
 
+#if defined(__APPLE__)
+#define ZOV_LN_DEFAULT_LINK_OPTION "-L"
+#define ZOV_LN_DEFAULT_LOGICAL 1
+#else
 #define ZOV_LN_DEFAULT_LINK_OPTION "-P"
 #define ZOV_LN_DEFAULT_LOGICAL 0
+#endif
 
 static inline int zov_ln_long(const char *arg, const char *name, size_t keylen) {
     return keylen > 2 && keylen <= strlen(name) && strncmp(arg, name, keylen) == 0;
@@ -349,7 +354,7 @@ static inline int zov_ln_run(int argc, int8_t **argv) {
                 int is_help = zov_ln_long(arg, "--help", keylen);
                 if (value != NULL) { fprintf(stderr, "ln: option '%s' doesn't allow an argument\nTry 'ln --help' for more information.\n", is_help ? "--help" : "--version"); free(operands); return 1; }
                 if (is_help) { zov_ln_help(); free(operands); return 0; }
-                puts("ln (zovutils) 0.4.1"); free(operands); return 0;
+                puts("ln (zovutils) 0.4.2"); free(operands); return 0;
             }
             if (zov_ln_long(arg, "--backup", keylen)) {
                 backup = 1;
