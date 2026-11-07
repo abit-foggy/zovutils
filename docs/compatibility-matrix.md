@@ -62,7 +62,7 @@ Options are collected from each pinned GNU 9.11 executable’s `--help` output. 
 | `od` | `-A`, `--address-radix=RADIX`, `--endian`, `-j`, `--skip-bytes=BYTES`, `-N`, `--read-bytes=BYTES`, `-t`, `--format=TYPE`, `-v`, `--output-duplicates`, `--traditional` | `od_util.py (110)` | Audit pending |
 | `paste` | `-d`, `--delimiters=LIST`, `-s`, `--serial`, `-z`, `--zero-terminated` | `paste_util.py (17)` | Audit pending |
 | `pathchk` | `--portability` | `pathchk_util.py (10)` | Audit pending |
-| `pinky` | `--lookup` | `pinky_util.py (4)` | Audit pending |
+| `pinky` | `-l`, `-b`, `-h`, `-p`, `-s`, `-f`, `-w`, `-i`, `-q`, `--lookup` | `pinky_util.py (12)` | In progress: short-format variants and long account fields covered; project/plan files and hostname lookup pending |
 | `pr` | `-a`, `--across`, `-c`, `--show-control-chars`, `-d`, `--double-space`, `-D`, `--date-format=FORMAT`, `-F`, `-f`, `--form-feed`, `-h`, `--header=HEADER`, `-J`, `--join-lines`, `-l`, `--length=PAGE_LENGTH`, `-m`, `--merge`, `-N`, `--first-line-number=NUMBER`, `-o`, `--indent=MARGIN`, `-r`, `--no-file-warnings`, `-t`, `--omit-header`, `-T`, `--omit-pagination`, `-v`, `--show-nonprinting`, `-w`, `--width=PAGE_WIDTH`, `-W`, `--page-width=PAGE_WIDTH` | `pr_util.py (6)` | Audit pending |
 | `printenv` | `-0`, `--null` | `printenv.py (18)` | Audit pending |
 | `printf` | No GNU options (operand-driven) | `printf.py (44)` | Audit pending |

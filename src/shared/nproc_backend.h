@@ -13,7 +13,7 @@ static inline int zov_nproc_run(int argc, int8_t **argv) {
     for (int i = 0; i < argc; ++i) {
         const char *a = (const char *)argv[i];
         if (!strcmp(a, "--help")) { puts("Usage: nproc [OPTION]...\nPrint the number of processing units available.\n\n      --all       print the number of installed processors\n      --ignore=N  if possible, exclude N processing units\n      --help      display this help and exit\n      --version   output version information and exit\n\nReport bugs to: bug-coreutils@gnu.org\nGNU coreutils home page: <https://www.gnu.org/software/coreutils/>"); return 0; }
-        if (!strcmp(a, "--version")) { puts("nproc (zovutils) 0.10.26"); return 0; }
+        if (!strcmp(a, "--version")) { puts("nproc (zovutils) 0.10.27"); return 0; }
         if (!strcmp(a, "--all")) { all = 1; continue; }
         if (!strncmp(a, "--ignore=", 9) || !strcmp(a, "--ignore")) {
             const char *v = a[8] == '=' ? a + 9 : (i + 1 < argc ? (const char *)argv[++i] : NULL);

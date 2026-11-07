@@ -1,7 +1,7 @@
 # zovutils
 
 [![Parity CI](https://github.com/abit-foggy/zovutils/actions/workflows/parity.yml/badge.svg?branch=master)](https://github.com/abit-foggy/zovutils/actions/workflows/parity.yml)
-![Version 0.10.26](https://img.shields.io/badge/version-0.10.26-blue)
+![Version 0.10.27](https://img.shields.io/badge/version-0.10.27-blue)
 ![Alpha](https://img.shields.io/badge/status-alpha-orange)
 ![GNU Coreutils target 9.11](https://img.shields.io/badge/target-GNU%20Coreutils%209.11-lightgrey)
 ![Zov 0.10.0](https://img.shields.io/badge/language-Zov%200.10.0-6f42c1)
@@ -15,7 +15,7 @@ is copied, ported, or linked into this project.
 
 ## Status
 
-The project is in alpha (`0.10.26`). The current command set is:
+The project is in alpha (`0.10.27`). The current command set is:
 
 - `b2sum`
 - `base32`
@@ -74,7 +74,6 @@ The project is in alpha (`0.10.26`). The current command set is:
 - `pathchk`
 - `pinky`
 - `printenv`
-- `pr`
 - `pr`
 - `printf`
 - `ptx`
