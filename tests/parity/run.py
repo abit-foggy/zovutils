@@ -35,6 +35,7 @@ import cut_util
 import dirname
 import echo
 import expand_util
+import expr_util
 import env
 import false
 import factor_util
@@ -88,7 +89,7 @@ def main() -> int:
     suite = Suite(args.zovutils.resolve(), args.gnu_dir.resolve())
     try:
         require_executables(suite)
-        for module in (tsort_util, tee_util, b2sum_util, md5sum_util, sha1sum_util, sha224sum_util, sha256sum_util, cksum_util, sum_util, base32_util, base64_util, basenc_util, basename, cat, chmod_util, comm_util, cp_util, csplit_util, cut_util, dirname, echo, expand_util, env, false, factor_util, fold_util, fmt_util, head, join_util, link_util, ln_util, mkdir_util, mkfifo_util, mktemp_util, mv_util, nl_util, nproc_util, numfmt_util, ownership_util, paste_util, pathchk_util, printenv, printf, pwd_util, readlink_util, realpath_util, rm_util, rmdir_util, seq_util, sleep_util, sort_util, split_util, tac_util, od_util, test_util, tail, touch_util, tr_util, true, unlink_util, uniq_util, unexpand_util, wc, yes_util, fuzz):
+        for module in (expr_util, tsort_util, tee_util, b2sum_util, md5sum_util, sha1sum_util, sha224sum_util, sha256sum_util, cksum_util, sum_util, base32_util, base64_util, basenc_util, basename, cat, chmod_util, comm_util, cp_util, csplit_util, cut_util, dirname, echo, expand_util, env, false, factor_util, fold_util, fmt_util, head, join_util, link_util, ln_util, mkdir_util, mkfifo_util, mktemp_util, mv_util, nl_util, nproc_util, numfmt_util, ownership_util, paste_util, pathchk_util, printenv, printf, pwd_util, readlink_util, realpath_util, rm_util, rmdir_util, seq_util, sleep_util, sort_util, split_util, tac_util, od_util, test_util, tail, touch_util, tr_util, true, unlink_util, uniq_util, unexpand_util, wc, yes_util, fuzz):
             start = suite.count
             module.run(suite)
             print(f"[PASS] {module.__name__}: {suite.count - start} parity cases")
