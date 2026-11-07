@@ -498,7 +498,7 @@ static inline int zov_cp_run(int argc, int8_t **argv) {
             const char *eq = strchr(arg, '='); size_t n = eq ? (size_t)(eq - arg) : strlen(arg);
             const char *value = eq ? eq + 1 : NULL;
             if (zov_cp_long(arg, "--help", n)) { if (value != NULL) { fputs("cp: option '--help' doesn't allow an argument\nTry 'cp --help' for more information.\n", stderr); free(operands); return 1; } zov_cp_help(); free(operands); return 0; }
-            if (zov_cp_long(arg, "--version", n)) { puts("cp (zovutils) 0.10.4"); free(operands); return 0; }
+            if (zov_cp_long(arg, "--version", n)) { puts("cp (zovutils) 0.10.5"); free(operands); return 0; }
             if (zov_cp_long(arg, "--recursive", n)) { opt.recursive = 1; continue; }
             if (zov_cp_long(arg, "--archive", n)) { opt.recursive = 1; opt.preserve = 1; opt.dereference = 0; continue; }
             if (zov_cp_long(arg, "--preserve", n)) { opt.preserve = 1; continue; }

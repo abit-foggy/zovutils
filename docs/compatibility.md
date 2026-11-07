@@ -36,5 +36,5 @@ each executable name. Its option list is extracted from the pinned oracle's
 `--help` output; it is a checklist, not evidence that those options have passed.
 A utility is complete only after its documented options and relevant
 interactions, diagnostics, side effects, and platform cases have been audited
-and pass. The existing suite passes 17,621 cases locally, but current coverage
+and pass. The existing suite passes 17,634 cases locally, but current coverage
 does not yet establish full compatibility.
