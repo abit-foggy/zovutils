@@ -22,6 +22,7 @@ The project is in alpha (`0.8.0`). The current command set is:
 - `basenc`
 - `basename`
 - `cat`
+- `cksum`
 - `chgrp`
 - `chmod`
 - `chown`
@@ -61,6 +62,7 @@ The project is in alpha (`0.8.0`). The current command set is:
 - `seq`
 - `sleep`
 - `sort`
+- `sum`
 - `split`
 - `tac`
 - `tail`

@@ -3,6 +3,8 @@ use std::io;
 use <stdio.h> as c;
 
 use commands::cat;
+use commands::cksum;
+use commands::sum;
 use commands::comm;
 use commands::csplit;
 use commands::split;
@@ -83,6 +85,8 @@ fn dispatch(name: str, start: usize, argc: usize) i32 = {
     if (name == "true") { return true_cmd::run(start, argc); };
     if (name == "uniq") { return uniq::run(start, argc); };
     if (name == "yes") { return yescmd::run(start, argc); };
+    if (name == "cksum") { return cksum::run(start, argc); };
+    if (name == "sum") { return sum::run(start, argc); };
     if (name == "cat") { return cat::run(start, argc); };
     if (name == "comm") { return comm::run(start, argc); };
     if (name == "csplit") { return csplit::run(start, argc); };
@@ -140,12 +144,12 @@ export fn main() i32 = {
     };
     if (argc < 2usize) {
         io::eprintln("usage: zovutils <utility> [arguments...]");
-        io::eprintln("utilities: base32 base64 basenc basename cat chgrp chmod chown comm cp csplit cut dirname echo env expand false factor fold fmt head join link ln mkdir mkfifo mktemp mv nl nproc numfmt od paste pathchk printenv printf pwd readlink realpath rm rmdir seq sleep sort split tac tail test touch tr true uniq unlink unexpand wc yes");
+        io::eprintln("utilities: base32 base64 basenc basename cat cksum chgrp chmod chown comm cp csplit cut dirname echo env expand false factor fold fmt head join link ln mkdir mkfifo mktemp mv nl nproc numfmt od paste pathchk printenv printf pwd readlink realpath rm rmdir seq sleep sort split tac tail test touch tr true uniq unlink unexpand wc yes");
         return 1;
     };
     if (env::argat(1usize) == "--help" || env::argat(1usize) == "-h") {
         io::println("usage: zovutils <utility> [arguments...]");
-        io::println("utilities: base32 base64 basenc basename cat chgrp chmod chown comm cp csplit cut dirname echo env expand false factor fold fmt head join link ln mkdir mkfifo mktemp mv nl nproc numfmt od paste pathchk printenv printf pwd readlink realpath rm rmdir seq sleep sort split tac tail test touch tr true uniq unlink unexpand wc yes");
+        io::println("utilities: base32 base64 basenc basename cat cksum chgrp chmod chown comm cp csplit cut dirname echo env expand false factor fold fmt head join link ln mkdir mkfifo mktemp mv nl nproc numfmt od paste pathchk printenv printf pwd readlink realpath rm rmdir seq sleep sort split tac tail test touch tr true uniq unlink unexpand wc yes");
         return 0;
     };
     if (argc >= 2usize && (env::argat(1usize) == "--version" || env::argat(1usize) == "-V")) {
