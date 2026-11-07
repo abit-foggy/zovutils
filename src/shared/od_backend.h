@@ -78,7 +78,8 @@ static inline int zov_od_parse_types(const char *spec, zov_od_type *types,
             return 0;
         }
         int supported = integral ? (size == 1 || size == 2 || size == 4 || size == 8)
-                                 : (size == 2 || size == 4 || size == 8 || size == 16);
+                                 : (size == 2 || size == 4 || size == 8 ||
+                                    (size == 16 && sizeof(long double) == 16));
         if (!supported) {
             snprintf(error, error_size,
                      "od: invalid type string '%s';\nthis system doesn't provide a %zu-byte %s type\n",
@@ -211,7 +212,8 @@ static inline size_t zov_od_field_width(zov_od_type type) {
     if (type.kind == 'c') return 3;
     if (type.kind == 'x') return type.size * 2;
     if (type.kind == 'o') return type.size * 3;
-    if (type.kind == 'f') return type.size == 2 ? 15 : type.size == 4 ? 15 : type.size == 8 ? 24 : 29;
+    if (type.kind == 'f') return type.size == 2 ? 15 : type.size == 4 ? 15 : type.size == 8 ? 24 :
+        (LDBL_MANT_DIG > 64 ? 46 : 29);
     if (type.kind == 'd') return type.size == 1 ? 4 : type.size == 2 ? 6 : type.size == 4 ? 11 : 20;
     return type.size == 1 ? 3 : type.size == 2 ? 5 : type.size == 4 ? 10 : 20;
 }
@@ -458,7 +460,7 @@ static inline int zov_od_run(int argc, int8_t **argv) {
                     return 1;
                 }
                 if (strcmp(name, "--help") == 0) { zov_od_help(); free(files); return 0; }
-                if (strcmp(name, "--version") == 0) { puts("od (zovutils) 0.1.209"); free(files); return 0; }
+                if (strcmp(name, "--version") == 0) { puts("od (zovutils) 0.1.210"); free(files); return 0; }
                 if (strcmp(name, "--output-duplicates") == 0) { show_duplicates = 1; continue; }
                 continue;
             }
