@@ -52,6 +52,9 @@ use commands::id;
 use commands::groups;
 use commands::join;
 use commands::link;
+use commands::ls;
+use commands::dir;
+use commands::vdir;
 use commands::logname;
 use commands::nice;
 use commands::mkfifo;
@@ -150,6 +153,9 @@ fn dispatch(name: str, start: usize, argc: usize) i32 = {
     if (name == "join") { return join::run(start, argc); };
     if (name == "logname") { return logname::run(start, argc); };
     if (name == "nice") { return nice::run(start, argc); };
+    if (name == "ls") { return ls::run(start, argc); };
+    if (name == "dir") { return dir::run(start, argc); };
+    if (name == "vdir") { return vdir::run(start, argc); };
     if (name == "link") { return link::run(start, argc); };
     if (name == "mknod") { return mknod::run(start, argc); };
     if (name == "mkfifo") { return mkfifo::run(start, argc); };
@@ -192,12 +198,12 @@ export fn main() i32 = {
     };
     if (argc < 2usize) {
         io::eprintln("usage: zovutils <utility> [arguments...]");
-        io::eprintln("utilities: [ b2sum base32 base64 basename basenc cat chgrp chmod chown cksum comm cp csplit cut date dirname echo env expand expr factor false fmt fold groups head id join link ln logname md5sum mkdir mkfifo mknod mktemp mv nice nl nohup nproc numfmt od paste pathchk printenv printf pwd readlink realpath rm rmdir seq sha1sum sha224sum sha256sum sha384sum sha512sum sleep sort split sum sync tac tail tee test timeout touch tr true truncate tsort tty uname unexpand uniq unlink wc whoami yes");
+        io::eprintln("utilities: [ b2sum base32 base64 basename basenc cat chgrp chmod chown cksum comm cp csplit cut date dir dirname echo env expand expr factor false fmt fold groups head id join link ln logname ls md5sum mkdir mkfifo mknod mktemp mv nice nl nohup nproc numfmt od paste pathchk printenv printf pwd readlink realpath rm rmdir seq sha1sum sha224sum sha256sum sha384sum sha512sum sleep sort split sum sync tac tail tee test timeout touch tr true truncate tsort tty uname unexpand uniq unlink vdir wc whoami yes");
         return 1;
     };
     if (env::argat(1usize) == "--help" || env::argat(1usize) == "-h") {
         io::println("usage: zovutils <utility> [arguments...]");
-        io::println("utilities: [ b2sum base32 base64 basename basenc cat chgrp chmod chown cksum comm cp csplit cut date dirname echo env expand expr factor false fmt fold groups head id join link ln logname md5sum mkdir mkfifo mknod mktemp mv nice nl nohup nproc numfmt od paste pathchk printenv printf pwd readlink realpath rm rmdir seq sha1sum sha224sum sha256sum sha384sum sha512sum sleep sort split sum sync tac tail tee test timeout touch tr true truncate tsort tty uname unexpand uniq unlink wc whoami yes");
+        io::println("utilities: [ b2sum base32 base64 basename basenc cat chgrp chmod chown cksum comm cp csplit cut date dir dirname echo env expand expr factor false fmt fold groups head id join link ln logname ls md5sum mkdir mkfifo mknod mktemp mv nice nl nohup nproc numfmt od paste pathchk printenv printf pwd readlink realpath rm rmdir seq sha1sum sha224sum sha256sum sha384sum sha512sum sleep sort split sum sync tac tail tee test timeout touch tr true truncate tsort tty uname unexpand uniq unlink vdir wc whoami yes");
         return 0;
     };
     if (argc >= 2usize && (env::argat(1usize) == "--version" || env::argat(1usize) == "-V")) {

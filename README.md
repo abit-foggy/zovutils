@@ -33,6 +33,7 @@ The project is in alpha (`0.8.0`). The current command set is:
 - `csplit`
 - `cut`
 - `date`
+- `dir`
 - `dirname`
 - `echo`
 - `env`
@@ -49,6 +50,7 @@ The project is in alpha (`0.8.0`). The current command set is:
 - `link`
 - `ln`
 - `logname`
+- `ls`
 - `md5sum`
 - `mkdir`
 - `mkfifo`
@@ -95,6 +97,7 @@ The project is in alpha (`0.8.0`). The current command set is:
 - `tty`
 - `unlink`
 - `uname`
+- `vdir`
 - `uniq`
 - `wc`
 - `whoami`
