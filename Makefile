@@ -1,7 +1,7 @@
 ZOVC ?= zovc
 PREFIX ?= /usr/local
 BINDIR ?= $(PREFIX)/bin
-UTILS = basename cat comm csplit cut dirname echo env expand false fold fmt head join mkdir nl od paste printenv printf pwd rmdir seq sleep sort split tac test tail tr true uniq unexpand wc yes
+UTILS = basename cat comm csplit cut dirname echo env expand false fold fmt head join mkdir nl od paste printenv printf pwd rmdir seq sleep sort split tac test tail touch tr true uniq unexpand wc yes
 
 .PHONY: all check build unit parity asan-parity test install uninstall clean
 
