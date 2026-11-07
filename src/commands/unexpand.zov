@@ -62,7 +62,7 @@ export fn run(start: usize, argc: usize) i32 = {
             if (key == "--all" || is_prefix(key, "--all")) { all_blanks = true; i += 1usize; continue; };
             if (key == "--first-only" || is_prefix(key, "--first-only")) { first_only = true; i += 1usize; continue; };
             if (key == "--help" || is_prefix(key, "--help")) { help(); stream::finishoutput("unexpand"); return 0; };
-            if (key == "--version" || is_prefix(key, "--version")) { io::println("unexpand (zovutils) 0.1.211"); stream::finishoutput("unexpand"); return 0; };
+            if (key == "--version" || is_prefix(key, "--version")) { io::println("unexpand (zovutils) 0.2.0"); stream::finishoutput("unexpand"); return 0; };
             c::fprintf(c::stderr, "unexpand: unrecognized option '%s'\n", arg); usage_error(); return 1;
         };
         if (!options_done && arg.len > 1usize && arg.data[0usize] == 45u8) {

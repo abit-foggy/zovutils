@@ -334,7 +334,7 @@ export fn run(start: usize, argc: usize) i32 = {
             };
             if (longprefix(arg, "--version")) {
                 if (longhasvalue(arg)) { badlongargument("--version"); return 125; };
-                io::println("env (zovutils) 0.1.211");
+                io::println("env (zovutils) 0.2.0");
                 if (!stream::finishoutput("env")) { return 125; };
                 return 0;
             };
