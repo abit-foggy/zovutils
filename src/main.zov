@@ -11,6 +11,7 @@ use commands::cksum;
 use commands::sum;
 use commands::comm;
 use commands::csplit;
+use commands::date;
 use commands::split;
 use commands::tac;
 use commands::od;
@@ -114,6 +115,7 @@ fn dispatch(name: str, start: usize, argc: usize) i32 = {
     if (name == "sha256sum") { return sha256sum::run(start, argc); };
     if (name == "cat") { return cat::run(start, argc); };
     if (name == "comm") { return comm::run(start, argc); };
+    if (name == "date") { return date::run(start, argc); };
     if (name == "csplit") { return csplit::run(start, argc); };
     if (name == "split") { return split::run(start, argc); };
     if (name == "tac") { return tac::run(start, argc); };
@@ -178,12 +180,12 @@ export fn main() i32 = {
     };
     if (argc < 2usize) {
         io::eprintln("usage: zovutils <utility> [arguments...]");
-        io::eprintln("utilities: [ b2sum base32 base64 basename basenc cat chgrp chmod chown cksum comm cp csplit cut dirname echo env expand expr factor false fmt fold groups head join link ln logname md5sum mkdir mkfifo mktemp mv nice nl nproc numfmt od paste pathchk printenv printf pwd readlink realpath rm rmdir seq sha1sum sha224sum sha256sum sleep sort split sum sync tac tail tee test touch tr true truncate tsort tty uname unexpand uniq unlink wc whoami yes");
+        io::eprintln("utilities: [ b2sum base32 base64 basename basenc cat chgrp chmod chown cksum comm cp csplit cut date dirname echo env expand expr factor false fmt fold groups head join link ln logname md5sum mkdir mkfifo mktemp mv nice nl nproc numfmt od paste pathchk printenv printf pwd readlink realpath rm rmdir seq sha1sum sha224sum sha256sum sleep sort split sum sync tac tail tee test touch tr true truncate tsort tty uname unexpand uniq unlink wc whoami yes");
         return 1;
     };
     if (env::argat(1usize) == "--help" || env::argat(1usize) == "-h") {
         io::println("usage: zovutils <utility> [arguments...]");
-        io::println("utilities: [ b2sum base32 base64 basename basenc cat chgrp chmod chown cksum comm cp csplit cut dirname echo env expand expr factor false fmt fold groups head join link ln logname md5sum mkdir mkfifo mktemp mv nice nl nproc numfmt od paste pathchk printenv printf pwd readlink realpath rm rmdir seq sha1sum sha224sum sha256sum sleep sort split sum sync tac tail tee test touch tr true truncate tsort tty uname unexpand uniq unlink wc whoami yes");
+        io::println("utilities: [ b2sum base32 base64 basename basenc cat chgrp chmod chown cksum comm cp csplit cut date dirname echo env expand expr factor false fmt fold groups head join link ln logname md5sum mkdir mkfifo mktemp mv nice nl nproc numfmt od paste pathchk printenv printf pwd readlink realpath rm rmdir seq sha1sum sha224sum sha256sum sleep sort split sum sync tac tail tee test touch tr true truncate tsort tty uname unexpand uniq unlink wc whoami yes");
         return 0;
     };
     if (argc >= 2usize && (env::argat(1usize) == "--version" || env::argat(1usize) == "-V")) {
