@@ -19,5 +19,6 @@ def run(s: Suite) -> None:
     s.case("dircolors", [config, config])
     s.case("dircolors", [s.path("missing-colors.conf")])
     s.case("dircolors", [], extra_env={"TERM": "dumb"})
+    s.case("dircolors", ["--print-database"])
     s.product_version("dircolors")
     s.symlink_dispatch("dircolors", ["-b", config])

@@ -172,7 +172,7 @@ static inline int zov_mv_run(int argc, int8_t **argv) {
             const char *eq = strchr(arg, '='); size_t len = eq ? (size_t)(eq - arg) : strlen(arg);
             const char *value = eq ? eq + 1 : NULL;
             if (zov_mv_long(arg, "--help", len)) { if (value != NULL) { fputs("mv: option '--help' doesn't allow an argument\nTry 'mv --help' for more information.\n", stderr); free(operands); return 1; } zov_mv_help(); free(operands); return 0; }
-            if (zov_mv_long(arg, "--version", len)) { puts("mv (zovutils) 0.10.30"); free(operands); return 0; }
+            if (zov_mv_long(arg, "--version", len)) { puts("mv (zovutils) 0.10.31"); free(operands); return 0; }
             if (zov_mv_long(arg, "--force", len)) { opt.force = 1; opt.interactive = 0; continue; }
             if (zov_mv_long(arg, "--interactive", len)) { opt.interactive = 1; opt.force = 0; opt.no_clobber = 0; continue; }
             if (zov_mv_long(arg, "--no-clobber", len)) { opt.no_clobber = 1; opt.interactive = 0; continue; }

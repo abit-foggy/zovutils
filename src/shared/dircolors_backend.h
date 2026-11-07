@@ -6,6 +6,7 @@
 #include <errno.h>
 #include <ctype.h>
 #include <fnmatch.h>
+#include "dircolors_database.h"
 
 typedef struct { char *key; char *value; } zov_dc_entry;
 
@@ -115,7 +116,7 @@ static inline int zov_dircolors_run(int argc, char **argv) {
             puts("Usage: dircolors [OPTION]... [FILE]\nOutput commands to set the LS_COLORS environment variable.\n  -b, --sh, --bourne-shell  output Bourne shell code\n  -c, --csh, --c-shell      output C shell code\n  -p, --print-database      output defaults\n      --print-ls-colors      output escaped colors for display\n      --help                 display this help and exit\n      --version              output version information and exit");
             return 0;
         }
-        if (!strcmp(a, "--version")) { puts("dircolors (zovutils) 0.10.30"); return 0; }
+        if (!strcmp(a, "--version")) { puts("dircolors (zovutils) 0.10.31"); return 0; }
         if (!strcmp(a, "-b") || !strcmp(a, "--sh") || !strcmp(a, "--bourne-shell")) { shell = 0; shell_selected = 1; continue; }
         if (!strcmp(a, "-c") || !strcmp(a, "--csh") || !strcmp(a, "--c-shell")) { shell = 1; shell_selected = 1; continue; }
         if (!strcmp(a, "-p") || !strcmp(a, "--print-database")) { print_database = 1; continue; }
@@ -129,7 +130,7 @@ static inline int zov_dircolors_run(int argc, char **argv) {
         return 1;
     }
     if (print_database) {
-        puts("# Configuration file for dircolors\n# zovutils default color database\nTERM xterm*\nNORMAL 00\nFILE 00\nDIR 01;34\nLINK 01;36\nFIFO 40;33\nSOCK 01;35\nBLK 40;33;01\nCHR 40;33;01\nORPHAN 40;31;01\nEXEC 01;32");
+        fputs(zov_dircolors_database, stdout);
         return 0;
     }
     zov_dc_entry *items = NULL;
