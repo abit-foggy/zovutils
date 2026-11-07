@@ -36,6 +36,7 @@ The project is in alpha (`0.9.0`). The current command set is:
 - `dd`
 - `dir`
 - `dirname`
+- `du`
 - `echo`
 - `env`
 - `expand`
@@ -48,6 +49,7 @@ The project is in alpha (`0.9.0`). The current command set is:
 - `head`
 - `hostid`
 - `id`
+- `install`
 - `join`
 - `link`
 - `ln`
