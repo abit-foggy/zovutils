@@ -6,6 +6,7 @@ import difflib
 import os
 import pty
 import re
+import stat
 import select
 import signal
 import subprocess
@@ -13,6 +14,7 @@ import sys
 import tempfile
 import tty
 from pathlib import Path
+from typing import Callable
 
 
 class ParityFailure(AssertionError):
@@ -91,7 +93,12 @@ class Suite:
             raise ParityFailure("\n".join(details))
 
     def _run(
-        self, command: list[str], stdin: bytes, *, env: dict[str, str] | None = None
+        self,
+        command: list[str],
+        stdin: bytes,
+        *,
+        env: dict[str, str] | None = None,
+        cwd: Path | None = None,
     ) -> tuple[int, bytes, bytes]:
         try:
             result = subprocess.run(
@@ -100,12 +107,76 @@ class Suite:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 env=env or self.env,
+                cwd=cwd,
                 timeout=15,
                 check=False,
             )
         except subprocess.TimeoutExpired as exc:
             raise ParityFailure(f"timed out after 15 seconds: {command!r}") from exc
         return result.returncode, result.stdout, result.stderr
+
+    @staticmethod
+    def _filesystem_snapshot(root: Path, *, compare_mtimes: bool = False) -> list[tuple[object, ...]]:
+        snapshot: list[tuple[object, ...]] = []
+        inode_groups: dict[tuple[int, int], int] = {}
+        for current, dirs, files in os.walk(root, followlinks=False):
+            dirs.sort()
+            files.sort()
+            for name in dirs + files:
+                path = Path(current, name)
+                info = path.lstat()
+                mode = stat.S_IMODE(info.st_mode)
+                if stat.S_ISDIR(info.st_mode):
+                    kind, detail = "directory", b""
+                elif stat.S_ISREG(info.st_mode):
+                    kind = "file"
+                    identity = (info.st_dev, info.st_ino)
+                    group = inode_groups.setdefault(identity, len(inode_groups))
+                    detail = (path.read_bytes(), group if info.st_nlink > 1 else None)
+                elif stat.S_ISLNK(info.st_mode):
+                    kind, detail = "symlink", os.readlink(path)
+                elif stat.S_ISFIFO(info.st_mode):
+                    kind, detail = "fifo", b""
+                else:
+                    kind, detail = "special", b""
+                row: tuple[object, ...] = (path.relative_to(root).as_posix(), kind, mode, detail)
+                if compare_mtimes:
+                    row += (info.st_mtime_ns,)
+                snapshot.append(row)
+        return snapshot
+
+    def case_filesystem(
+        self,
+        utility: str,
+        args: list[str],
+        *,
+        setup: Callable[[Path], None],
+        stdin: bytes = b"",
+        extra_env: dict[str, str] | None = None,
+        compare_mtimes: bool = False,
+    ) -> None:
+        """Compare command output and fixture-tree effects in isolated roots."""
+        with tempfile.TemporaryDirectory(prefix=f"{utility}-zov-", dir=self.root) as zdir, \
+             tempfile.TemporaryDirectory(prefix=f"{utility}-gnu-", dir=self.root) as gdir:
+            zroot, groot = Path(zdir), Path(gdir)
+            setup(zroot)
+            setup(groot)
+            zenv = self.env.copy()
+            genv = self.env.copy()
+            if extra_env:
+                zenv.update(extra_env)
+                genv.update(extra_env)
+            genv["PATH"] = str(self.gnu_dir) + os.pathsep + genv.get("PATH", "")
+            zov = self._run([str(self.zovutils), utility, *args], stdin, env=zenv, cwd=zroot)
+            gnu = self._run([utility, *args], stdin, env=genv, cwd=groot)
+            zsnapshot = self._filesystem_snapshot(zroot, compare_mtimes=compare_mtimes)
+            gsnapshot = self._filesystem_snapshot(groot, compare_mtimes=compare_mtimes)
+            self.count += 1
+            if zov != gnu or zsnapshot != gsnapshot:
+                raise ParityFailure(
+                    f"{utility} filesystem parity failed for {args!r}: "
+                    f"zov={zov!r}, GNU={gnu!r}, zov tree={zsnapshot!r}, GNU tree={gsnapshot!r}"
+                )
 
     def oracle_version(self) -> str:
         result = subprocess.run(
