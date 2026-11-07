@@ -11,9 +11,12 @@
 #include <sys/stat.h>
 #include <limits.h>
 #include <utmpx.h>
+#ifndef RUN_LVL
+#define RUN_LVL 1
+#endif
 static inline int zov_users_run(int argc,char**argv){for(int i=0;i<argc;i++){if(!strcmp(argv[i],"--help")){puts("Usage: users [OPTION]... [FILE]\nPrint the user names of users currently logged in.\n  --help     display this help and exit\n  --version  output version information and exit");return 0;}if(!strcmp(argv[i],"--version")){puts("users (zovutils) 0.10.38");return 0;}fprintf(stderr,"users: extra operand '%s'\nTry 'users --help' for more information.\n",argv[i]);return 1;}setutxent();struct utmpx*u;int first=1;while((u=getutxent()))if(u->ut_type==USER_PROCESS){if(!first)putchar(' ');size_t n=0;while(n<sizeof(u->ut_user)&&u->ut_user[n])n++;fwrite(u->ut_user,1,n,stdout);first=0;}endutxent();if(!first)putchar('\n');return 0;}
 static inline int zov_who_run(int argc,char**argv){
- int header=0,quick=0,boot=0,all=0;
+ int header=0,quick=0,boot=0,all=0,dead=0,login=0,process=0,runlevel=0,clock_change=0;
  for(int i=0;i<argc;i++){
   const char*a=argv[i];
   if(!strcmp(a,"--help")){puts("Usage: who [OPTION]... [ FILE | ARG1 ARG2 ]\nPrint information about users who are currently logged in.\n  -a, --all       same as -b -d --login -p -r -t -T -u\n  -b, --boot      time of last system boot\n  -d, --dead      print dead processes\n  -H, --heading   print line of column headings\n  -l, --login     print system login processes\n      --lookup    attempt to canonicalize hostnames via DNS\n  -m              only hostname and user associated with standard input\n  -p, --process   print active processes spawned by init\n  -q, --count     print only login names and number of users logged on\n  -r, --runlevel  print current runlevel\n  -s, --short     print only name, line, and time (default)\n  -t, --time      print last system clock change\n  -T, -w, --mesg  add user's message status\n  -u, --users     list logged-in users, including idle time\n      --help      display this help and exit\n      --version   output version information and exit");return 0;}
@@ -21,16 +24,26 @@ static inline int zov_who_run(int argc,char**argv){
   if(!strcmp(a,"--"))break;
   if(!strcmp(a,"--heading")){header=1;continue;}
   if(!strcmp(a,"--count")){quick=1;continue;}
-  if(!strcmp(a,"--all")){all=1;boot=1;continue;}
+  if(!strcmp(a,"--all")){all=1;boot=dead=login=process=runlevel=clock_change=1;continue;}
   if(!strcmp(a,"--boot")){boot=1;continue;}
-  if(!strcmp(a,"--dead")||!strcmp(a,"--login")||!strcmp(a,"--lookup")||!strcmp(a,"--process")||!strcmp(a,"--runlevel")||!strcmp(a,"--short")||!strcmp(a,"--time")||!strcmp(a,"--mesg")||!strcmp(a,"--message")||!strcmp(a,"--writable")||!strcmp(a,"--users"))continue;
+  if(!strcmp(a,"--dead")){dead=1;continue;}
+  if(!strcmp(a,"--login")){login=1;continue;}
+  if(!strcmp(a,"--process")){process=1;continue;}
+  if(!strcmp(a,"--runlevel")){runlevel=1;continue;}
+  if(!strcmp(a,"--time")){clock_change=1;continue;}
+  if(!strcmp(a,"--lookup")||!strcmp(a,"--short")||!strcmp(a,"--mesg")||!strcmp(a,"--message")||!strcmp(a,"--writable")||!strcmp(a,"--users"))continue;
   if(a[0]=='-'&&a[1]=='-'&&a[2]){fprintf(stderr,"who: unrecognized option '%s'\nTry 'who --help' for more information.\n",a);return 1;}
-  if(a[0]=='-'&&a[1]){for(size_t j=1;a[j];j++){switch(a[j]){case 'a':all=1;boot=1;break;case 'b':boot=1;break;case 'd':case 'l':case 'm':case 'p':case 'r':case 's':case 't':case 'T':case 'w':case 'u':break;case 'H':header=1;break;case 'q':quick=1;break;default:fprintf(stderr,"who: invalid option -- '%c'\nTry 'who --help' for more information.\n",a[j]);return 1;}}}
+  if(a[0]=='-'&&a[1]){for(size_t j=1;a[j];j++){switch(a[j]){case 'a':all=1;boot=dead=login=process=runlevel=clock_change=1;break;case 'b':boot=1;break;case 'd':dead=1;break;case 'l':login=1;break;case 'm':break;case 'p':process=1;break;case 'r':runlevel=1;break;case 's':break;case 't':clock_change=1;break;case 'T':case 'w':case 'u':break;case 'H':header=1;break;case 'q':quick=1;break;default:fprintf(stderr,"who: invalid option -- '%c'\nTry 'who --help' for more information.\n",a[j]);return 1;}}}
  }
  if(header&&!quick)puts("NAME     LINE         TIME         COMMENT");
  setutxent();struct utmpx*u;int count=0;
  while((u=getutxent())){
   if(boot&&u->ut_type==BOOT_TIME){time_t bt=(time_t)u->ut_tv.tv_sec;struct tm tmv;char b[64];if(localtime_r(&bt,&tmv))strftime(b,sizeof b,"%b %e %H:%M",&tmv);else b[0]=0;printf("%*s system boot  %s\n",all?10:8,"",b);continue;}
+  if((runlevel||all)&&u->ut_type==RUN_LVL){time_t rt=(time_t)u->ut_tv.tv_sec;struct tm tmv;char b[64];if(localtime_r(&rt,&tmv))strftime(b,sizeof b,"%b %e %H:%M",&tmv);else b[0]=0;printf("           run-level %d  %s\n",u->ut_pid,b);continue;}
+  if((login||all)&&u->ut_type==LOGIN_PROCESS){time_t lt=(time_t)u->ut_tv.tv_sec;struct tm tmv;char b[64],line[sizeof(u->ut_line)+1];if(localtime_r(&lt,&tmv))strftime(b,sizeof b,"%b %e %H:%M",&tmv);else b[0]=0;memcpy(line,u->ut_line,sizeof(u->ut_line));line[sizeof(u->ut_line)]=0;printf("LOGIN      %-12s %s              %d id=%.*s\n",line,b,u->ut_pid,(int)sizeof(u->ut_id),u->ut_id);continue;}
+  if((process||all)&&u->ut_type==INIT_PROCESS){time_t it=(time_t)u->ut_tv.tv_sec;struct tm tmv;char b[64],line[sizeof(u->ut_line)+1];if(localtime_r(&it,&tmv))strftime(b,sizeof b,"%b %e %H:%M",&tmv);else b[0]=0;memcpy(line,u->ut_line,sizeof(u->ut_line));line[sizeof(u->ut_line)]=0;printf("INIT       %-12s %s              %d id=%.*s\n",line,b,u->ut_pid,(int)sizeof(u->ut_id),u->ut_id);continue;}
+  if((dead||all)&&u->ut_type==DEAD_PROCESS){time_t dt=(time_t)u->ut_tv.tv_sec;struct tm tmv;char b[64],line[sizeof(u->ut_line)+1];if(localtime_r(&dt,&tmv))strftime(b,sizeof b,"%b %e %H:%M",&tmv);else b[0]=0;memcpy(line,u->ut_line,sizeof(u->ut_line));line[sizeof(u->ut_line)]=0;printf("%-8s %-12s %s\n",u->ut_user,line,b);continue;}
+  if((clock_change||all)&&(u->ut_type==OLD_TIME||u->ut_type==NEW_TIME))continue;
   if(u->ut_type!=USER_PROCESS)continue;
   char user[sizeof(u->ut_user)+1],line[sizeof(u->ut_line)+1];
   memcpy(user,u->ut_user,sizeof(u->ut_user));user[sizeof(u->ut_user)]=0;
