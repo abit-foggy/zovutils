@@ -39,7 +39,7 @@ static inline int zov_b2sum_run(int argc,char**argv){
  no_length:
   if(check){check_args[ncheck++]=(char*)a;continue;}
   if(!strcmp(a,"--tag")){tag=1;continue;}if(!strcmp(a,"--zero")||!strcmp(a,"-z")){zero=1;continue;}if(!strcmp(a,"-b")||!strcmp(a,"--binary")||!strcmp(a,"-t")||!strcmp(a,"--text"))continue;
-  if(!strcmp(a,"--version")){puts("b2sum (zovutils) 0.10.16");free(files);free(check_args);return 0;}if(!strcmp(a,"--help")){puts("Usage: b2sum [OPTION]... [FILE]...\nPrint or check BLAKE2b checksums.\nWith no FILE, or when FILE is -, read standard input.\n  -l, --length=BITS  digest length in bits\n  --tag              create a BSD-style checksum\n  -z, --zero         end each output line with NUL\n      --help         display this help and exit\n      --version      output version information and exit");free(files);free(check_args);return 0;}
+  if(!strcmp(a,"--version")){puts("b2sum (zovutils) 0.10.17");free(files);free(check_args);return 0;}if(!strcmp(a,"--help")){puts("Usage: b2sum [OPTION]... [FILE]...\nPrint or check BLAKE2b checksums.\nWith no FILE, or when FILE is -, read standard input.\n  -l, --length=BITS  digest length in bits\n  --tag              create a BSD-style checksum\n  -z, --zero         end each output line with NUL\n      --help         display this help and exit\n      --version      output version information and exit");free(files);free(check_args);return 0;}
   if(a[0]=='-'&&strcmp(a,"-")){fprintf(stderr,"b2sum: unrecognized option '%s'\nTry 'b2sum --help' for more information.\n",a);free(files);free(check_args);return 1;}files[nf++]=(char*)a;
  }
  if(check){int r=zov_checksum_check_run("b2sum","BLAKE2b",digest_len,digest_len,ncheck,check_args,zov_b2_digest_file);free(files);free(check_args);return r;}
