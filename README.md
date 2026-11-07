@@ -71,7 +71,9 @@ The project is in alpha (`0.9.0`). The current command set is:
 - `od`
 - `paste`
 - `pathchk`
+- `pinky`
 - `printenv`
+- `pr`
 - `printf`
 - `pwd`
 - `readlink`
