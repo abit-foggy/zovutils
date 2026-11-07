@@ -44,10 +44,12 @@ The project is in alpha (`0.7.0`). The current command set is:
 - `nl`
 - `od`
 - `paste`
+- `pathchk`
 - `printenv`
 - `printf`
 - `pwd`
 - `readlink`
+- `realpath`
 - `rm`
 - `rmdir`
 - `seq`

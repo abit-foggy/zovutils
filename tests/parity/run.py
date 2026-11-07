@@ -42,9 +42,11 @@ import unlink_util
 import nl_util
 import printenv
 import paste_util
+import pathchk_util
 import printf
 import pwd_util
 import readlink_util
+import realpath_util
 import seq_util
 import sleep_util
 import sort_util
@@ -71,7 +73,7 @@ def main() -> int:
     suite = Suite(args.zovutils.resolve(), args.gnu_dir.resolve())
     try:
         require_executables(suite)
-        for module in (basename, cat, chmod_util, comm_util, cp_util, csplit_util, cut_util, dirname, echo, expand_util, env, false, fold_util, fmt_util, head, join_util, link_util, ln_util, mkdir_util, mkfifo_util, mktemp_util, mv_util, nl_util, ownership_util, paste_util, printenv, printf, pwd_util, readlink_util, rm_util, rmdir_util, seq_util, sleep_util, sort_util, split_util, tac_util, od_util, test_util, tail, touch_util, tr_util, true, unlink_util, uniq_util, unexpand_util, wc, yes_util, fuzz):
+        for module in (basename, cat, chmod_util, comm_util, cp_util, csplit_util, cut_util, dirname, echo, expand_util, env, false, fold_util, fmt_util, head, join_util, link_util, ln_util, mkdir_util, mkfifo_util, mktemp_util, mv_util, nl_util, ownership_util, paste_util, pathchk_util, printenv, printf, pwd_util, readlink_util, realpath_util, rm_util, rmdir_util, seq_util, sleep_util, sort_util, split_util, tac_util, od_util, test_util, tail, touch_util, tr_util, true, unlink_util, uniq_util, unexpand_util, wc, yes_util, fuzz):
             start = suite.count
             module.run(suite)
             print(f"[PASS] {module.__name__}: {suite.count - start} parity cases")
