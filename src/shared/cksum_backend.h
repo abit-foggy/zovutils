@@ -24,7 +24,7 @@ static inline int zov_cksum_run(const char *program, int argc, char **argv) {
         const char*a=argv[i];
         if(!end_options&&!strcmp(a,"--")){end_options=1;continue;}
         if(!end_options&&(!strcmp(a,"--help")||!strcmp(a,"--version"))){
-            if(!strcmp(a,"--version")){printf("%s (zovutils) 0.10.24\n",program);free(files);return 0;}
+            if(!strcmp(a,"--version")){printf("%s (zovutils) 0.10.25\n",program);free(files);return 0;}
             printf("Usage: %s [OPTION]... [FILE]...\nPrint CRC checksum and byte counts of each FILE.\nWith no FILE, or when FILE is -, read standard input.\n  -r, --algorithm=bsd   use BSD sum algorithm\n  -s, --algorithm=sysv  use System V sum algorithm\n      --help            display this help and exit\n      --version         output version information and exit\n",program);free(files);return 0;
         }
         if(!end_options&&!is_cksum&&(!strcmp(a,"-s")||!strcmp(a,"--sysv"))){algorithm=2;continue;}
