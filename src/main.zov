@@ -43,6 +43,7 @@ use commands::base32;
 use commands::base64;
 use commands::basenc;
 use commands::dirname;
+use commands::dircolors;
 use commands::du;
 use commands::echo;
 use commands::expand;
@@ -118,6 +119,7 @@ fn dispatch(name: str, start: usize, argc: usize) i32 = {
     if (name == "basenc") { return basenc::run(start, argc); };
     if (name == "basename") { return basename::run(start, argc); };
     if (name == "du") { return du::run(start, argc); };
+    if (name == "dircolors") { return dircolors::run(start, argc); };
     if (name == "dirname") { return dirname::run(start, argc); };
     if (name == "echo") { return echo::run(start, argc); };
     if (name == "expr") { return expr::run(start, argc); };
@@ -237,7 +239,7 @@ export fn main() i32 = {
         return 0;
     };
     if (argc >= 2usize && (env::argat(1usize) == "--version" || env::argat(1usize) == "-V")) {
-        io::println("zovutils 0.9.0 (GNU Coreutils 9.11 compatibility target)");
+        io::println("zovutils 0.10.0 (GNU Coreutils 9.11 compatibility target)");
         return 0;
     };
     return dispatch(env::argat(1usize), 2usize, argc);

@@ -234,7 +234,7 @@ static inline int zov_mkdir_run(int argc, int8_t **argv) {
                     free(paths); return 1;
                 }
                 if (strcmp(name, "--help") == 0) { zov_mkdir_help(); free(paths); return 0; }
-                if (strcmp(name, "--version") == 0) { puts("mkdir (zovutils) 0.9.0"); free(paths); return 0; }
+                if (strcmp(name, "--version") == 0) { puts("mkdir (zovutils) 0.10.0"); free(paths); return 0; }
                 if (strcmp(name, "--parents") == 0) parents = 1; else verbose = 1;
                 continue;
             }
