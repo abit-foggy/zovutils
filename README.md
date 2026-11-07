@@ -30,6 +30,7 @@ The project is in alpha (`0.7.0`). The current command set is:
 - `echo`
 - `env`
 - `expand`
+- `factor`
 - `false`
 - `fold`
 - `fmt`
@@ -43,6 +44,7 @@ The project is in alpha (`0.7.0`). The current command set is:
 - `mv`
 - `nl`
 - `nproc`
+- `numfmt`
 - `od`
 - `paste`
 - `pathchk`
