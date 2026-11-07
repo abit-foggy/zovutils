@@ -1,7 +1,7 @@
 ZOVC ?= zovc
 PREFIX ?= /usr/local
 BINDIR ?= $(PREFIX)/bin
-UTILS = b2sum base32 base64 basenc basename cat chgrp cksum chmod chown comm cp csplit cut dirname echo env expand false factor fold fmt head join link ln md5sum mkdir mkfifo mktemp mv nl nproc numfmt od paste pathchk printenv printf pwd readlink realpath rm rmdir sha1sum sha224sum sha256sum seq sleep sort split sum tac tee test tail touch tr true uniq unlink unexpand wc yes
+UTILS = b2sum base32 base64 basenc basename cat chgrp cksum chmod chown comm cp csplit cut dirname echo env expand false factor fold fmt head join link ln md5sum mkdir mkfifo mktemp mv nl nproc numfmt od paste pathchk printenv printf pwd readlink realpath rm rmdir sha1sum sha224sum sha256sum seq sleep sort split sum tac tee test tsort tail touch tr true uniq unlink unexpand wc yes
 
 .PHONY: all check build unit parity asan-parity test install uninstall clean
 
