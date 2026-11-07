@@ -50,6 +50,10 @@ static inline char *zov_ptx_trim_copy(const char *s, size_t n) {
     out[used]=0; return out;
 }
 
+static inline int zov_ptx_is_break(unsigned char c, const unsigned char *breaks) {
+    return isspace(c) || breaks[c];
+}
+
 static inline int zov_ptx_add(zov_ptx_entry **entries, size_t *count, size_t *capacity,
                               const char *line, size_t line_len, size_t begin, size_t end,
                               const char *reference) {
@@ -115,7 +119,7 @@ static inline int zov_ptx_run(int argc, char **argv) {
     int nf = 0;
     for (int i = 0; i < argc; i++) {
         const char *a = argv[i];
-        if (!strcmp(a, "--version")) { puts("ptx (zovutils) 0.10.10"); free(files); return 0; }
+        if (!strcmp(a, "--version")) { puts("ptx (zovutils) 0.10.11"); free(files); return 0; }
         if (!strcmp(a, "--help")) {
             puts("Usage: ptx [OPTION]... [INPUT]...\nOutput a permuted index, including context, of the words in the input files.\n  -A, --auto-reference       output automatically generated references\n  -G, --traditional          use traditional System V output\n  -b, --break-file=FILE      use word break characters from FILE\n  -f, --ignore-case          fold lower case to upper case for sorting\n  -g, --gap-size=NUMBER      gap size between output fields\n  -i, --ignore-file=FILE     read words to ignore from FILE\n  -o, --only-file=FILE       read words to include from FILE\n  -r, --references           first field of each line is a reference\n  -R, --right-side-refs      put references at the right\n  -t, --typeset-mode         use a default width of 100 columns\n  -w, --width=NUMBER         output width in columns\n      --help                 display this help and exit\n      --version              output version information and exit");
             free(files); return 0;
@@ -172,6 +176,15 @@ static inline int zov_ptx_run(int argc, char **argv) {
     if (traditional) { auto_ref=0; roff=1; }
     if (typeset && !width_set) width=100;
     if (!nf) files[nf++]="-";
+    unsigned char breaks[256]={0};
+    if (!break_file) for (int c=0;c<256;c++) breaks[c]=(unsigned char)ispunct(c);
+    if (break_file) {
+        FILE *bf=fopen(break_file,"rb");
+        if (!bf) { fprintf(stderr,"ptx: %s: %s\n",break_file,strerror(errno)); free(files); return 1; }
+        int ch; while ((ch=fgetc(bf))!=EOF) breaks[(unsigned char)ch]=1;
+        if (ferror(bf)) { fprintf(stderr,"ptx: %s: read error\n",break_file); fclose(bf); free(files); return 1; }
+        fclose(bf);
+    }
     char **ignored=NULL, **only=NULL; size_t ignored_n=0, only_n=0;
     if (ignore_file && !zov_ptx_load_words(ignore_file,&ignored,&ignored_n)) { free(files); return 1; }
     if (only_file && !zov_ptx_load_words(only_file,&only,&only_n)) { free(files); return 1; }
@@ -207,8 +220,8 @@ static inline int zov_ptx_run(int argc, char **argv) {
                 if(finish<=begin){p=begin+1;continue;}
                 p=finish;
             }else{
-                if(!isalnum((unsigned char)line[p])){p++;continue;}
-                begin=p;while(p<len&&isalnum((unsigned char)line[p]))p++;finish=p;
+                if(isspace((unsigned char)line[p])){p++;continue;}
+                begin=p;while(p<len&&!isspace((unsigned char)line[p]))p++;finish=p;
             }
             if(!have_first){have_first=1;first_begin=begin;first_end=finish;if(refs_in){input_reference=zov_ptx_dup_range(line+begin,finish-begin);continue;}}
             char *word=zov_ptx_dup_range(line+begin,finish-begin);
@@ -223,6 +236,15 @@ static inline int zov_ptx_run(int argc, char **argv) {
             size_t context_start=refs_in?first_end:0;
             if(!zov_ptx_add(&entries,&used,&capacity,line+context_start,len-context_start,
                             begin-context_start,finish-context_start,ref)){status=1;break;}
+            if(!has_word_re){
+                for(size_t split=begin;split+1<finish;split++) if(breaks[(unsigned char)line[split]]){
+                    char *suffix=zov_ptx_dup_range(line+split+1,finish-split-1);
+                    int suffix_allowed=suffix&&(!ignore_file||zov_ptx_word_allowed(suffix,ignored,ignored_n,0))&&(!only_file||zov_ptx_word_allowed(suffix,only,only_n,1));
+                    free(suffix);
+                    if(suffix_allowed&&!zov_ptx_add(&entries,&used,&capacity,line+context_start,len-context_start,
+                                                    split+1-context_start,finish-context_start,ref)){status=1;break;}
+                }
+            }
         }
         free(input_reference);free(line);if(in!=stdin)fclose(in);
     }
@@ -264,7 +286,7 @@ static inline int zov_ptx_run(int argc, char **argv) {
         for (int j=0;j<before;j++) putchar(' ');
         fputs(e->word,stdout);
         if (*e->right) {
-            int after=leftlen?gap:1;
+            int after=leftlen?(ispunct((unsigned char)e->left[leftlen-1])?1:gap):1;
             for (int j=0;j<after;j++) putchar(' ');
             fputs(e->right,stdout);
         }
