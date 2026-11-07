@@ -49,7 +49,7 @@ export fn run(start: usize, argc: usize) i32 = {
         if (!options_done && arg.len > 2usize && arg[0usize..2usize] == "--") {
             let option: str = key(arg);
             if (option == "--help" || prefix(option, "--help")) { help(); stream::finishoutput("csplit"); return 0; };
-            if (option == "--version" || prefix(option, "--version")) { io::println("csplit (zovutils) 0.5.3"); stream::finishoutput("csplit"); return 0; };
+            if (option == "--version" || prefix(option, "--version")) { io::println("csplit (zovutils) 0.5.4"); stream::finishoutput("csplit"); return 0; };
             if (option == "--keep-files" || prefix(option, "--keep-files")) { keep_files = true; i += 1usize; continue; };
             if (option == "--suppress-matched" || prefix(option, "--suppress-matched")) { suppress_matched = true; i += 1usize; continue; };
             if (option == "--elide-empty-files" || prefix(option, "--elide-empty-files")) { elide_empty = true; i += 1usize; continue; };
