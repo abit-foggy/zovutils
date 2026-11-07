@@ -70,6 +70,11 @@ class Suite:
         zov_env = self.env.copy()
         if extra_env:
             zov_env.update(extra_env)
+        if utility == "stdbuf":
+            # stdbuf must launch the same command under both implementations;
+            # otherwise host binaries can differ in architecture (notably
+            # arm64e versus the arm64 GNU oracle build on macOS).
+            zov_env["PATH"] = str(self.gnu_dir) + os.pathsep + zov_env.get("PATH", "")
         gnu_env["PATH"] = str(self.gnu_dir) + os.pathsep + gnu_env.get("PATH", "")
         zov = self._run([str(self.zovutils), utility, *args], stdin, env=zov_env)
         gnu = self._run([utility, *args], stdin, env=gnu_env)

@@ -12,9 +12,12 @@ from support import Suite
 
 def _early_output(s: Suite, utility: str, helper: Path) -> tuple[int, bytes, bytes, bool]:
     env = s.env.copy()
+    # Both implementations must resolve COMMAND identically. In particular,
+    # macOS system tools may be arm64e binaries that reject an arm64 preload
+    # library, while the GNU oracle binary built for this suite is arm64.
+    env["PATH"] = str(s.gnu_dir) + os.pathsep + env.get("PATH", "")
     command = [str(s.zovutils), utility, "-o0", str(helper)]
     if utility == "gnu-stdbuf":
-        env["PATH"] = str(s.gnu_dir) + os.pathsep + env.get("PATH", "")
         command = ["stdbuf", "-o0", str(helper)]
     proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
     assert proc.stdout is not None and proc.stderr is not None
