@@ -9,6 +9,7 @@ use commands::split;
 use commands::tac;
 use commands::od;
 use commands::mkdir;
+use commands::mktemp;
 use commands::rmdir;
 use commands::touch;
 use commands::ln;
@@ -91,6 +92,7 @@ fn dispatch(name: str, start: usize, argc: usize) i32 = {
     if (name == "join") { return join::run(start, argc); };
     if (name == "link") { return link::run(start, argc); };
     if (name == "mkfifo") { return mkfifo::run(start, argc); };
+    if (name == "mktemp") { return mktemp::run(start, argc); };
     if (name == "nl") { return nl::run(start, argc); };
     if (name == "paste") { return paste::run(start, argc); };
     if (name == "printenv") { return printenv::run(start, argc); };
@@ -122,12 +124,12 @@ export fn main() i32 = {
     };
     if (argc < 2usize) {
         io::eprintln("usage: zovutils <utility> [arguments...]");
-        io::eprintln("utilities: basename cat chgrp chmod chown comm cp csplit cut dirname echo env expand false fold fmt head join link ln mkdir mkfifo mv nl od paste printenv printf pwd readlink rm rmdir seq sleep sort split tac tail test touch tr true uniq unlink unexpand wc yes");
+        io::eprintln("utilities: basename cat chgrp chmod chown comm cp csplit cut dirname echo env expand false fold fmt head join link ln mkdir mkfifo mktemp mv nl od paste printenv printf pwd readlink rm rmdir seq sleep sort split tac tail test touch tr true uniq unlink unexpand wc yes");
         return 1;
     };
     if (env::argat(1usize) == "--help" || env::argat(1usize) == "-h") {
         io::println("usage: zovutils <utility> [arguments...]");
-        io::println("utilities: basename cat chgrp chmod chown comm cp csplit cut dirname echo env expand false fold fmt head join link ln mkdir mkfifo mv nl od paste printenv printf pwd readlink rm rmdir seq sleep sort split tac tail test touch tr true uniq unlink unexpand wc yes");
+        io::println("utilities: basename cat chgrp chmod chown comm cp csplit cut dirname echo env expand false fold fmt head join link ln mkdir mkfifo mktemp mv nl od paste printenv printf pwd readlink rm rmdir seq sleep sort split tac tail test touch tr true uniq unlink unexpand wc yes");
         return 0;
     };
     if (argc >= 2usize && (env::argat(1usize) == "--version" || env::argat(1usize) == "-V")) {

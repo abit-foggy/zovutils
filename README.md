@@ -39,6 +39,7 @@ The project is in alpha (`0.7.0`). The current command set is:
 - `ln`
 - `mkdir`
 - `mkfifo`
+- `mktemp`
 - `mv`
 - `nl`
 - `od`
