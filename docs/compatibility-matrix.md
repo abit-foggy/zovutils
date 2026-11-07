@@ -93,7 +93,7 @@ Options are collected from each pinned GNU 9.11 executable’s `--help` output. 
 | `tail` | `-c`, `--bytes`, `--debug`, `-f`, `--follow`, `-n`, `--lines`, `--max-unchanged-stats=N`, `--pid=PID`, `-q`, `--quiet`, `--silent`, `--retry`, `-s`, `--sleep-interval=N`, `-v`, `--verbose`, `-z`, `--zero-terminated` | `tail.py (889)` | Audit pending |
 | `tee` | `-a`, `--append`, `-i`, `--ignore-interrupts`, `-p`, `--output-error[=MODE]` | `tee_util.py (18)` | In progress: append, ignore-interrupts, pipe mode, all output-error modes, /dev/full errors and normal streams covered; signal and multi-output failure interactions pending |
 | `test` | No GNU options (operand-driven) | `test_util.py (44)` | Audit pending |
-| `timeout` | `-f`, `--foreground`, `-k`, `--kill-after=DURATION`, `-p`, `--preserve-status`, `-s`, `--signal=SIGNAL`, `-v`, `--verbose` | `timeout_util.py (6)` | Audit pending |
+| `timeout` | `-f`, `--foreground`, `-k`, `--kill-after=DURATION`, `-p`, `--preserve-status`, `-s`, `--signal=SIGNAL`, `-v`, `--verbose` | `timeout_util.py (11)` | In progress: signal, foreground, kill-after, verbose, preserved status and process-group timeout covered; signal edge cases and descendants remain to audit |
 | `touch` | `-c`, `--no-create`, `-d`, `--date=STRING`, `-h`, `--no-dereference`, `-r`, `--reference=FILE`, `--time=WORD` | `touch_util.py (34)` | Audit pending |
 | `tr` | `-c`, `-C`, `--complement`, `-d`, `--delete`, `-s`, `--squeeze-repeats`, `-t`, `--truncate-set1` | `tr_util.py (16)` | Audit pending |
 | `true` | No GNU options (operand-driven) | `true.py (11)` | Audit pending |
