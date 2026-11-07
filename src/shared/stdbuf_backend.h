@@ -6,32 +6,91 @@
 #include <errno.h>
 #include <unistd.h>
 #include <limits.h>
+#include <stdint.h>
 #include <sys/types.h>
 #if defined(__APPLE__)
 #include <mach-o/dyld.h>
 #endif
-extern char **environ;
+
+static inline int zov_stdbuf_size(const char *mode) {
+    if (!mode || !*mode) return 0;
+    if (!strcmp(mode, "0") || !strcmp(mode, "L")) return 1;
+    if (*mode == '-') return 0;
+    errno = 0;
+    char *end = NULL;
+    unsigned long long n = strtoull(mode, &end, 10);
+    if (errno || end == mode) return 0;
+    unsigned long long multiplier = 1;
+    if (!*end) multiplier = 1;
+    else if (!strcmp(end, "k") || !strcmp(end, "K") || !strcmp(end, "KiB")) multiplier = 1024ULL;
+    else if (!strcmp(end, "KB")) multiplier = 1000ULL;
+    else if (!strcmp(end, "M") || !strcmp(end, "MiB")) multiplier = 1024ULL * 1024ULL;
+    else if (!strcmp(end, "MB")) multiplier = 1000ULL * 1000ULL;
+    else if (!strcmp(end, "G") || !strcmp(end, "GiB")) multiplier = 1024ULL * 1024ULL * 1024ULL;
+    else if (!strcmp(end, "GB")) multiplier = 1000ULL * 1000ULL * 1000ULL;
+    else if (!strcmp(end, "T") || !strcmp(end, "TiB")) multiplier = 1024ULL * 1024ULL * 1024ULL * 1024ULL;
+    else if (!strcmp(end, "TB")) multiplier = 1000ULL * 1000ULL * 1000ULL * 1000ULL;
+    else return 0;
+    return n <= (unsigned long long)SIZE_MAX / multiplier;
+}
+
 static inline int zov_stdbuf_run(int argc, char **argv) {
-    const char *mode[3] = {"-", "-", "-"};
+    const char *mode[3] = {NULL, NULL, NULL};
     int i = 0;
     for (; i < argc; i++) {
         const char *a = argv[i];
-        if (!strcmp(a, "--help")) { puts("Usage: stdbuf OPTION... COMMAND\nRun COMMAND, with modified buffering operations for its standard streams.\n  -i, --input=MODE   adjust standard input stream buffering\n  -o, --output=MODE  adjust standard output stream buffering\n  -e, --error=MODE   adjust standard error stream buffering\n      --help         display this help and exit\n      --version      output version information and exit\nIf MODE is 'L' the stream is line buffered, '0' unbuffered, or a number optionally followed by K or M."); return 0; }
-        if (!strcmp(a, "--version")) { puts("stdbuf (zovutils) 0.10.0"); return 0; }
+        if (!strcmp(a, "--help")) {
+            puts("Usage: stdbuf OPTION... COMMAND\nRun COMMAND, with modified buffering operations for its standard streams.\n  -i, --input=MODE   adjust standard input stream buffering\n  -o, --output=MODE  adjust standard output stream buffering\n  -e, --error=MODE   adjust standard error stream buffering\n      --help         display this help and exit\n      --version      output version information and exit\nIf MODE is 'L' the stream is line buffered, '0' unbuffered, or a number optionally followed by a size suffix.");
+            return 0;
+        }
+        if (!strcmp(a, "--version")) { puts("stdbuf (zovutils) 0.10.1"); return 0; }
         if (!strcmp(a, "--")) { i++; break; }
         if (a[0] != '-' || !a[1]) break;
-        int which = -1; const char *value = NULL;
-        if ((!strcmp(a, "-i") || !strcmp(a, "-o") || !strcmp(a, "-e")) && i + 1 < argc) { which = a[1] == 'i' ? 0 : a[1] == 'o' ? 1 : 2; value = argv[++i]; }
-        else if (a[0] == '-' && a[1] && (a[1] == 'i' || a[1] == 'o' || a[1] == 'e') && a[2]) { which = a[1] == 'i' ? 0 : a[1] == 'o' ? 1 : 2; value = a + 2; }
-        else if (!strncmp(a, "--input=", 8)) { which = 0; value = a + 8; }
+        int which = -1;
+        const char *value = NULL;
+        if (!strcmp(a, "-i") || !strcmp(a, "-o") || !strcmp(a, "-e")) {
+            which = a[1] == 'i' ? 0 : a[1] == 'o' ? 1 : 2;
+            if (i + 1 >= argc) {
+                fprintf(stderr, "stdbuf: option requires an argument -- '%c'\nTry 'stdbuf --help' for more information.\n", a[1]);
+                return 125;
+            }
+            value = argv[++i];
+        } else if (a[0] == '-' && (a[1] == 'i' || a[1] == 'o' || a[1] == 'e') && a[2]) {
+            which = a[1] == 'i' ? 0 : a[1] == 'o' ? 1 : 2;
+            value = a + 2;
+        } else if (!strncmp(a, "--input=", 8)) { which = 0; value = a + 8; }
         else if (!strncmp(a, "--output=", 9)) { which = 1; value = a + 9; }
         else if (!strncmp(a, "--error=", 8)) { which = 2; value = a + 8; }
-        else if ((!strcmp(a, "--input") || !strcmp(a, "--output") || !strcmp(a, "--error")) && i + 1 < argc) { which = !strcmp(a, "--input") ? 0 : !strcmp(a, "--output") ? 1 : 2; value = argv[++i]; }
-        else { fprintf(stderr, "stdbuf: invalid option -- '%s'\nTry 'stdbuf --help' for more information.\n", a); return 1; }
-        if (which >= 0) mode[which] = value;
+        else if (!strcmp(a, "--input") || !strcmp(a, "--output") || !strcmp(a, "--error")) {
+            which = !strcmp(a, "--input") ? 0 : !strcmp(a, "--output") ? 1 : 2;
+            if (i + 1 >= argc) {
+                fprintf(stderr, "stdbuf: option '%s' requires an argument\nTry 'stdbuf --help' for more information.\n", a);
+                return 125;
+            }
+            value = argv[++i];
+        } else {
+            if (!strncmp(a, "--help=", 7) || !strncmp(a, "--version=", 10)) {
+                const char *opt = a[2] == 'h' ? "--help" : "--version";
+                fprintf(stderr, "stdbuf: option '%s' doesn't allow an argument\nTry 'stdbuf --help' for more information.\n", opt);
+            } else if (a[1] == '-') {
+                fprintf(stderr, "stdbuf: unrecognized option '%s'\nTry 'stdbuf --help' for more information.\n", a);
+            } else {
+                fprintf(stderr, "stdbuf: invalid option -- '%c'\nTry 'stdbuf --help' for more information.\n", a[1]);
+            }
+            return 125;
+        }
+        if (!zov_stdbuf_size(value)) {
+            fprintf(stderr, "stdbuf: invalid mode '%s'\n", value);
+            return 125;
+        }
+        if (which == 0 && !strcmp(value, "L")) {
+            fprintf(stderr, "stdbuf: line buffering standard input is meaningless\nTry 'stdbuf --help' for more information.\n");
+            return 125;
+        }
+        mode[which] = value;
     }
     if (i >= argc) { fprintf(stderr, "stdbuf: missing operand\nTry 'stdbuf --help' for more information.\n"); return 125; }
-    for (int m = 0; m < 3; m++) if (strcmp(mode[m], "-")) {
+    for (int m = 0; m < 3; m++) if (mode[m]) {
         const char *key = m == 0 ? "_STDBUF_I" : m == 1 ? "_STDBUF_O" : "_STDBUF_E";
         if (setenv(key, mode[m], 1) != 0) { fprintf(stderr, "stdbuf: %s\n", strerror(errno)); return 125; }
     }

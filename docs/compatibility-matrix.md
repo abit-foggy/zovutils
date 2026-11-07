@@ -85,7 +85,7 @@ Options are collected from each pinned GNU 9.11 executable’s `--help` output. 
 | `sort` | `-b`, `--ignore-leading-blanks`, `-d`, `--dictionary-order`, `-f`, `--ignore-case`, `-g`, `--general-numeric-sort`, `-i`, `--ignore-nonprinting`, `-M`, `--month-sort`, `-h`, `--human-numeric-sort`, `-n`, `--numeric-sort`, `-R`, `--random-sort`, `--random-source=FILE`, `-r`, `--reverse`, `--sort=WORD`, `-V`, `--version-sort`, `--batch-size=NMERGE`, `-c`, `--check`, `-C`, `--compress-program=PROG`, `--debug`, `--files0-from=F`, `-k`, `--key=KEYDEF`, `-m`, `--merge`, `-o`, `--output=FILE`, `-s`, `--stable`, `-S`, `--buffer-size=SIZE`, `-t`, `--field-separator=SEP`, `-T`, `--temporary-directory=DIR`, `--parallel=N`, `-u`, `--unique`, `-z`, `--zero-terminated` | `sort_util.py (20)` | Audit pending |
 | `split` | `-a`, `--suffix-length=N`, `--additional-suffix=SUFFIX`, `-b`, `--bytes=SIZE`, `-C`, `--line-bytes=SIZE`, `--numeric-suffixes`, `--hex-suffixes`, `-e`, `--elide-empty-files`, `--filter=COMMAND`, `-l`, `--lines=NUMBER`, `-n`, `--number=CHUNKS`, `-t`, `--separator=SEP`, `-u`, `--unbuffered`, `--verbose` | `split_util.py (23)` | Audit pending |
 | `stat` | `-L`, `--dereference`, `-f`, `--file-system`, `--cached=MODE`, `-c`, `--format=FORMAT`, `--printf=FORMAT`, `-t`, `--terse` | `stat_util.py (5)` | Audit pending |
-| `stdbuf` | `-i`, `--input=MODE`, `-o`, `--output=MODE`, `-e`, `--error=MODE` | `stdbuf_util.py (3)` | Audit pending |
+| `stdbuf` | `-i`, `--input=MODE`, `-o`, `--output=MODE`, `-e`, `--error=MODE` | `stdbuf_util.py (11)` | In progress: option errors and unbuffered output; size modes and platform audit pending |
 | `stty` | `-a`, `--all`, `-g`, `--save`, `-F`, `--file=DEVICE` | `stty_util.py (4)` | Audit pending |
 | `sum` | `-s`, `--sysv` | `sum_util.py (15)` | Audit pending |
 | `sync` | `-d`, `--data`, `-f`, `--file-system` | `sync_util.py (5)` | Audit pending |
@@ -97,7 +97,7 @@ Options are collected from each pinned GNU 9.11 executable’s `--help` output. 
 | `touch` | `-c`, `--no-create`, `-d`, `--date=STRING`, `-h`, `--no-dereference`, `-r`, `--reference=FILE`, `--time=WORD` | `touch_util.py (34)` | Audit pending |
 | `tr` | `-c`, `-C`, `--complement`, `-d`, `--delete`, `-s`, `--squeeze-repeats`, `-t`, `--truncate-set1` | `tr_util.py (16)` | Audit pending |
 | `true` | No GNU options (operand-driven) | `true.py (11)` | Audit pending |
-| `truncate` | `-c`, `--no-create`, `-o`, `--io-blocks`, `-r`, `--reference=RFILE`, `-s`, `--size=SIZE` | `truncate_util.py (3)` | Audit pending |
+| `truncate` | `-c`, `--no-create`, `-o`, `--io-blocks`, `-r`, `--reference=RFILE`, `-s`, `--size=SIZE` | `truncate_util.py (5)` | In progress: filesystem effects compared |
 | `tsort` | No GNU options (operand-driven) | `tsort_util.py (9)` | Audit pending |
 | `tty` | `-s`, `--silent`, `--quiet` | `tty_util.py (5)` | Audit pending |
 | `uname` | `-a`, `--all`, `-s`, `--kernel-name`, `-n`, `--nodename`, `-r`, `--kernel-release`, `-v`, `--kernel-version`, `-m`, `--machine`, `-p`, `--processor`, `-i`, `--hardware-platform`, `-o`, `--operating-system` | `uname_util.py (14)` | Audit pending |
