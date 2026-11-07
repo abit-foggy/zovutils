@@ -38,6 +38,7 @@ The project is in alpha (`0.2.0`). The current command set is:
 - `printenv`
 - `printf`
 - `pwd`
+- `rmdir`
 - `seq`
 - `sleep`
 - `sort`
