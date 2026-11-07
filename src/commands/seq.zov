@@ -123,7 +123,7 @@ export fn run(start: usize, argc: usize) i32 = {
             };
             if (key == "--version" || is_prefix(key, "--version")) {
                 if (arg.len != key.len) { c::fprintf(c::stderr, "seq: option '--version' doesn't allow an argument\n"); usage_error(); return 1; };
-                io::println("seq (zovutils) 0.1.208"); stream::finishoutput("seq"); return 0;
+                io::println("seq (zovutils) 0.1.209"); stream::finishoutput("seq"); return 0;
             };
             c::fprintf(c::stderr, "seq: unrecognized option '%s'\n", arg); usage_error(); return 1;
         };
