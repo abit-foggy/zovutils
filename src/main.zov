@@ -14,6 +14,7 @@ use commands::sum;
 use commands::comm;
 use commands::csplit;
 use commands::date;
+use commands::df;
 use commands::dd;
 use commands::split;
 use commands::tac;
@@ -137,6 +138,7 @@ fn dispatch(name: str, start: usize, argc: usize) i32 = {
     if (name == "cat") { return cat::run(start, argc); };
     if (name == "comm") { return comm::run(start, argc); };
     if (name == "dd") { return dd::run(start, argc); };
+    if (name == "df") { return df::run(start, argc); };
     if (name == "date") { return date::run(start, argc); };
     if (name == "csplit") { return csplit::run(start, argc); };
     if (name == "split") { return split::run(start, argc); };
