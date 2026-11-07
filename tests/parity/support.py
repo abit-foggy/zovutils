@@ -137,9 +137,19 @@ class Suite:
                     kind, detail = "symlink", os.readlink(path)
                 elif stat.S_ISFIFO(info.st_mode):
                     kind, detail = "fifo", b""
+                elif stat.S_ISCHR(info.st_mode) or stat.S_ISBLK(info.st_mode):
+                    kind = "character device" if stat.S_ISCHR(info.st_mode) else "block device"
+                    detail = (os.major(info.st_rdev), os.minor(info.st_rdev))
                 else:
                     kind, detail = "special", b""
-                row: tuple[object, ...] = (path.relative_to(root).as_posix(), kind, mode, detail)
+                xattrs: tuple[tuple[str, bytes], ...] = ()
+                if not stat.S_ISLNK(info.st_mode) and hasattr(os, "listxattr"):
+                    try:
+                        xattrs = tuple((key, os.getxattr(path, key, follow_symlinks=False))
+                                       for key in sorted(os.listxattr(path, follow_symlinks=False)))
+                    except OSError:
+                        xattrs = ()
+                row: tuple[object, ...] = (path.relative_to(root).as_posix(), kind, mode, detail, xattrs)
                 if compare_mtimes:
                     row += (info.st_mtime_ns,)
                 snapshot.append(row)
@@ -154,7 +164,8 @@ class Suite:
         stdin: bytes = b"",
         extra_env: dict[str, str] | None = None,
         compare_mtimes: bool = False,
-    ) -> None:
+        expected_status: int | None = None,
+    ) -> tuple[tuple[int, bytes, bytes], tuple[int, bytes, bytes]]:
         """Compare command output and fixture-tree effects in isolated roots."""
         with tempfile.TemporaryDirectory(prefix=f"{utility}-zov-", dir=self.root) as zdir, \
              tempfile.TemporaryDirectory(prefix=f"{utility}-gnu-", dir=self.root) as gdir:
@@ -177,6 +188,12 @@ class Suite:
                     f"{utility} filesystem parity failed for {args!r}: "
                     f"zov={zov!r}, GNU={gnu!r}, zov tree={zsnapshot!r}, GNU tree={gsnapshot!r}"
                 )
+            if expected_status is not None and (zov[0] != expected_status or gnu[0] != expected_status):
+                raise ParityFailure(
+                    f"{utility} did not return expected status {expected_status} for {args!r}: "
+                    f"zov={zov[0]}, GNU={gnu[0]}"
+                )
+            return zov, gnu
 
     def oracle_version(self) -> str:
         result = subprocess.run(

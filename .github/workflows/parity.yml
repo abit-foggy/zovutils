@@ -91,3 +91,59 @@ jobs:
           ZOVC: ${{ github.workspace }}/zov/zovc
           CC: clang
         run: make asan-parity
+
+  privileged-linux:
+    name: Linux privileged filesystem parity
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Check out Zovutils
+        uses: actions/checkout@v7.0.1
+
+      - name: Check out Zov compiler
+        uses: actions/checkout@v7.0.1
+        with:
+          repository: abit-foggy/zov
+          ref: zovc-0.10.0
+          path: zov
+          submodules: recursive
+
+      - name: Build Zov compiler
+        run: make -C zov zovc
+
+      - name: Build GNU Coreutils 9.11 oracle
+        env:
+          PREFIX: ${{ runner.temp }}/gnu-coreutils
+        run: |
+          curl --fail --location --silent --show-error \
+            https://ftp.gnu.org/gnu/coreutils/coreutils-9.11.tar.xz \
+            --output "$RUNNER_TEMP/coreutils-9.11.tar.xz"
+          python3 - "$RUNNER_TEMP/coreutils-9.11.tar.xz" <<'PY'
+          import hashlib
+          import pathlib
+          import sys
+
+          path = pathlib.Path(sys.argv[1])
+          expected = "394024eda0a5955217ceda9cd1201e65dc8fa3aa29c2951135a49521d57c3cc3"
+          actual = hashlib.sha256(path.read_bytes()).hexdigest()
+          if actual != expected:
+              raise SystemExit(f"GNU Coreutils archive checksum mismatch: {actual}")
+          PY
+          tar -xJf "$RUNNER_TEMP/coreutils-9.11.tar.xz" -C "$RUNNER_TEMP"
+          cd "$RUNNER_TEMP/coreutils-9.11"
+          ./configure --disable-nls --prefix="$PREFIX"
+          make -j2
+          make install
+
+      - name: Build Zovutils
+        env:
+          ZOVC: ${{ github.workspace }}/zov/zovc
+        run: make build
+
+      - name: Run fixture-scoped privileged parity
+        env:
+          GNU_COREUTILS_DIR: ${{ runner.temp }}/gnu-coreutils/bin
+        run: |
+          sudo env GNU_COREUTILS_DIR="$GNU_COREUTILS_DIR" \
+            python3 tests/parity/privileged_linux.py \
+            --zovutils "$GITHUB_WORKSPACE/target/zovutils" \
+            --gnu-dir "$GNU_COREUTILS_DIR"

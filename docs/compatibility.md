@@ -20,6 +20,8 @@ inotify for watchable regular files and falls back to polling when notifications
 are unavailable; other platforms use polling. The parity case compares this
 diagnostic with GNU on the same host.
 
+A separate Ubuntu Linux CI job runs root-only `mknod` and `chroot` success cases inside temporary fixtures. When SELinux is enforcing, it also compares same-context `chcon` and `runcon` success paths; otherwise those cases are reported as unavailable on that runner.
+
 The initial supported targets follow Zov: Linux and macOS on `x86_64` and
 `aarch64`. The `GNU Coreutils parity` GitHub Actions workflow builds GNU 9.11
 from its checksum-verified release archive and runs the full suite on each
