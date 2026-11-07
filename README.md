@@ -54,6 +54,7 @@ The project is in alpha (`0.8.0`). The current command set is:
 - `mktemp`
 - `mv`
 - `nice`
+- `nohup`
 - `nl`
 - `nproc`
 - `numfmt`
@@ -80,6 +81,7 @@ The project is in alpha (`0.8.0`). The current command set is:
 - `tail`
 - `tee`
 - `test` / `[`
+- `timeout`
 - `touch`
 - `tsort`
 - `truncate`
