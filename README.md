@@ -25,6 +25,7 @@ The project is in alpha (`0.8.0`). The current command set is:
 - `cat`
 - `cksum`
 - `chgrp`
+- `chroot`
 - `chmod`
 - `chown`
 - `comm`
@@ -80,6 +81,7 @@ The project is in alpha (`0.8.0`). The current command set is:
 - `test` / `[`
 - `touch`
 - `tsort`
+- `truncate`
 - `tr`
 - `unexpand`
 - `true`
