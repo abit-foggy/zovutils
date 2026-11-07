@@ -11,7 +11,9 @@ def run(s: Suite) -> None:
     (root/"dir").mkdir()
     os.symlink("alpha",root/"link")
     path=str(root)
-    for utility,cases in (("ls", ([], ["-a"], ["-A"], ["-1"], ["-C"], ["-l"], ["-ld"], ["-F"])),
+    os.utime(root/"alpha", (1700000000, 1700000000))
+    os.utime(root/"beta", (1700000100, 1700000100))
+    for utility,cases in (("ls", ([], ["-a"], ["-A"], ["-1"], ["-C"], ["-l"], ["-ld"], ["-F"], ["-r"], ["-S"], ["-t"], ["-t", "-r"])),
                           ("dir", ([], ["-1"], ["-a"])),
                           ("vdir", ([], ["-a"]))):
         for args in cases:
