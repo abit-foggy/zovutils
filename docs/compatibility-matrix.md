@@ -11,7 +11,7 @@ Options are collected from each pinned GNU 9.11 executable’s `--help` output. 
 | `base32` | `-d`, `--decode`, `-i`, `--ignore-garbage`, `-w`, `--wrap=COLS` | `base32_util.py (11)` | Audit pending |
 | `base64` | `-d`, `--decode`, `-i`, `--ignore-garbage`, `-w`, `--wrap=COLS` | `base64_util.py (9)` | Audit pending |
 | `basename` | `-a`, `--multiple`, `-s`, `--suffix=SUFFIX`, `-z`, `--zero` | `basename.py (43)` | Audit pending |
-| `basenc` | `--base64`, `--base64url`, `--base58`, `--base32`, `--base32hex`, `--base16`, `--base2msbf`, `--base2lsbf`, `-d`, `--decode`, `-i`, `--ignore-garbage`, `-w`, `--wrap=COLS`, `--z85` | `basenc_util.py (6)` | Audit pending |
+| `basenc` | `--base64`, `--base64url`, `--base58`, `--base32`, `--base32hex`, `--base16`, `--base2msbf`, `--base2lsbf`, `-d`, `--decode`, `-i`, `--ignore-garbage`, `-w`, `--wrap=COLS`, `--z85` | `basenc_util.py (14)` | In progress: base64, base32, base32hex, base16 and both base2 bit orders covered; base58, Z85 and validation cases pending |
 | `cat` | `-A`, `--show-all`, `-v`, `-b`, `--number-nonblank`, `-n`, `-E`, `--show-ends`, `--number`, `-s`, `--squeeze-blank`, `-T`, `--show-tabs`, `--show-nonprinting` | `cat.py (4601)` | Audit pending |
 | `chcon` | `--dereference`, `-h`, `--no-dereference`, `-u`, `--user=USER`, `-r`, `--role=ROLE`, `-t`, `--type=TYPE`, `-l`, `--range=RANGE`, `--no-preserve-root`, `--preserve-root`, `--reference=RFILE`, `-R`, `--recursive`, `-v`, `--verbose` | `chcon_util.py (2)` | Audit pending |
 | `chgrp` | `-c`, `--changes`, `-f`, `--silent`, `--quiet`, `-v`, `--verbose`, `--dereference`, `-h`, `--no-dereference`, `--from=CURRENT_OWNER`, `--no-preserve-root`, `--preserve-root`, `--reference=RFILE`, `-R`, `--recursive` | `ownership_util.py (50)` | Audit pending |

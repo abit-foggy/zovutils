@@ -5,6 +5,14 @@ def run(s: Suite) -> None:
     for option, encoded in (("--base64", b"YWJj\n"), ("--base32", b"MFRGG===\n")):
         s.case("basenc", [option], stdin=b"abc")
         s.case("basenc", [option, "-d"], stdin=encoded)
+    for option, encoded in (
+        ("--base32hex", b"C5H66===\n"),
+        ("--base16", b"616263"),
+        ("--base2msbf", b"011000010110001001100011"),
+        ("--base2lsbf", b"100001100100011011000110"),
+    ):
+        s.case("basenc", [option], stdin=b"abc")
+        s.case("basenc", [option, "--decode"], stdin=encoded)
     s.case("basenc", ["--base64", "--bad-option"])
     s.product_version("basenc")
     s.symlink_dispatch("basenc", ["--base64"])
