@@ -19,6 +19,9 @@
 #define AT_SYMLINK_FOLLOW 0x400
 #endif
 
+#define ZOV_LN_DEFAULT_LINK_OPTION "-P"
+#define ZOV_LN_DEFAULT_LOGICAL 0
+
 static inline int zov_ln_long(const char *arg, const char *name, size_t keylen) {
     return keylen > 2 && keylen <= strlen(name) && strncmp(arg, name, keylen) == 0;
 }
@@ -83,7 +86,7 @@ static inline void zov_ln_help(void) {
           "  simple, never   always make simple backups\n"
           "\n"
           "Using -s ignores -L and -P.  Otherwise, the last option specified controls\n"
-          "behavior when a TARGET is a symbolic link, defaulting to -P.\n"
+          "behavior when a TARGET is a symbolic link, defaulting to " ZOV_LN_DEFAULT_LINK_OPTION ".\n"
           "\n"
           "Report bugs to: bug-coreutils@gnu.org\n"
           "GNU coreutils home page: <https://www.gnu.org/software/coreutils/>\n"
@@ -328,7 +331,7 @@ static inline int zov_ln_create_one(const char *source, const char *destination,
 }
 
 static inline int zov_ln_run(int argc, int8_t **argv) {
-    int symbolic = 0, logical = 0, no_dereference = 0;
+    int symbolic = 0, logical = ZOV_LN_DEFAULT_LOGICAL, no_dereference = 0;
     int force = 0, interactive = 0, verbose = 0, no_target_dir = 0;
     int options_done = 0, backup = 0, backup_control = 0, relative = 0;
     const char *target_dir = NULL, *suffix = getenv("SIMPLE_BACKUP_SUFFIX");
@@ -346,7 +349,7 @@ static inline int zov_ln_run(int argc, int8_t **argv) {
                 int is_help = zov_ln_long(arg, "--help", keylen);
                 if (value != NULL) { fprintf(stderr, "ln: option '%s' doesn't allow an argument\nTry 'ln --help' for more information.\n", is_help ? "--help" : "--version"); free(operands); return 1; }
                 if (is_help) { zov_ln_help(); free(operands); return 0; }
-                puts("ln (zovutils) 0.4.0"); free(operands); return 0;
+                puts("ln (zovutils) 0.4.1"); free(operands); return 0;
             }
             if (zov_ln_long(arg, "--backup", keylen)) {
                 backup = 1;

@@ -106,6 +106,7 @@ def run(s: Suite) -> None:
     _case(s, ["-T", "source", "second", "links"], setup=lambda root: (Path(root, "source").write_text("a"), Path(root, "second").write_text("b"), os.mkdir(os.path.join(root, "links"))))
     _case(s, ["-L", "source-link", "hard"], setup=_links)
     _case(s, ["-P", "source-link", "hard"], setup=_links)
+    _case(s, ["source-link", "hard"], setup=_links)
     _case(s, ["-snf", "replacement", "directory-link"], setup=lambda root: (os.mkdir(os.path.join(root, "directory")), os.symlink("directory", os.path.join(root, "directory-link"))))
     _case(s, ["-n", "-s", "source", "directory-link"], setup=lambda root: (os.mkdir(os.path.join(root, "directory")), os.symlink("directory", os.path.join(root, "directory-link"))))
     _case(s, ["source", "missing"], setup=_source)
