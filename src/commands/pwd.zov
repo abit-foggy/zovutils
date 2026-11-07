@@ -64,7 +64,7 @@ export fn run(start: usize, argc: usize) i32 = {
             };
             if (key == "--version" || (key.len > 2usize && key.len < 9usize && key == "--version"[0usize..key.len])) {
                 if (arg.len != key.len) { io::eprintln("pwd: option '" + "--version" + "' doesn't allow an argument"); usage_error(); return 1; };
-                io::println("pwd (zovutils) 0.10.34"); stream::finishoutput("pwd"); return 0;
+                io::println("pwd (zovutils) 0.10.35"); stream::finishoutput("pwd"); return 0;
             };
             io::eprintln("pwd: unrecognized option '" + arg + "'"); usage_error(); return 1;
         };

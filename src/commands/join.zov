@@ -55,7 +55,7 @@ export fn run(start: usize, argc: usize) i32 = {
         if (!options_done && arg.len > 2usize && arg[0usize..2usize] == "--") {
             let key: str = longkey(arg);
             if (key == "--help" || prefix(key, "--help")) { help(); stream::finishoutput("join"); return 0; };
-            if (key == "--version" || prefix(key, "--version")) { io::println("join (zovutils) 0.10.34"); stream::finishoutput("join"); return 0; };
+            if (key == "--version" || prefix(key, "--version")) { io::println("join (zovutils) 0.10.35"); stream::finishoutput("join"); return 0; };
             if (key == "--ignore-case" || prefix(key, "--ignore-case")) { ignore_case = true; i += 1usize; continue; };
             if (key == "--header" || prefix(key, "--header")) { header = true; i += 1usize; continue; };
             if (key == "--check-order" || prefix(key, "--check-order")) { check_order = true; i += 1usize; continue; };
