@@ -74,6 +74,7 @@ use commands::nproc;
 use commands::paste;
 use commands::pinky;
 use commands::pr;
+use commands::ptx;
 use commands::pathchk;
 use commands::printenv;
 use commands::readlink;
@@ -86,6 +87,7 @@ use commands::shred;
 use commands::sleep as sleeper;
 use commands::sort;
 use commands::stat;
+use commands::stdbuf;
 use commands::test_cmd as testcmd;
 use commands::tail;
 use commands::tee;
@@ -135,6 +137,7 @@ fn dispatch(name: str, start: usize, argc: usize) i32 = {
     if (name == "users") { return users::run(start, argc); };
     if (name == "who") { return who::run(start, argc); };
     if (name == "stty") { return stty::run(start, argc); };
+    if (name == "stdbuf") { return stdbuf::run(start, argc); };
     if (name == "uniq") { return uniq::run(start, argc); };
     if (name == "yes") { return yescmd::run(start, argc); };
     if (name == "cksum") { return cksum::run(start, argc); };
@@ -193,6 +196,7 @@ fn dispatch(name: str, start: usize, argc: usize) i32 = {
     if (name == "numfmt") { return numfmt::run(start, argc); };
     if (name == "pinky") { return pinky::run(start, argc); };
     if (name == "pr") { return pr::run(start, argc); };
+    if (name == "ptx") { return ptx::run(start, argc); };
     if (name == "paste") { return paste::run(start, argc); };
     if (name == "pathchk") { return pathchk::run(start, argc); };
     if (name == "printenv") { return printenv::run(start, argc); };
@@ -230,12 +234,12 @@ export fn main() i32 = {
     };
     if (argc < 2usize) {
         io::eprintln("usage: zovutils <utility> [arguments...]");
-        io::eprintln("utilities: [ b2sum base32 base64 basename basenc cat chgrp chmod chown cksum comm cp csplit cut date dd dir dirname echo env expand expr factor false fmt fold groups head hostid id install join link ln logname ls md5sum mkdir mkfifo mknod mktemp mv nice nl nohup nproc numfmt od paste pathchk pinky pr printenv printf pwd readlink realpath rm rmdir runcon seq sha1sum sha224sum sha256sum sha384sum sha512sum shred shuf sleep sort split stat stty sum sync tac tail tee test timeout touch tr true truncate tsort tty uname unexpand uniq unlink vdir wc whoami yes");
+        io::eprintln("utilities: [ b2sum base32 base64 basename basenc cat chcon chgrp chmod chown chroot cksum comm cp csplit cut date dd df dir dircolors dirname du echo env expand expr factor false fmt fold groups head hostid id install join link ln logname ls md5sum mkdir mkfifo mknod mktemp mv nice nl nohup nproc numfmt od paste pathchk pinky pr printenv printf ptx pwd readlink realpath rm rmdir runcon seq sha1sum sha224sum sha256sum sha384sum sha512sum shred shuf sleep sort split stat stdbuf stty sum sync tac tail tee test timeout touch tr true truncate tsort tty uname unexpand uniq unlink users vdir wc who whoami yes");
         return 1;
     };
     if (env::argat(1usize) == "--help" || env::argat(1usize) == "-h") {
         io::println("usage: zovutils <utility> [arguments...]");
-        io::println("utilities: [ b2sum base32 base64 basename basenc cat chgrp chmod chown cksum comm cp csplit cut date dd dir dirname echo env expand expr factor false fmt fold groups head hostid id install join link ln logname ls md5sum mkdir mkfifo mknod mktemp mv nice nl nohup nproc numfmt od paste pathchk pinky pr printenv printf pwd readlink realpath rm rmdir runcon seq sha1sum sha224sum sha256sum sha384sum sha512sum shred shuf sleep sort split stat stty sum sync tac tail tee test timeout touch tr true truncate tsort tty uname unexpand uniq unlink vdir wc whoami yes");
+        io::println("utilities: [ b2sum base32 base64 basename basenc cat chcon chgrp chmod chown chroot cksum comm cp csplit cut date dd df dir dircolors dirname du echo env expand expr factor false fmt fold groups head hostid id install join link ln logname ls md5sum mkdir mkfifo mknod mktemp mv nice nl nohup nproc numfmt od paste pathchk pinky pr printenv printf ptx pwd readlink realpath rm rmdir runcon seq sha1sum sha224sum sha256sum sha384sum sha512sum shred shuf sleep sort split stat stdbuf stty sum sync tac tail tee test timeout touch tr true truncate tsort tty uname unexpand uniq unlink users vdir wc who whoami yes");
         return 0;
     };
     if (argc >= 2usize && (env::argat(1usize) == "--version" || env::argat(1usize) == "-V")) {

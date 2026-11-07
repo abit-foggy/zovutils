@@ -75,7 +75,9 @@ The project is in alpha (`0.10.0`). The current command set is:
 - `pinky`
 - `printenv`
 - `pr`
+- `pr`
 - `printf`
+- `ptx`
 - `pwd`
 - `readlink`
 - `realpath`
@@ -94,6 +96,7 @@ The project is in alpha (`0.10.0`). The current command set is:
 - `stty`
 - `sort`
 - `stat`
+- `stdbuf`
 - `sum`
 - `sync`
 - `split`
