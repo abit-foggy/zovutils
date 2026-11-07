@@ -47,7 +47,7 @@ static inline int zov_link_run(int argc, int8_t **argv) {
             }
             if (key[0] != '\0' && zov_link_long(key, "--version")) {
                 if (equal != NULL) { fputs("link: option '--version' doesn't allow an argument\nTry 'link --help' for more information.\n", stderr); return 1; }
-                puts("link (zovutils) 0.10.27"); return 0;
+                puts("link (zovutils) 0.10.28"); return 0;
             }
             fprintf(stderr, "link: unrecognized option '%s'\nTry 'link --help' for more information.\n", arg);
             return 1;
