@@ -42,6 +42,7 @@ The project is in alpha (`0.8.0`). The current command set is:
 - `join`
 - `link`
 - `ln`
+- `md5sum`
 - `mkdir`
 - `mkfifo`
 - `mktemp`
@@ -59,6 +60,9 @@ The project is in alpha (`0.8.0`). The current command set is:
 - `realpath`
 - `rm`
 - `rmdir`
+- `sha1sum`
+- `sha224sum`
+- `sha256sum`
 - `seq`
 - `sleep`
 - `sort`
