@@ -132,7 +132,7 @@ static inline int zov_ptx_run(int argc, char **argv) {
     int nf = 0;
     for (int i = 0; i < argc; i++) {
         const char *a = argv[i];
-        if (!strcmp(a, "--version")) { puts("ptx (zovutils) 0.10.19"); free(files); return 0; }
+        if (!strcmp(a, "--version")) { puts("ptx (zovutils) 0.10.20"); free(files); return 0; }
         if (!strcmp(a, "--help")) {
             puts("Usage: ptx [OPTION]... [INPUT]...\nOutput a permuted index, including context, of the words in the input files.\n  -A, --auto-reference       output automatically generated references\n  -G, --traditional          use traditional System V output\n  -b, --break-file=FILE      use word break characters from FILE\n  -f, --ignore-case          fold lower case to upper case for sorting\n  -g, --gap-size=NUMBER      gap size between output fields\n  -i, --ignore-file=FILE     read words to ignore from FILE\n  -o, --only-file=FILE       read words to include from FILE\n  -r, --references           first field of each line is a reference\n  -R, --right-side-refs      put references at the right\n  -t, --typeset-mode         use a default width of 100 columns\n  -w, --width=NUMBER         output width in columns\n      --help                 display this help and exit\n      --version              output version information and exit");
             free(files); return 0;
@@ -297,6 +297,15 @@ static inline int zov_ptx_run(int argc, char **argv) {
                 printf("\\%s {}{%s}{%s}{%s%s}{}{%s}\n",macro_name,e->left,e->word,
                        *e->right?" ":"",e->right,ref);
             }
+            continue;
+        }
+        if (auto_ref && !right_ref && (int)pl > target) {
+            fputs(prefix, stdout);
+            if (leftlen) fputs(" /   ", stdout);
+            else for (int j = 0; j < 4; j++) putchar(' ');
+            fputs(e->word, stdout);
+            if (*e->right) fputs(truncation_flag, stdout);
+            putchar('\n');
             continue;
         }
         int before=leftlen?gap:0;

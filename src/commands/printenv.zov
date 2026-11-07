@@ -65,7 +65,7 @@ export fn run(start: usize, argc: usize) i32 = {
                     io::eprintln("printenv: option '" + "--version" + "' doesn't allow an argument");
                     usage_error(); return 2;
                 };
-                io::println("printenv (zovutils) 0.10.19");
+                io::println("printenv (zovutils) 0.10.20");
                 stream::finishoutput("printenv"); return 0;
             };
             io::eprintln("printenv: unrecognized option '" + arg + "'");

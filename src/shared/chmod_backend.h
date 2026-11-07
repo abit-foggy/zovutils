@@ -235,7 +235,7 @@ static inline int zov_chmod_run(int argc, int8_t **argv) {
             const char *eq = strchr(arg, '='); size_t len = eq ? (size_t)(eq - arg) : strlen(arg);
             const char *value = eq ? eq + 1 : NULL;
             if (zov_chmod_long(arg, "--help", len)) { if (value != NULL) { fputs("chmod: option '--help' doesn't allow an argument\nTry 'chmod --help' for more information.\n", stderr); free(operands); return 1; } zov_chmod_help(); free(operands); return 0; }
-            if (zov_chmod_long(arg, "--version", len)) { puts("chmod (zovutils) 0.10.19"); free(operands); return 0; }
+            if (zov_chmod_long(arg, "--version", len)) { puts("chmod (zovutils) 0.10.20"); free(operands); return 0; }
             if (zov_chmod_long(arg, "--recursive", len)) { opt.recursive = 1; continue; }
             if (zov_chmod_long(arg, "--changes", len)) { opt.verbose = opt.changes_only = 1; continue; }
             if (zov_chmod_long(arg, "--verbose", len)) { opt.verbose = 1; continue; }
