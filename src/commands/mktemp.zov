@@ -1,10 +1,404 @@
 use std::env as args;
-use <mktemp_backend.h> as backend;
+use std::io as io;
+use <stdio.h> as c;
+use <stdlib.h> as stdlib;
+use <string.h> as strc;
+use <unistd.h> as unistd;
+use <platform_errno.h> as platform_errno;
+
+fn print_help() = {
+    c::fputs("Usage: mktemp [OPTION]... [TEMPLATE]\n", c::stdout);
+    c::fputs("Create a temporary file or directory, safely, and print its name.\n", c::stdout);
+    c::fputs("TEMPLATE must contain at least 3 consecutive 'X's in last component.\n", c::stdout);
+    c::fputs("If TEMPLATE is not specified, use tmp.XXXXXXXXXX, and --tmpdir is implied.\n", c::stdout);
+    c::fputs("Files are created u+rw, and directories u+rwx, minus umask restrictions.\n\n", c::stdout);
+    c::fputs("  -d, --directory\n         create a directory, not a file\n", c::stdout);
+    c::fputs("  -u, --dry-run\n         do not create anything; merely print a name (unsafe)\n", c::stdout);
+    c::fputs("  -q, --quiet\n         suppress diagnostics about file/dir-creation failure\n", c::stdout);
+    c::fputs("      --suffix=SUFF\n         append SUFF to TEMPLATE; SUFF must not contain a slash.\n", c::stdout);
+    c::fputs("         This option is implied if TEMPLATE does not end in X\n", c::stdout);
+    c::fputs("  -p DIR, --tmpdir[=DIR]\n         interpret TEMPLATE relative to DIR;\n", c::stdout);
+    c::fputs("         if DIR is not specified, use $TMPDIR if set, else /tmp.\n", c::stdout);
+    c::fputs("         With this option, TEMPLATE must not be an absolute name;\n", c::stdout);
+    c::fputs("         unlike with -t, TEMPLATE may contain slashes,\n", c::stdout);
+    c::fputs("         but mktemp creates only the final component\n", c::stdout);
+    c::fputs("  -t\n         interpret TEMPLATE as a single file name component,\n", c::stdout);
+    c::fputs("         relative to a directory: $TMPDIR, if set;\n", c::stdout);
+    c::fputs("         else the directory specified via -p; else /tmp [deprecated]\n", c::stdout);
+    c::fputs("      --help\n         display this help and exit\n", c::stdout);
+    c::fputs("      --version\n         output version information and exit\n\n", c::stdout);
+    c::fputs("Report bugs to: bug-coreutils@gnu.org\n", c::stdout);
+    c::fputs("GNU coreutils home page: <https://www.gnu.org/software/coreutils/>\n", c::stdout);
+    c::fputs("General help using GNU software: <https://www.gnu.org/gethelp/>\n", c::stdout);
+    c::fputs("Report any translation bugs to <https://translationproject.org/team/>\n", c::stdout);
+    c::fputs("Full documentation <https://www.gnu.org/software/coreutils/mktemp>\n", c::stdout);
+    c::fputs("or available locally via: info '(coreutils) mktemp invocation'\n", c::stdout);
+};
+
+fn long_match(arg: str, name: str, keylen: usize) bool = {
+    if (keylen <= 2usize || keylen > name.len) { return false; };
+    return arg[0..keylen] == name[0..keylen];
+};
+
+fn contains_char(s: str, ch: u8) bool = {
+    for (let i in 0usize..s.len) {
+        if (s[i] == ch) { return true; };
+    };
+    return false;
+};
+
+fn random_char() i8 = {
+    let charset: str = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+    let r: i32 = stdlib::rand() % 62i32;
+    return charset[r as usize] as i8;
+};
 
 export fn run(start: usize, argc: usize) i32 = {
-    let count: usize = argc - start;
-    if (count > 4096usize) { return 1; };
-    let mut argv: [4096]*i8;
-    for (let i in 0usize..count) { argv[i] = args::argat(start + i).data as *i8; };
-    return backend::zov_mktemp_run(count as i32, (&argv[0usize]) as **i8);
+    let mut directory: bool = false;
+    let mut dry: bool = false;
+    let mut quiet: bool = false;
+    let mut tmpdir: bool = false;
+    let mut tmpdir_arg: bool = false;
+    let mut single: bool = false;
+    let mut dir: str = "";
+    let mut has_dir: bool = false;
+    let mut suffix: str = "";
+    let mut has_suffix: bool = false;
+    let mut templ: str = "";
+    let mut has_templ: bool = false;
+    let mut bad_option: str = "--option";
+    let mut options: bool = true;
+
+    let mut i: usize = start;
+    while (i < argc) {
+        let a: str = args::argat(i);
+        bad_option = a;
+        if (options && a == "--") {
+            options = false;
+            i = i + 1usize;
+            continue;
+        };
+        if (options && a.len >= 2usize) {
+            if (a[0..2] == "--") {
+                let mut eq_pos: usize = a.len;
+                for (let k in 2usize..a.len) {
+                    if (a[k] == 61u8 && eq_pos == a.len) {
+                        eq_pos = k;
+                    };
+                };
+                let keylen: usize = eq_pos;
+                let has_eq: bool = eq_pos < a.len;
+
+                if (long_match(a, "--help", keylen)) {
+                    if (has_eq) {
+                        c::fprintf(c::stderr, "mktemp: option '%s' doesn't allow an argument\nTry 'mktemp --help' for more information.\n", bad_option.data as *i8);
+                        return 1;
+                    };
+                    print_help();
+                    return 0;
+                };
+
+                if (long_match(a, "--version", keylen)) {
+                    if (has_eq) {
+                        c::fprintf(c::stderr, "mktemp: option '%s' doesn't allow an argument\nTry 'mktemp --help' for more information.\n", bad_option.data as *i8);
+                        return 1;
+                    };
+                    io::println("mktemp (zovutils) 0.10.61");
+                    return 0;
+                };
+
+                if (long_match(a, "--directory", keylen)) {
+                    if (has_eq) {
+                        c::fprintf(c::stderr, "mktemp: option '%s' doesn't allow an argument\nTry 'mktemp --help' for more information.\n", bad_option.data as *i8);
+                        return 1;
+                    };
+                    directory = true;
+                    i = i + 1usize;
+                    continue;
+                };
+
+                if (long_match(a, "--dry-run", keylen)) {
+                    if (has_eq) {
+                        c::fprintf(c::stderr, "mktemp: option '%s' doesn't allow an argument\nTry 'mktemp --help' for more information.\n", bad_option.data as *i8);
+                        return 1;
+                    };
+                    dry = true;
+                    i = i + 1usize;
+                    continue;
+                };
+
+                if (long_match(a, "--quiet", keylen)) {
+                    if (has_eq) {
+                        c::fprintf(c::stderr, "mktemp: option '%s' doesn't allow an argument\nTry 'mktemp --help' for more information.\n", bad_option.data as *i8);
+                        return 1;
+                    };
+                    quiet = true;
+                    i = i + 1usize;
+                    continue;
+                };
+
+                if (long_match(a, "--tmpdir", keylen)) {
+                    tmpdir = true;
+                    if (has_eq) {
+                        dir = a[eq_pos + 1usize..a.len];
+                        has_dir = true;
+                        tmpdir_arg = true;
+                    };
+                    i = i + 1usize;
+                    continue;
+                };
+
+                if (long_match(a, "--suffix", keylen)) {
+                    if (!has_eq) {
+                        if (i + 1usize >= argc) {
+                            c::fputs("mktemp: option '--suffix' requires an argument\nTry 'mktemp --help' for more information.\n", c::stderr);
+                            return 1;
+                        };
+                        i = i + 1usize;
+                        suffix = args::argat(i);
+                        has_suffix = true;
+                    } else {
+                        suffix = a[eq_pos + 1usize..a.len];
+                        has_suffix = true;
+                    };
+                    i = i + 1usize;
+                    continue;
+                };
+
+                c::fprintf(c::stderr, "mktemp: unrecognized option '%s'\nTry 'mktemp --help' for more information.\n", a.data as *i8);
+                return 1;
+            };
+        };
+
+        if (options && a.len > 1usize) {
+            if (a[0usize] == 45u8) {
+                let mut j: usize = 1usize;
+                while (j < a.len) {
+                    let opt: u8 = a[j];
+                    if (opt == 100u8) { // 'd'
+                        directory = true;
+                    } else if (opt == 117u8) { // 'u'
+                        dry = true;
+                    } else if (opt == 113u8) { // 'q'
+                        quiet = true;
+                    } else if (opt == 116u8) { // 't'
+                        single = true;
+                    } else if (opt == 112u8) { // 'p'
+                        tmpdir = true;
+                        if (j + 1usize < a.len) {
+                            dir = a[j + 1usize..a.len];
+                            has_dir = true;
+                            tmpdir_arg = true;
+                            break;
+                        } else if (i + 1usize < argc) {
+                            let next: str = args::argat(i + 1usize);
+                            let mut is_option: bool = false;
+                            if (next.len > 0usize) {
+                                if (next[0usize] == 45u8) {
+                                    is_option = true;
+                                };
+                            };
+                            if (!is_option) {
+                                i = i + 1usize;
+                                dir = next;
+                                has_dir = true;
+                                tmpdir_arg = true;
+                            };
+                        };
+                    } else {
+                        c::fprintf(c::stderr, "mktemp: invalid option -- '%c'\nTry 'mktemp --help' for more information.\n", opt as i32);
+                        return 1;
+                    };
+                    j = j + 1usize;
+                };
+                i = i + 1usize;
+                continue;
+            };
+        };
+
+        if (has_templ) {
+            c::fprintf(c::stderr, "mktemp: too many templates\nTry 'mktemp --help' for more information.\n");
+            return 1;
+        };
+        templ = a;
+        has_templ = true;
+        i = i + 1usize;
+    };
+
+    if (tmpdir && !tmpdir_arg) {
+        let env_tmp: nullable *i8 = stdlib::getenv("TMPDIR");
+        if (env_tmp != null && env_tmp![0usize] != 0i8) {
+            dir = ""; // will read from env_tmp
+            has_dir = true;
+        } else {
+            dir = "/tmp";
+            has_dir = true;
+        };
+    };
+
+    if (single && !has_dir) {
+        let env_tmp: nullable *i8 = stdlib::getenv("TMPDIR");
+        if (env_tmp != null && env_tmp![0usize] != 0i8) {
+            dir = ""; // will read from env_tmp
+            has_dir = true;
+        } else {
+            dir = "/tmp";
+            has_dir = true;
+        };
+    };
+
+    if (!has_templ) {
+        if (tmpdir || single) {
+            templ = "tmp.XXXXXXXXXX";
+        } else {
+            templ = "/tmp/tmp.XXXXXXXXXX";
+        };
+        has_templ = true;
+    };
+
+    if (has_suffix && contains_char(suffix, 47u8)) { // '/'
+        c::fprintf(c::stderr, "mktemp: invalid suffix '%s', contains directory separator\n", suffix.data as *i8);
+        return 1;
+    };
+
+    if (tmpdir || single) {
+        if (templ.len > 0usize) {
+            if (templ[0usize] == 47u8) {
+                c::fputs("mktemp: template must not contain directory separators\nTry 'mktemp --help' for more information.\n", c::stderr);
+                return 1;
+            };
+        };
+        if (single && contains_char(templ, 47u8)) {
+            c::fputs("mktemp: template must not contain directory separators\nTry 'mktemp --help' for more information.\n", c::stderr);
+            return 1;
+        };
+    };
+
+    let mut work_buf: [4096]i8;
+    let mut work_len: usize = 0usize;
+
+    if ((tmpdir || single) && has_dir) {
+        let mut d_str: str = dir;
+        if (d_str.len == 0usize) {
+            let env_tmp: nullable *i8 = stdlib::getenv("TMPDIR");
+            if (env_tmp != null && env_tmp![0usize] != 0i8) {
+                let mut elen: usize = 0usize;
+                while (env_tmp![elen] != 0i8) {
+                    work_buf[work_len] = env_tmp![elen];
+                    work_len = work_len + 1usize;
+                    elen = elen + 1usize;
+                };
+            } else {
+                d_str = "/tmp";
+            };
+        };
+        if (d_str.len > 0usize) {
+            for (let k in 0usize..d_str.len) {
+                work_buf[work_len] = d_str[k] as i8;
+                work_len = work_len + 1usize;
+            };
+        };
+        work_buf[work_len] = 47i8; // '/'
+        work_len = work_len + 1usize;
+    };
+
+    for (let k in 0usize..templ.len) {
+        work_buf[work_len] = templ[k] as i8;
+        work_len = work_len + 1usize;
+    };
+    work_buf[work_len] = 0i8;
+
+    let mut last_slash: usize = work_len;
+    for (let k in 0usize..work_len) {
+        if (work_buf[k] == 47i8) {
+            last_slash = k;
+        };
+    };
+    let mut leaf_start: usize = 0usize;
+    if (last_slash < work_len) {
+        leaf_start = last_slash + 1usize;
+    };
+    let mut leaflen: usize = work_len - leaf_start;
+
+    let mut xs: usize = 0usize;
+    while (xs < leaflen) {
+        if (work_buf[leaf_start + leaflen - xs - 1usize] == 88i8) { // 'X'
+            xs = xs + 1usize;
+        } else {
+            break;
+        };
+    };
+
+    if (has_suffix && xs == 0usize) {
+        for (let k in 0usize..suffix.len) {
+            work_buf[work_len] = suffix[k] as i8;
+            work_len = work_len + 1usize;
+        };
+        work_buf[work_len] = 0i8;
+        leaflen = leaflen + suffix.len;
+        xs = 0usize;
+    } else if (has_suffix) {
+        work_len = leaf_start + leaflen - xs;
+        for (let k in 0usize..suffix.len) {
+            work_buf[work_len] = suffix[k] as i8;
+            work_len = work_len + 1usize;
+        };
+        for (let _k in 0usize..10usize) {
+            work_buf[work_len] = 88i8; // 'X'
+            work_len = work_len + 1usize;
+        };
+        work_buf[work_len] = 0i8;
+        xs = 10usize;
+    };
+
+    if (xs < 3usize) {
+        c::fprintf(c::stderr, "mktemp: too few X's in template '%s'\n", templ.data as *i8);
+        return 1;
+    };
+
+    if (dry) {
+        for (let k in 0usize..work_len) {
+            if (work_buf[k] == 88i8) {
+                work_buf[k] = random_char();
+            };
+        };
+        c::puts((&work_buf[0usize]) as *i8);
+        return 0;
+    };
+
+    if (directory) {
+        let res: nullable *i8 = stdlib::mkdtemp((&work_buf[0usize]) as *i8);
+        if (res == null) {
+            if (!quiet) {
+                c::fprintf(c::stderr, "mktemp: failed to create directory '%s': %s\n", templ.data as *i8, strc::strerror(platform_errno::zov_errno_value()));
+            };
+            return 1;
+        };
+    } else {
+        let mut xleft: usize = 0usize;
+        if (xs > 6usize) {
+            xleft = xs - 6usize;
+        };
+        let mut cur_xleft: usize = xleft;
+        for (let k in 0usize..work_len) {
+            if (cur_xleft > 0usize && work_buf[k] == 88i8) {
+                work_buf[k] = random_char();
+                cur_xleft = cur_xleft - 1usize;
+            };
+        };
+        let fd: i32 = stdlib::mkstemp((&work_buf[0usize]) as *i8);
+        if (fd < 0i32) {
+            if (!quiet) {
+                c::fprintf(c::stderr, "mktemp: failed to create file '%s': %s\n", templ.data as *i8, strc::strerror(platform_errno::zov_errno_value()));
+            };
+            return 1;
+        };
+        unistd::close(fd);
+    };
+
+    c::puts((&work_buf[0usize]) as *i8);
+    if (c::ferror(c::stdout) != 0i32) {
+        return 1;
+    };
+    return 0;
 };
