@@ -1,7 +1,11 @@
 use std::env as args;
 use std::io;
+use std::mem as mem;
+use std::vec as vec;
 use <stdio.h> as c;
-use <cut_backend.h> as backend;
+use <string.h> as strc;
+use <platform_errno.h> as platform_errno;
+use <platform_locale.h> as platform_locale;
 use shared::io as stream;
 
 fn usage_error() void = {
@@ -50,6 +54,282 @@ fn help() void = {
     io::print("or available locally via: info '(coreutils) cut invocation'\n");
 };
 
+type Range = struct {
+    first: u64,
+    last: u64,
+};
+
+type CutLine = struct {
+    data: *u8,
+    len: usize,
+    cap: usize,
+};
+
+fn parse_uint(s: str, cursor: &mut usize, value: &mut u64) i32 = {
+    let mut p: usize = *cursor;
+    if (p >= s.len || s.data[p] < 48u8 || s.data[p] > 57u8) { return 0i32; };
+    let mut n: u64 = 0u64;
+    while (p < s.len && s.data[p] >= 48u8 && s.data[p] <= 57u8) {
+        let digit: u64 = (s.data[p] - 48u8) as u64;
+        let max_val: u64 = 18446744073709551615u64;
+        if (n > (max_val - digit) / 10u64) { return -1i32; };
+        n = n * 10u64 + digit;
+        p += 1usize;
+    };
+    *cursor = p;
+    *value = n;
+    return 1i32;
+};
+
+fn validate_list(list: str) i32 = {
+    if (list.len == 0usize) { return 2i32; };
+    let mut p: usize = 0usize;
+    while (p < list.len) {
+        let mut first: u64 = 0u64;
+        let mut last: u64 = 0u64;
+        let have_first: i32 = parse_uint(list, &mut p, &mut first);
+        if (have_first < 0i32) { return 2i32; };
+        if (p < list.len && list.data[p] == 45u8) {
+            p += 1usize;
+            let have_last: i32 = parse_uint(list, &mut p, &mut last);
+            if (have_last < 0i32 || (have_first == 0i32 && have_last == 0i32)) { return 0i32; };
+            if (have_first != 0i32 && first == 0u64) { return 2i32; };
+            if (have_last != 0i32 && last == 0u64) { return 2i32; };
+            if (have_first != 0i32 && have_last != 0i32 && last < first) { return 3i32; };
+        } else {
+            if (have_first == 0i32 || first == 0u64) { return 2i32; };
+        };
+        if (p == list.len) { return 1i32; };
+        if (list.data[p] != 44u8) { return 4i32; };
+        p += 1usize;
+        if (p == list.len) { return 2i32; };
+    };
+    return 1i32;
+};
+
+fn parse_ranges(list: str, ranges: &mut vec::Vec[Range]) void = {
+    let mut p: usize = 0usize;
+    while (p < list.len) {
+        let mut first: u64 = 0u64;
+        let mut last: u64 = 18446744073709551615u64;
+        let have_first: i32 = parse_uint(list, &mut p, &mut first);
+        if (p < list.len && list.data[p] == 45u8) {
+            p += 1usize;
+            let have_last: i32 = parse_uint(list, &mut p, &mut last);
+            if (have_first == 0i32) { first = 1u64; };
+            if (have_last == 0i32) { last = 18446744073709551615u64; };
+        } else {
+            last = first;
+        };
+        ranges.push(Range { first = first, last = last });
+        if (p < list.len && list.data[p] == 44u8) {
+            p += 1usize;
+        };
+    };
+};
+
+fn is_selected(ranges: &vec::Vec[Range], position: u64) bool = {
+    for (let i in 0usize..ranges.len()) {
+        let r: Range = ranges.get(i);
+        if (position >= r.first && position <= r.last) { return true; };
+    };
+    return false;
+};
+
+fn is_separator(mode: i32, c: u8, delimiter: u8) bool = {
+    if (mode == 2i32) { return c == delimiter; };
+    return c == 32u8 || c == 9u8;
+};
+
+fn emit_field(out: *c::FILE, line: *u8, start: usize, end: usize, index: u64,
+              ranges: &vec::Vec[Range], complement: bool, delimiter: u8,
+              output_delimiter: str, has_output_delimiter: i32, wrote: &mut bool) bool = {
+    let mut selected: bool = is_selected(ranges, index);
+    if (complement) { selected = !selected; };
+    if (!selected) { return true; };
+    if (*wrote) {
+        if (has_output_delimiter == 2i32) {
+            if (!stream::putbyte(out, 32u8)) { return false; };
+        } else if (has_output_delimiter == 1i32) {
+            if (!stream::putstr(out, output_delimiter)) { return false; };
+        } else {
+            if (!stream::putbyte(out, delimiter)) { return false; };
+        };
+    };
+    let seg_len: usize = end - start;
+    if (seg_len > 0usize) {
+        if (!stream::writebytes(out, ((&line[start]) as *u8), seg_len)) { return false; };
+    };
+    *wrote = true;
+    return true;
+};
+
+fn emit_line(out: *c::FILE, line: *u8, length: usize, has_terminator: bool, terminator: u8,
+             ranges: &vec::Vec[Range], mode: i32, delimiter: u8,
+             output_delimiter: str, has_output_delimiter: i32,
+             no_partial: bool, complement: bool, suppress: bool) bool = {
+    let mut wrote: bool = false;
+    if (mode == 1i32 && !no_partial) {
+        for (let i in 0usize..length) {
+            let mut selected: bool = is_selected(ranges, (i + 1usize) as u64);
+            if (complement) { selected = !selected; };
+            if (selected) {
+                if (!stream::putbyte(out, line[i])) { return false; };
+            };
+        };
+    } else if (mode == 1i32 || mode == 3i32) {
+        let mut offset: usize = 0usize;
+        let mut position: u64 = 1u64;
+        while (offset < length) {
+            let width: usize = platform_locale::zov_mbrlen(((&line[offset]) as *u8), length - offset);
+            let mut selected: bool = is_selected(ranges, position);
+            if (mode == 1i32 && no_partial) {
+                for (let j in 1usize..width) {
+                    if (!is_selected(ranges, position + (j as u64))) {
+                        selected = false;
+                    };
+                };
+            };
+            if (complement) { selected = !selected; };
+            if (selected) {
+                if (!stream::writebytes(out, ((&line[offset]) as *u8), width)) { return false; };
+            };
+            offset += width;
+            if (mode == 1i32) {
+                position += width as u64;
+            } else {
+                position += 1u64;
+            };
+        };
+    } else {
+        let mut has_delimeter: bool = false;
+        for (let i in 0usize..length) {
+            if (is_separator(mode, line[i], delimiter)) { has_delimeter = true; };
+        };
+        if (!has_delimeter) {
+            if (suppress) { return true; };
+            if (length > 0usize && !stream::writebytes(out, line, length)) { return false; };
+        } else {
+            let mut start: usize = 0usize;
+            let mut i: usize = 0usize;
+            let mut index: u64 = 1u64;
+            let whitespace_mode: bool = mode == 4i32 || mode == 5i32;
+            let trimmed: bool = mode == 5i32;
+            let mut field_delim: u8 = delimiter;
+            if (whitespace_mode) { field_delim = 9u8; };
+            if (trimmed) {
+                while (start < length && is_separator(mode, line[start], delimiter)) {
+                    start += 1usize;
+                };
+            };
+            i = start;
+            while (i < length) {
+                if (!is_separator(mode, line[i], delimiter)) {
+                    i += 1usize;
+                    continue;
+                };
+                if (!emit_field(out, line, start, i, index, ranges, complement,
+                                field_delim, output_delimiter, has_output_delimiter, &mut wrote)) {
+                    return false;
+                };
+                index += 1u64;
+                if (whitespace_mode) {
+                    while (i < length && is_separator(mode, line[i], delimiter)) { i += 1usize; };
+                } else {
+                    i += 1usize;
+                };
+                start = i;
+            };
+            if (!trimmed || start < length) {
+                if (!emit_field(out, line, start, length, index, ranges, complement,
+                                field_delim, output_delimiter, has_output_delimiter, &mut wrote)) {
+                    return false;
+                };
+            } else if (start == length && !trimmed) {
+                if (!emit_field(out, line, start, length, index, ranges, complement,
+                                field_delim, output_delimiter, has_output_delimiter, &mut wrote)) {
+                    return false;
+                };
+            };
+            if (!trimmed && length == 0usize) {
+                if (!emit_field(out, line, 0usize, 0usize, index, ranges, complement,
+                                field_delim, output_delimiter, has_output_delimiter, &mut wrote)) {
+                    return false;
+                };
+            };
+        };
+    };
+    if (has_terminator) {
+        if (!stream::putbyte(out, terminator)) { return false; };
+    };
+    return true;
+};
+
+fn process_file(path: str, ranges: &vec::Vec[Range], mode: i32,
+                delimiter: u8, output_delimiter: str, has_output_delimiter: i32,
+                no_partial: bool, complement: bool, suppress: bool, zero_terminated: bool) i32 = {
+    let is_stdin: bool = path == "-";
+    let mut fp: *c::FILE = c::stdin;
+    if (!is_stdin) {
+        let open_res: nullable *c::FILE = stream::openread(path);
+        match (open_res) {
+            case let opened: *c::FILE => { fp = opened; },
+            case null => {
+                let err: i32 = platform_errno::zov_errno_value();
+                c::fprintf(c::stderr, "cut: %s: %s\n", path.data as *i8, strc::strerror(err));
+                return 1;
+            },
+        };
+    };
+    let mut terminator: u8 = 10u8;
+    if (zero_terminated) { terminator = 0u8; };
+
+    let mut line: CutLine = CutLine { data = mem::alloc[u8](256usize), len = 0usize, cap = 256usize };
+    let mut status: i32 = 0;
+    while (true) {
+        let ch: i32 = c::fgetc(fp);
+        if (ch == -1i32) {
+            if (stream::readerror(fp)) {
+                let err: i32 = platform_errno::zov_errno_value();
+                c::fprintf(c::stderr, "cut: read error: %s\n", strc::strerror(err));
+                status = 1;
+            } else if (line.len > 0usize) {
+                if (!emit_line(c::stdout, line.data, line.len, true, terminator, ranges, mode, delimiter,
+                               output_delimiter, has_output_delimiter, no_partial, complement, suppress)) {
+                    status = 1;
+                };
+            };
+            break;
+        };
+        if ((ch as u8) == terminator) {
+            if (!emit_line(c::stdout, line.data, line.len, true, terminator, ranges, mode, delimiter,
+                           output_delimiter, has_output_delimiter, no_partial, complement, suppress)) {
+                status = 1;
+                break;
+            };
+            line.len = 0usize;
+            continue;
+        };
+        if (line.len == line.cap) {
+            let next: usize = line.cap * 2usize;
+            line.data = mem::reallocbuf[u8](line.data, next);
+            line.cap = next;
+        };
+        line.data[line.len] = ch as u8;
+        line.len += 1usize;
+    };
+    mem::freeptr[u8](line.data);
+    if (!is_stdin) {
+        stream::closefile(fp);
+    };
+    if (c::fflush(c::stdout) != 0i32) {
+        let err: i32 = platform_errno::zov_errno_value();
+        c::fprintf(c::stderr, "cut: write error: %s\n", strc::strerror(err));
+        status = 1;
+    };
+    return status;
+};
+
 export fn run(start: usize, argc: usize) i32 = {
     let mut list: str = "";
     let mut mode: i32 = 0i32;
@@ -59,7 +339,7 @@ export fn run(start: usize, argc: usize) i32 = {
     let mut whitespace: bool = false;
     let mut whitespace_trimmed: bool = false;
     let mut force_space_fields: bool = false;
-    let mut output_delimiter: *i8 = list.data as *i8;
+    let mut output_delimiter: str = "";
     let mut has_output_delimiter: i32 = 0i32;
     let mut explicit_output_delimiter: bool = false;
     let mut complement: bool = false;
@@ -113,7 +393,7 @@ export fn run(start: usize, argc: usize) i32 = {
                 let mut value: str = "";
                 if (arg.len > key.len) { value = arg[key.len + 1usize..arg.len]; i += 1usize; }
                 else { value = args::argat(i + 1usize); i += 2usize; };
-                output_delimiter = value.data as *i8; has_output_delimiter = 1i32; explicit_output_delimiter = true; continue;
+                output_delimiter = value; has_output_delimiter = 1i32; explicit_output_delimiter = true; continue;
             };
             if (key == "--whitespace-delimited" || is_prefix(key, "--whitespace-delimited")) {
                 if (arg.len > key.len) {
@@ -151,14 +431,14 @@ export fn run(start: usize, argc: usize) i32 = {
                         c::fprintf(c::stderr, "cut: option requires an argument -- '%c'\n", option as i32); usage_error(); return 1;
                     };
                     if (option == 79u8) {
-                        output_delimiter = value.data as *i8; has_output_delimiter = 1i32; explicit_output_delimiter = true;
+                        output_delimiter = value; has_output_delimiter = 1i32; explicit_output_delimiter = true;
                     } else if (option == 100u8) {
                         if (value.len != 1usize) { io::eprintln("cut: the delimiter must be a single character"); return 1; };
                         delimiter = value.data[0usize] as i32; has_delimiter = true;
                     } else {
                         if (option == 70u8) {
                             mode = 4i32; whitespace = true; force_space_fields = true;
-                            if (!explicit_output_delimiter) { output_delimiter = list.data as *i8; has_output_delimiter = 2i32; };
+                            if (!explicit_output_delimiter) { output_delimiter = " "; has_output_delimiter = 2i32; };
                         }
                         else if (option == 102u8) {
                             if (whitespace_trimmed) { mode = 5i32; }
@@ -186,7 +466,7 @@ export fn run(start: usize, argc: usize) i32 = {
     if (has_delimiter && whitespace && !force_space_fields) { io::eprintln("cut: -d and -w are mutually exclusive"); usage_error(); return 1; };
     if (has_delimiter && mode != 2i32 && !force_space_fields) { io::eprintln("cut: an input delimiter makes sense\n\tonly when operating on fields"); usage_error(); return 1; };
     if (suppress && !is_field_mode) { io::eprintln("cut: suppressing non-delimited lines makes sense\n\tonly when operating on fields"); usage_error(); return 1; };
-    let list_status: i32 = backend::zov_cut_validate_list(list.data as *i8);
+    let list_status: i32 = validate_list(list);
     if (list_status == 2i32) {
         if (mode == 2i32) { io::eprintln("cut: fields are numbered from 1"); }
         else { io::eprintln("cut: byte/character positions are numbered from 1"); };
@@ -194,11 +474,20 @@ export fn run(start: usize, argc: usize) i32 = {
     };
     if (list_status == 3i32) { io::eprintln("cut: invalid decreasing range"); usage_error(); return 1; };
     if (list_status != 1i32) { io::eprintln("cut: invalid range with no endpoint: -"); usage_error(); return 1; };
-    if (file_count == 0usize) { return backend::zov_cut_process("-", list.data as *i8, mode, delimiter, output_delimiter, has_output_delimiter, no_partial as i32, complement as i32, suppress as i32, zero_terminated as i32); };
+
+    platform_locale::zov_init_ctype_locale();
+    let mut ranges = vec::new[Range]();
+    parse_ranges(list, &mut ranges);
+
+    if (file_count == 0usize) {
+        files[0usize] = "-";
+        file_count = 1usize;
+    };
     let mut status: i32 = 0i32;
     for (let fi in 0usize..file_count) {
-        let result: i32 = backend::zov_cut_process(files[fi].data as *i8, list.data as *i8, mode, delimiter, output_delimiter, has_output_delimiter, no_partial as i32, complement as i32, suppress as i32, zero_terminated as i32);
+        let result: i32 = process_file(files[fi], &ranges, mode, delimiter as u8, output_delimiter, has_output_delimiter, no_partial, complement, suppress, zero_terminated);
         if (result != 0i32) { status = 1i32; };
     };
+    if (!stream::finishoutput("cut")) { status = 1i32; };
     return status;
 };

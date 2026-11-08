@@ -87,4 +87,13 @@ static inline void zov_fold_next_char(const unsigned char *text, size_t length,
     }
 }
 
+static inline size_t zov_mbrlen(const unsigned char *text, size_t length) {
+    if (length == 0) return 0;
+    mbstate_t state;
+    memset(&state, 0, sizeof(state));
+    size_t width = mbrlen((const char *)text, length, &state);
+    if (width == (size_t)-1 || width == (size_t)-2 || width == 0) return 1;
+    return width;
+}
+
 #endif
