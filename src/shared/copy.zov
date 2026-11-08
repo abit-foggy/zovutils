@@ -1193,7 +1193,8 @@ export fn run_cp(start: usize, argc: usize) i32 = {
     let mut null_dest: String = String::from(dest);
     let mut dst_info: ZovCpStat;
     let dest_exists: bool = platform_copy::zov_cp_stat(null_dest.view().data as *i8, 1i32, (&mut dst_info) as *void) == 0i32;
-    let is_dir: bool = !opt.no_target_dir && dest_exists && dst_info.is_dir != 0i32;
+    let dest_is_dir: bool = dest_exists && dst_info.is_dir != 0i32;
+    let is_dir: bool = !opt.no_target_dir && dest_is_dir;
 
     if (count > 2usize && !is_dir) {
         c::fputs("cp: target ".data as *i8, c::stderr);
@@ -1207,7 +1208,7 @@ export fn run_cp(start: usize, argc: usize) i32 = {
         return 1;
     };
 
-    if (count == 2usize && opt.no_target_dir && is_dir) {
+    if (count == 2usize && opt.no_target_dir && dest_is_dir) {
         let mut src_info: ZovCpStat;
         let mut null_src: String = String::from(operands.get(0usize));
         if (platform_copy::zov_cp_stat(null_src.view().data as *i8, 1i32, (&mut src_info) as *void) == 0i32 && src_info.is_dir == 0i32) {
