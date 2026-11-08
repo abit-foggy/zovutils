@@ -363,4 +363,9 @@ static inline int zov_setpriority(int prio) {
     return setpriority(PRIO_PROCESS, 0, prio);
 }
 
+static inline uint64_t zov_random_seed(void) {
+    uint64_t seed = (uint64_t)time(NULL) ^ ((uint64_t)getpid() << 32);
+    return seed != 0 ? seed : 1;
+}
+
 #endif

@@ -1,6 +1,8 @@
 #ifndef ZOVUTILS_PLATFORM_LOCALE_H
 #define ZOVUTILS_PLATFORM_LOCALE_H
 
+#include "zov_wcwidth.h"
+
 #include <langinfo.h>
 #include <locale.h>
 #include <stddef.h>

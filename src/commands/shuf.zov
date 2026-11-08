@@ -1,9 +1,346 @@
 use std::env as args;
-use <shuf_backend.h> as backend;
+use std::io as io;
+use std::vec;
+use <stdio.h> as c;
+use <string.h> as strc;
+use <platform_errno.h> as platform_errno;
+use <platform_process.h> as platform_process;
+
+type ShufToken = struct {
+    start: usize,
+    len: usize,
+};
+
+type RandState = struct {
+    seed: u64,
+    val: u64,
+};
+
+fn next_rand(mut_seed: u64) RandState = {
+    let mut v: u64 = mut_seed;
+    v ^= v >> 12u64;
+    v ^= v << 25u64;
+    v ^= v >> 27u64;
+    let res: u64 = v * 2685821657736338717u64;
+    return RandState{ seed = v, val = res };
+};
+
+type ParseNumResult = struct {
+    valid: bool,
+    val: i64,
+};
+
+fn parse_i64(s: str) ParseNumResult = {
+    if (s.len == 0usize) {
+        return ParseNumResult{ valid = false, val = 0i64 };
+    };
+    let mut i: usize = 0usize;
+    let mut is_neg: bool = false;
+    if (s.data[0usize] == 45u8) { // '-'
+        is_neg = true;
+        i += 1usize;
+    } else if (s.data[0usize] == 43u8) { // '+'
+        i += 1usize;
+    };
+    if (i >= s.len) {
+        return ParseNumResult{ valid = false, val = 0i64 };
+    };
+    let mut v: i64 = 0i64;
+    while (i < s.len) {
+        let ch: u8 = s.data[i];
+        if (ch < 48u8 || ch > 57u8) {
+            return ParseNumResult{ valid = false, val = 0i64 };
+        };
+        let d: i64 = (ch - 48u8) as i64;
+        if (v > (0x7fffffffffffffffi64 - d) / 10i64) {
+            return ParseNumResult{ valid = false, val = 0i64 };
+        };
+        v = v * 10i64 + d;
+        i += 1usize;
+    };
+    if (is_neg) {
+        v = -v;
+    };
+    return ParseNumResult{ valid = true, val = v };
+};
+
+fn print_help() = {
+    c::fputs("Usage: shuf [OPTION]... [FILE]\n  or:  shuf -e [OPTION]... [ARG]...\n  or:  shuf -i LO-HI [OPTION]...\nWrite a random permutation of the input lines to standard output.\n  -e, --echo             treat each ARG as an input line\n  -i, --input-range=LO-HI  treat each number LO through HI as an input line\n  -n, --head-count=COUNT  output at most COUNT lines\n  -r, --repeat           output lines can be repeated\n  -z, --zero-terminated  line delimiter is NUL, not newline\n      --help             display this help and exit\n      --version          output version information and exit\n", c::stdout);
+};
+
+fn write_token(out: *c::FILE, content: &vec::Vec[u8], t: ShufToken, zero: bool) = {
+    for (let i in 0usize..t.len) {
+        c::fputc(content.get(t.start + i) as i32, out);
+    };
+    if (zero) {
+        c::fputc(0i32, out);
+    } else {
+        c::fputc(10i32, out);
+    };
+};
+
 export fn run(start: usize, argc: usize) i32 = {
-    let count: usize = argc - start;
-    if (count > 4096usize) { return 1; };
-    let mut argv: [4096]*i8;
-    for (let i in 0usize..count) { argv[i] = args::argat(start + i).data as *i8; };
-    return backend::zov_shuf_run(count as i32, (&argv[0usize]) as **i8);
+    let mut echo: bool = false;
+    let mut repeat: bool = false;
+    let mut zero: bool = false;
+    let mut count: i64 = -1i64;
+    let mut lo: i64 = 0i64;
+    let mut hi: i64 = -1i64;
+    let mut file: str = "";
+    let mut out_file: str = "";
+    let mut echo_items: vec::Vec[str] = vec::new[str]();
+
+    let mut i: usize = start;
+    while (i < argc) {
+        let a: str = args::argat(i);
+        if (a == "--help") {
+            print_help();
+            return 0i32;
+        };
+        if (a == "--version") {
+            io::println("shuf (zovutils) 0.10.61");
+            return 0i32;
+        };
+        if (a == "-e" || a == "--echo") {
+            echo = true;
+            i += 1usize;
+            continue;
+        };
+        if (a == "-r" || a == "--repeat") {
+            repeat = true;
+            i += 1usize;
+            continue;
+        };
+        if (a == "-z" || a == "--zero-terminated") {
+            zero = true;
+            i += 1usize;
+            continue;
+        };
+        if (a == "-o" || a == "--output") {
+            if (i + 1usize >= argc) {
+                c::fputs("shuf: option requires an argument -- 'o'\n", c::stderr);
+                return 1i32;
+            };
+            out_file = args::argat(i + 1usize);
+            i += 2usize;
+            continue;
+        };
+        if (a.len >= 9usize && a[0..9] == "--output=") {
+            out_file = a[9..a.len];
+            i += 1usize;
+            continue;
+        };
+        if (a == "-n" || a == "--head-count") {
+            if (i + 1usize >= argc) {
+                c::fputs("shuf: option requires an argument -- 'n'\n", c::stderr);
+                return 1i32;
+            };
+            let cnt_arg: str = args::argat(i + 1usize);
+            let res: ParseNumResult = parse_i64(cnt_arg);
+            if (!res.valid || res.val < 0i64) {
+                c::fprintf(c::stderr, "shuf: invalid line count: '%s'\n", cnt_arg.data as *i8);
+                return 1i32;
+            };
+            count = res.val;
+            i += 2usize;
+            continue;
+        };
+        if (a.len >= 13usize && a[0..13] == "--head-count=") {
+            let cnt_arg: str = a[13..a.len];
+            let res: ParseNumResult = parse_i64(cnt_arg);
+            if (!res.valid || res.val < 0i64) {
+                c::fprintf(c::stderr, "shuf: invalid line count: '%s'\n", cnt_arg.data as *i8);
+                return 1i32;
+            };
+            count = res.val;
+            i += 1usize;
+            continue;
+        };
+        if (a == "-i" || a == "--input-range" || (a.len >= 14usize && a[0..14] == "--input-range=")) {
+            let mut range_str: str = "";
+            if (a.len >= 14usize && a[0..14] == "--input-range=") {
+                range_str = a[14..a.len];
+                i += 1usize;
+            } else if (i + 1usize < argc) {
+                range_str = args::argat(i + 1usize);
+                i += 2usize;
+            } else {
+                c::fputs("shuf: option requires an argument -- 'i'\n", c::stderr);
+                return 1i32;
+            };
+
+            let mut sep_pos: usize = 0usize;
+            let mut found_sep: bool = false;
+            let mut start_search: usize = 0usize;
+            if (range_str.len > 0usize && range_str.data[0usize] == 45u8) {
+                start_search = 1usize;
+            };
+            for (let j in start_search..range_str.len) {
+                if (range_str.data[j] == 45u8) { // '-'
+                    sep_pos = j;
+                    found_sep = true;
+                    break;
+                };
+            };
+            if (!found_sep) {
+                c::fprintf(c::stderr, "shuf: invalid input range: '%s'\n", range_str.data as *i8);
+                return 1i32;
+            };
+            let lo_res: ParseNumResult = parse_i64(range_str[0..sep_pos]);
+            let hi_res: ParseNumResult = parse_i64(range_str[(sep_pos + 1usize)..range_str.len]);
+            if (!lo_res.valid || !hi_res.valid || hi_res.val < lo_res.val) {
+                c::fprintf(c::stderr, "shuf: invalid input range: '%s'\n", range_str.data as *i8);
+                return 1i32;
+            };
+            lo = lo_res.val;
+            hi = hi_res.val;
+            continue;
+        };
+
+        if (a.len > 0usize && a.data[0usize] == 45u8 && a != "-") {
+            c::fprintf(c::stderr, "shuf: unrecognized option '%s'\nTry 'shuf --help' for more information.\n", a.data as *i8);
+            return 1i32;
+        };
+
+        if (echo) {
+            echo_items.push(a);
+            i += 1usize;
+            continue;
+        };
+
+        if (file != "") {
+            c::fprintf(c::stderr, "shuf: extra operand '%s'\nTry 'shuf --help' for more information.\n", a.data as *i8);
+            return 1i32;
+        };
+        file = a;
+        i += 1usize;
+    };
+
+    let mut content: vec::Vec[u8] = vec::new[u8]();
+    let mut items: vec::Vec[ShufToken] = vec::new[ShufToken]();
+
+    if (hi >= lo) {
+        let n: u64 = ((hi - lo) as u64) + 1u64;
+        if (n > 1000000u64) {
+            return 1i32;
+        };
+        let mut x: i64 = lo;
+        while (x <= hi) {
+            let tok_start: usize = content.len();
+            let mut buf: [64]u8;
+            let len: i32 = c::snprintf((&buf[0usize]) as *i8, 64usize, "%lld".data as *i8, x);
+            if (len > 0i32) {
+                for (let j in 0usize..(len as usize)) {
+                    content.push(buf[j]);
+                };
+                items.push(ShufToken{ start = tok_start, len = len as usize });
+            };
+            x += 1i64;
+        };
+    } else if (echo) {
+        for (let ei in 0usize..echo_items.len()) {
+            let item: str = echo_items.get(ei);
+            let tok_start: usize = content.len();
+            for (let j in 0usize..item.len) {
+                content.push(item.data[j]);
+            };
+            items.push(ShufToken{ start = tok_start, len = item.len });
+        };
+    } else {
+        let mut f: *c::FILE = c::stdin;
+        let mut need_close: bool = false;
+        if (file != "" && file != "-") {
+            platform_errno::zov_errno_set(0i32);
+            let fp: nullable *c::FILE = c::fopen(file.data as *i8, "rb".data as *i8);
+            if (fp == null) {
+                let err: i32 = platform_errno::zov_errno_value();
+                c::fprintf(c::stderr, "shuf: %s: %s\n", file.data as *i8, strc::strerror(err));
+                return 1i32;
+            };
+            f = fp!;
+            need_close = true;
+        };
+
+        let mut delim: u8 = 10u8;
+        if (zero) {
+            delim = 0u8;
+        };
+        let mut buf: [4096]u8;
+        let mut tok_start: usize = 0usize;
+        while (true) {
+            let nr: usize = c::fread((&buf[0usize]) as *void, 1usize, 4096usize, f);
+            if (nr == 0usize) { break; };
+            for (let j in 0usize..nr) {
+                let ch: u8 = buf[j];
+                if (ch == delim) {
+                    items.push(ShufToken{ start = tok_start, len = content.len() - tok_start });
+                    tok_start = content.len();
+                } else {
+                    content.push(ch);
+                };
+            };
+        };
+        if (content.len() > tok_start) {
+            items.push(ShufToken{ start = tok_start, len = content.len() - tok_start });
+        };
+        if (need_close) {
+            c::fclose(f);
+        };
+    };
+
+    let mut out: *c::FILE = c::stdout;
+    let mut out_need_close: bool = false;
+    if (out_file != "") {
+        platform_errno::zov_errno_set(0i32);
+        let fp: nullable *c::FILE = c::fopen(out_file.data as *i8, "wb".data as *i8);
+        if (fp == null) {
+            let err: i32 = platform_errno::zov_errno_value();
+            c::fprintf(c::stderr, "shuf: %s: %s\n", out_file.data as *i8, strc::strerror(err));
+            return 1i32;
+        };
+        out = fp!;
+        out_need_close = true;
+    };
+
+    let mut seed: u64 = platform_process::zov_random_seed();
+
+    if (repeat) {
+        let mut limit: usize = items.len();
+        if (count >= 0i64) {
+            limit = count as usize;
+        };
+        for (let _rep in 0usize..limit) {
+            if (items.len() == 0usize) { break; };
+            let r: RandState = next_rand(seed);
+            seed = r.seed;
+            let j: usize = (r.val % (items.len() as u64)) as usize;
+            write_token(out, &content, items.get(j), zero);
+        };
+    } else {
+        let mut rem: usize = items.len();
+        while (rem > 1usize) {
+            let r: RandState = next_rand(seed);
+            seed = r.seed;
+            let j: usize = (r.val % (rem as u64)) as usize;
+            let tmp: ShufToken = items.get(rem - 1usize);
+            items.set(rem - 1usize, items.get(j));
+            items.set(j, tmp);
+            rem -= 1usize;
+        };
+        let mut limit: usize = items.len();
+        if (count >= 0i64 && (count as usize) < items.len()) {
+            limit = count as usize;
+        };
+        for (let idx in 0usize..limit) {
+            write_token(out, &content, items.get(idx), zero);
+        };
+    };
+
+    if (out_need_close) {
+        if (c::fclose(out) != 0i32) {
+            return 1i32;
+        };
+    };
+
+    return 0i32;
 };
