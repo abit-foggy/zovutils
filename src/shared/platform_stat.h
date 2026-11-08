@@ -5,8 +5,29 @@
 #include <fcntl.h>
 #include <stdint.h>
 #include <unistd.h>
+#include <errno.h>
+#include <string.h>
+#include <time.h>
+#include <sys/time.h>
 #if defined(__linux__)
 #include <sys/sysmacros.h>
+#endif
+
+#if defined(__APPLE__) || defined(__linux__)
+extern time_t timegm(struct tm *);
+#endif
+
+#ifndef AT_FDCWD
+#define AT_FDCWD -100
+#endif
+#ifndef AT_SYMLINK_NOFOLLOW
+#define AT_SYMLINK_NOFOLLOW 0x100
+#endif
+#ifndef UTIME_NOW
+#define UTIME_NOW ((1l << 30) - 1l)
+#endif
+#ifndef UTIME_OMIT
+#define UTIME_OMIT ((1l << 30) - 2l)
 #endif
 
 static inline int zov_file_is_regular(int descriptor) {
@@ -142,6 +163,111 @@ static inline int zov_open_wronly(const char *path) {
 
 static inline int zov_fsync(int fd) {
     return fsync(fd);
+}
+
+static inline int64_t zov_utime_now(void) { return (int64_t)UTIME_NOW; }
+static inline int64_t zov_utime_omit(void) { return (int64_t)UTIME_OMIT; }
+
+static inline int zov_stat_get_times(const char *path, int64_t *atime_sec, int64_t *atime_nsec, int64_t *mtime_sec, int64_t *mtime_nsec) {
+    struct stat st;
+    if (stat(path, &st) != 0) return errno;
+#if defined(__APPLE__)
+    *atime_sec = (int64_t)st.st_atimespec.tv_sec;
+    *atime_nsec = (int64_t)st.st_atimespec.tv_nsec;
+    *mtime_sec = (int64_t)st.st_mtimespec.tv_sec;
+    *mtime_nsec = (int64_t)st.st_mtimespec.tv_nsec;
+#else
+    *atime_sec = (int64_t)st.st_atim.tv_sec;
+    *atime_nsec = (int64_t)st.st_atim.tv_nsec;
+    *mtime_sec = (int64_t)st.st_mtim.tv_sec;
+    *mtime_nsec = (int64_t)st.st_mtim.tv_nsec;
+#endif
+    return 0;
+}
+
+static inline int zov_touch_create_if_needed(const char *path, int no_create, int no_dereference) {
+    if (no_create || no_dereference) return 0;
+    struct stat info;
+    if (stat(path, &info) != 0 && errno == ENOENT) {
+        int fd = open(path, O_WRONLY | O_CREAT, 0666);
+        if (fd >= 0) close(fd);
+    }
+    return 0;
+}
+
+static inline int zov_touch_apply(const char *path, int64_t atime_sec, int64_t atime_nsec, int64_t mtime_sec, int64_t mtime_nsec, int no_dereference) {
+    struct timespec times[2];
+    times[0].tv_sec = (time_t)atime_sec;
+    times[0].tv_nsec = (long)atime_nsec;
+    times[1].tv_sec = (time_t)mtime_sec;
+    times[1].tv_nsec = (long)mtime_nsec;
+    if (strcmp(path, "-") == 0) {
+        if (futimens(STDOUT_FILENO, times) != 0) {
+            int err = errno;
+#if !defined(__APPLE__)
+            if (err == EINVAL) return 0;
+#endif
+            if (err != EBADF) return err;
+        }
+        return 0;
+    }
+    int flags = no_dereference ? AT_SYMLINK_NOFOLLOW : 0;
+    if (utimensat(AT_FDCWD, path, times, flags) != 0) {
+        return errno;
+    }
+    return 0;
+}
+
+static inline int64_t zov_time_now_sec(void) {
+    return (int64_t)time(NULL);
+}
+
+static inline int zov_time_get_local_parts(int64_t sec, int32_t *year, int32_t *mon, int32_t *mday, int32_t *hour, int32_t *min, int32_t *sec_out) {
+    time_t t = (time_t)sec;
+    struct tm *tm = localtime(&t);
+    if (!tm) return 0;
+    *year = tm->tm_year + 1900;
+    *mon = tm->tm_mon + 1;
+    *mday = tm->tm_mday;
+    *hour = tm->tm_hour;
+    *min = tm->tm_min;
+    *sec_out = tm->tm_sec;
+    return 1;
+}
+
+static inline int zov_time_make_tm(int32_t year, int32_t mon, int32_t mday, int32_t hour, int32_t min, int32_t sec, int is_utc, int64_t *sec_out) {
+    struct tm tm;
+    memset(&tm, 0, sizeof(tm));
+    tm.tm_year = year - 1900;
+    tm.tm_mon = mon - 1;
+    tm.tm_mday = mday;
+    tm.tm_hour = hour;
+    tm.tm_min = min;
+    tm.tm_sec = sec;
+    tm.tm_isdst = -1;
+    time_t result;
+    if (is_utc) {
+#if defined(__APPLE__) || defined(__linux__)
+        result = timegm(&tm);
+        if (result == (time_t)-1) return 0;
+        struct tm *rt = gmtime(&result);
+        if (!rt || rt->tm_year != tm.tm_year || rt->tm_mon != tm.tm_mon ||
+            rt->tm_mday != tm.tm_mday || rt->tm_hour != tm.tm_hour ||
+            rt->tm_min != tm.tm_min || rt->tm_sec != tm.tm_sec) return 0;
+#else
+        result = mktime(&tm);
+        if (result == (time_t)-1) return 0;
+#endif
+    } else {
+        result = mktime(&tm);
+        if (result == (time_t)-1) return 0;
+        struct tm *rt = localtime(&result);
+        if (!rt || rt->tm_year != tm.tm_year || rt->tm_mon != tm.tm_mon ||
+            rt->tm_mday != tm.tm_mday || rt->tm_hour != tm.tm_hour ||
+            rt->tm_min != tm.tm_min || rt->tm_sec != tm.tm_sec) return 0;
+    }
+    *sec_out = (int64_t)result;
+    return 1;
 }
 
 #endif

@@ -1,10 +1,592 @@
 use std::env as args;
-use <touch_backend.h> as backend;
+use std::io as io;
+use std::vec as vec;
+use <stdio.h> as c;
+use <string.h> as strc;
+use <stdlib.h> as stdlib;
+use <platform_stat.h> as platform_stat;
+use <platform_quote.h> as platform_quote;
+use <platform_errno.h> as platform_errno;
+
+type TouchTimespec = struct {
+    sec: i64,
+    nsec: i64,
+};
+
+fn print_help() = {
+    c::fputs("Usage: touch [OPTION]... FILE...\n", c::stdout);
+    c::fputs("Update the access and modification times of each FILE to the current time.\n\n", c::stdout);
+    c::fputs("A FILE argument that does not exist is created empty, unless -c or -h\nis supplied.\n\n", c::stdout);
+    c::fputs("A FILE argument string of - is handled specially and causes touch to\nchange the times of the file associated with standard output.\n\n", c::stdout);
+    c::fputs("Mandatory arguments to long options are mandatory for short options too.\n", c::stdout);
+    c::fputs("  -a\n         change only the access time\n", c::stdout);
+    c::fputs("  -c, --no-create\n         do not create any files\n", c::stdout);
+    c::fputs("  -d, --date=STRING\n         parse STRING and use it instead of current time\n", c::stdout);
+    c::fputs("  -f\n         (ignored)\n", c::stdout);
+    c::fputs("  -h, --no-dereference\n         affect each symbolic link instead of any referenced file;\n", c::stdout);
+    c::fputs("         useful only on systems that can change the timestamps of a symlink\n", c::stdout);
+    c::fputs("  -m\n         change only the modification time\n", c::stdout);
+    c::fputs("  -r, --reference=FILE\n         use this file's times instead of current time\n", c::stdout);
+    c::fputs("  -t [[CC]YY]MMDDhhmm[.ss]\n         use specified time instead of current time,\n", c::stdout);
+    c::fputs("         with a date-time format that differs from -d's\n", c::stdout);
+    c::fputs("      --time=WORD\n         specify which time to change:\n", c::stdout);
+    c::fputs("         access time (-a): 'access', 'atime', 'use';\n", c::stdout);
+    c::fputs("         modification time (-m): 'modify', 'mtime'\n", c::stdout);
+    c::fputs("      --help\n         display this help and exit\n", c::stdout);
+    c::fputs("      --version\n         output version information and exit\n\n", c::stdout);
+    c::fputs("Report bugs to: bug-coreutils@gnu.org\n", c::stdout);
+    c::fputs("GNU coreutils home page: <https://www.gnu.org/software/coreutils/>\n", c::stdout);
+    c::fputs("General help using GNU software: <https://www.gnu.org/gethelp/>\n", c::stdout);
+    c::fputs("Report any translation bugs to <https://translationproject.org/team/>\n", c::stdout);
+    c::fputs("Full documentation <https://www.gnu.org/software/coreutils/touch>\n", c::stdout);
+    c::fputs("or available locally via: info '(coreutils) touch invocation'\n", c::stdout);
+};
+
+fn touch_error(operation: str, path: str, error: i32) = {
+    c::fputs("touch: ", c::stderr);
+    c::fputs(operation.data as *i8, c::stderr);
+    c::fputc(32i32, c::stderr);
+    platform_quote::zov_quote_shell(c::stderr, path.data as *i8);
+    c::fprintf(c::stderr, ": %s\n", strc::strerror(error));
+};
+
+fn long_match(arg: str, name: str, keylen: usize) bool = {
+    if (keylen <= 2usize || keylen > name.len) { return false; };
+    return arg[0..keylen] == name[0..keylen];
+};
+
+fn parse_int(text: str, start: usize, len: usize, out: &mut i32) bool = {
+    if (len == 0usize) { return false; };
+    let mut result: i32 = 0i32;
+    for (let i in 0usize..len) {
+        let ch: u8 = text[start + i];
+        if (ch < 48u8 || ch > 57u8) { return false; };
+        result = result * 10i32 + ((ch - 48u8) as i32);
+    };
+    *out = result;
+    return true;
+};
+
+fn parse_fraction(text: str, start: usize, len: usize, nanos: &mut i64) bool = {
+    if (len == 0usize) { return false; };
+    let mut value: i64 = 0i64;
+    let mut used: usize = 0usize;
+    while (used < len && used < 9usize) {
+        let ch: u8 = text[start + used];
+        if (ch < 48u8 || ch > 57u8) { return false; };
+        value = value * 10i64 + ((ch - 48u8) as i64);
+        used = used + 1usize;
+    };
+    while (used < 9usize) {
+        value = value * 10i64;
+        used = used + 1usize;
+    };
+    for (let i in 9usize..len) {
+        let ch: u8 = text[start + i];
+        if (ch < 48u8 || ch > 57u8) { return false; };
+    };
+    *nanos = value;
+    return true;
+};
+
+fn parse_stamp(text: str, out: &mut TouchTimespec) bool = {
+    let length: usize = text.len;
+    let mut dot_pos: usize = length;
+    for (let i in 0usize..length) {
+        if (text[i] == 46u8 && dot_pos == length) {
+            dot_pos = i;
+        };
+    };
+    let digits: usize = dot_pos;
+    let mut second: i32 = 0i32;
+    if (dot_pos < length) {
+        let frac_len: usize = length - dot_pos - 1usize;
+        if (!parse_int(text, dot_pos + 1usize, frac_len, &mut second) || frac_len > 2usize || second > 59i32) {
+            return false;
+        };
+    };
+    if (digits != 8usize && digits != 10usize && digits != 12usize) { return false; };
+    let mut year: i32 = 0i32;
+    let mut offset: usize = 0usize;
+    if (digits == 12usize) {
+        if (!parse_int(text, 0usize, 4usize, &mut year)) { return false; };
+        offset = 4usize;
+    } else if (digits == 10usize) {
+        let mut short_year: i32 = 0i32;
+        if (!parse_int(text, 0usize, 2usize, &mut short_year)) { return false; };
+        if (short_year >= 69i32) {
+            year = 1900i32 + short_year;
+        } else {
+            year = 2000i32 + short_year;
+        };
+        offset = 2usize;
+    } else {
+        let now_sec: i64 = platform_stat::zov_time_now_sec();
+        let mut cur_y: i32 = 0i32;
+        let mut cur_mo: i32 = 0i32;
+        let mut cur_d: i32 = 0i32;
+        let mut cur_h: i32 = 0i32;
+        let mut cur_mi: i32 = 0i32;
+        let mut cur_s: i32 = 0i32;
+        if (platform_stat::zov_time_get_local_parts(now_sec, &mut cur_y, &mut cur_mo, &mut cur_d, &mut cur_h, &mut cur_mi, &mut cur_s) == 0i32) {
+            return false;
+        };
+        year = cur_y;
+    };
+    let mut month: i32 = 0i32;
+    let mut day: i32 = 0i32;
+    let mut hour: i32 = 0i32;
+    let mut minute: i32 = 0i32;
+    if (!parse_int(text, offset, 2usize, &mut month) ||
+        !parse_int(text, offset + 2usize, 2usize, &mut day) ||
+        !parse_int(text, offset + 4usize, 2usize, &mut hour) ||
+        !parse_int(text, offset + 6usize, 2usize, &mut minute)) {
+        return false;
+    };
+    let mut sec_out: i64 = 0i64;
+    if (platform_stat::zov_time_make_tm(year, month, day, hour, minute, second, 0i32, &mut sec_out) == 0i32) {
+        return false;
+    };
+    out.sec = sec_out;
+    out.nsec = 0i64;
+    return true;
+};
+
+fn parse_date(text: str, out: &mut TouchTimespec) bool = {
+    if (text == "now") {
+        out.sec = platform_stat::zov_time_now_sec();
+        out.nsec = 0i64;
+        return true;
+    };
+    if (text.len > 0usize) {
+        if (text[0usize] == 64u8) {
+            let mut idx: usize = 1usize;
+            let mut negative: bool = false;
+            if (idx < text.len) {
+                let sgn: u8 = text[idx];
+                if (sgn == 45u8 || sgn == 43u8) {
+                    negative = sgn == 45u8;
+                    idx = idx + 1usize;
+                };
+            };
+            let mut dot_idx: usize = text.len;
+            for (let i in idx..text.len) {
+                if (text[i] == 46u8 && dot_idx == text.len) {
+                    dot_idx = i;
+                };
+            };
+            let whole_len: usize = dot_idx - idx;
+            if (whole_len == 0usize) { return false; };
+            let mut whole: i64 = 0i64;
+            for (let i in idx..dot_idx) {
+                let ch: u8 = text[i];
+                if (ch < 48u8 || ch > 57u8) { return false; };
+                whole = whole * 10i64 + ((ch - 48u8) as i64);
+            };
+            let mut nanos: i64 = 0i64;
+            if (dot_idx < text.len) {
+                if (!parse_fraction(text, dot_idx + 1usize, text.len - dot_idx - 1usize, &mut nanos)) {
+                    return false;
+                };
+            };
+            let mut seconds: i64 = whole;
+            if (negative) {
+                seconds = 0i64 - whole;
+                if (nanos != 0i64) {
+                    seconds = seconds - 1i64;
+                    nanos = 1000000000i64 - nanos;
+                };
+            };
+            out.sec = seconds;
+            out.nsec = nanos;
+            return true;
+        };
+    };
+    if (text == "today" || text == "yesterday" || text == "tomorrow") {
+        let now_sec: i64 = platform_stat::zov_time_now_sec();
+        let mut cur_y: i32 = 0i32;
+        let mut cur_mo: i32 = 0i32;
+        let mut cur_d: i32 = 0i32;
+        let mut cur_h: i32 = 0i32;
+        let mut cur_mi: i32 = 0i32;
+        let mut cur_s: i32 = 0i32;
+        if (platform_stat::zov_time_get_local_parts(now_sec, &mut cur_y, &mut cur_mo, &mut cur_d, &mut cur_h, &mut cur_mi, &mut cur_s) == 0i32) {
+            return false;
+        };
+        let mut mday: i32 = cur_d;
+        if (text == "yesterday") { mday = mday - 1i32; };
+        if (text == "tomorrow") { mday = mday + 1i32; };
+        let mut sec_out: i64 = 0i64;
+        if (platform_stat::zov_time_make_tm(cur_y, cur_mo, mday, 0i32, 0i32, 0i32, 0i32, &mut sec_out) == 0i32) {
+            return false;
+        };
+        out.sec = sec_out;
+        out.nsec = 0i64;
+        return true;
+    };
+    let length: usize = text.len;
+    if (length < 10usize) { return false; };
+    if (text[4usize] != 45u8) { return false; };
+    if (text[7usize] != 45u8) { return false; };
+    let mut year: i32 = 0i32;
+    let mut month: i32 = 0i32;
+    let mut day: i32 = 0i32;
+    let mut hour: i32 = 0i32;
+    let mut minute: i32 = 0i32;
+    let mut second: i32 = 0i32;
+    if (!parse_int(text, 0usize, 4usize, &mut year) ||
+        !parse_int(text, 5usize, 2usize, &mut month) ||
+        !parse_int(text, 8usize, 2usize, &mut day) ||
+        year < 1i32 || month < 1i32 || month > 12i32 || day < 1i32 || day > 31i32) {
+        return false;
+    };
+    let mut end: usize = 10usize;
+    let mut utc: bool = false;
+    let mut nanos: i64 = 0i64;
+    if (length > 10usize) {
+        let sep: u8 = text[10usize];
+        if (sep != 32u8 && sep != 84u8 && sep != 116u8) { return false; };
+        if (length < 16usize) { return false; };
+        if (text[13usize] != 58u8) { return false; };
+        if (!parse_int(text, 11usize, 2usize, &mut hour) ||
+            !parse_int(text, 14usize, 2usize, &mut minute)) {
+            return false;
+        };
+        end = 16usize;
+        if (length > end) {
+            if (text[end] == 58u8) {
+                if (length < end + 3usize || !parse_int(text, end + 1usize, 2usize, &mut second)) {
+                    return false;
+                };
+                end = end + 3usize;
+            };
+        };
+        if (length > end) {
+            if (text[end] == 46u8) {
+                let frac_start: usize = end + 1usize;
+                end = frac_start;
+                while (end < length) {
+                    let dch: u8 = text[end];
+                    if (dch >= 48u8 && dch <= 57u8) {
+                        end = end + 1usize;
+                    } else {
+                        break;
+                    };
+                };
+                if (!parse_fraction(text, frac_start, end - frac_start, &mut nanos)) {
+                    return false;
+                };
+            };
+        };
+        if (length == end + 1usize) {
+            let zch: u8 = text[end];
+            if (zch == 90u8 || zch == 122u8) {
+                utc = true;
+            };
+        } else if (length == end + 4usize) {
+            let tz: str = text[end..length];
+            if (tz == " UTC" || tz == " GMT") {
+                utc = true;
+            };
+        } else if (length != end) {
+            return false;
+        };
+    };
+    let mut sec_out: i64 = 0i64;
+    let mut is_utc_val: i32 = 0i32;
+    if (utc) { is_utc_val = 1i32; };
+    if (platform_stat::zov_time_make_tm(year, month, day, hour, minute, second, is_utc_val, &mut sec_out) == 0i32) {
+        return false;
+    };
+    out.sec = sec_out;
+    out.nsec = nanos;
+    return true;
+};
 
 export fn run(start: usize, argc: usize) i32 = {
-    let count: usize = argc - start;
-    if (count > 4096usize) { return 1; };
-    let mut argv: [4096]*i8;
-    for (let i in 0usize..count) { argv[i] = args::argat(start + i).data as *i8; };
-    return backend::zov_touch_run(count as i32, (&argv[0usize]) as **i8);
+    let mut access_time: bool = true;
+    let mut modify_time: bool = true;
+    let mut selected_times: i32 = 0i32;
+    let mut no_create: bool = false;
+    let mut no_dereference: bool = false;
+    let mut options_done: bool = false;
+    let mut date_text: str = "";
+    let mut has_date_text: bool = false;
+    let mut stamp_text: str = "";
+    let mut has_stamp_text: bool = false;
+    let mut reference: str = "";
+    let mut has_reference: bool = false;
+    let mut files = vec::new[str]();
+
+    let mut i: usize = start;
+    while (i < argc) {
+        let arg: str = args::argat(i);
+        if (!options_done && arg == "--") {
+            options_done = true;
+            i = i + 1usize;
+            continue;
+        };
+        if (!options_done && arg.len >= 2usize) {
+            if (arg[0..2] == "--") {
+                let mut equal_pos: usize = arg.len;
+                for (let k in 2usize..arg.len) {
+                    if (arg[k] == 61u8 && equal_pos == arg.len) {
+                        equal_pos = k;
+                    };
+                };
+                let keylen: usize = equal_pos;
+                let mut has_value: bool = equal_pos < arg.len;
+                let mut val: str = "";
+                if (has_value) {
+                    val = arg[equal_pos + 1usize..arg.len];
+                };
+
+                if (long_match(arg, "--help", keylen) || long_match(arg, "--version", keylen)) {
+                    if (has_value) {
+                        let mut opt_name: str = "--version";
+                        if (keylen == 6usize) { opt_name = "--help"; };
+                        c::fprintf(c::stderr, "touch: option '%s' doesn't allow an argument\n", opt_name.data as *i8);
+                        return 1;
+                    };
+                    if (keylen == 6usize) {
+                        print_help();
+                        return 0;
+                    };
+                    io::println("touch (zovutils) 0.10.61");
+                    return 0;
+                };
+
+                if (long_match(arg, "--no-create", keylen)) {
+                    if (has_value) {
+                        c::fputs("touch: option '--no-create' doesn't allow an argument\n", c::stderr);
+                        return 1;
+                    };
+                    no_create = true;
+                    i = i + 1usize;
+                    continue;
+                };
+
+                if (long_match(arg, "--no-dereference", keylen)) {
+                    if (has_value) {
+                        c::fputs("touch: option '--no-dereference' doesn't allow an argument\n", c::stderr);
+                        return 1;
+                    };
+                    no_dereference = true;
+                    i = i + 1usize;
+                    continue;
+                };
+
+                if (long_match(arg, "--date", keylen) || long_match(arg, "--reference", keylen) || long_match(arg, "--time", keylen)) {
+                    let mut name: str = "--time";
+                    if (long_match(arg, "--date", keylen)) {
+                        name = "--date";
+                    } else if (long_match(arg, "--reference", keylen)) {
+                        name = "--reference";
+                    };
+                    if (!has_value && i + 1usize < argc) {
+                        i = i + 1usize;
+                        val = args::argat(i);
+                        has_value = true;
+                    };
+                    if (!has_value) {
+                        c::fprintf(c::stderr, "touch: option '%s' requires an argument\nTry 'touch --help' for more information.\n", name.data as *i8);
+                        return 1;
+                    };
+                    if (name == "--date") {
+                        date_text = val;
+                        has_date_text = true;
+                    } else if (name == "--reference") {
+                        reference = val;
+                        has_reference = true;
+                    } else if (val == "access" || val == "use" || val == "atime") {
+                        selected_times = selected_times | 1i32;
+                    } else if (val == "modify" || val == "mtime") {
+                        selected_times = selected_times | 2i32;
+                    } else {
+                        c::fprintf(c::stderr, "touch: invalid argument '%s' for '--time'\nValid arguments are:\n  - 'atime', 'access', 'use'\n  - 'mtime', 'modify'\nTry 'touch --help' for more information.\n", val.data as *i8);
+                        return 1;
+                    };
+                    i = i + 1usize;
+                    continue;
+                };
+
+                c::fprintf(c::stderr, "touch: unrecognized option '%s'\nTry 'touch --help' for more information.\n", arg.data as *i8);
+                return 1;
+            };
+        };
+
+        if (!options_done && arg.len > 1usize) {
+            if (arg[0usize] == 45u8) {
+                let mut j: usize = 1usize;
+                while (j < arg.len) {
+                    let opt: u8 = arg[j];
+                    if (opt == 97u8) { // 'a'
+                        selected_times = selected_times | 1i32;
+                    } else if (opt == 109u8) { // 'm'
+                        selected_times = selected_times | 2i32;
+                    } else if (opt == 99u8) { // 'c'
+                        no_create = true;
+                    } else if (opt == 104u8) { // 'h'
+                        no_dereference = true;
+                    } else if (opt == 102u8) { // 'f'
+                        // ignored
+                    } else if (opt == 100u8 || opt == 114u8 || opt == 116u8) { // 'd', 'r', 't'
+                        let mut val: str = "";
+                        let mut has_val: bool = false;
+                        if (j + 1usize < arg.len) {
+                            val = arg[j + 1usize..arg.len];
+                            has_val = true;
+                        } else if (i + 1usize < argc) {
+                            i = i + 1usize;
+                            val = args::argat(i);
+                            has_val = true;
+                        };
+                        if (!has_val) {
+                            c::fprintf(c::stderr, "touch: option requires an argument -- '%c'\nTry 'touch --help' for more information.\n", opt as i32);
+                            return 1;
+                        };
+                        if (opt == 100u8) {
+                            date_text = val;
+                            has_date_text = true;
+                        } else if (opt == 114u8) {
+                            reference = val;
+                            has_reference = true;
+                        } else {
+                            stamp_text = val;
+                            has_stamp_text = true;
+                        };
+                        break;
+                    } else {
+                        c::fprintf(c::stderr, "touch: invalid option -- '%c'\nTry 'touch --help' for more information.\n", opt as i32);
+                        return 1;
+                    };
+                    j = j + 1usize;
+                };
+                i = i + 1usize;
+                continue;
+            };
+        };
+
+        files.push(arg);
+        let pc: nullable *i8 = stdlib::getenv("POSIXLY_CORRECT");
+        if (pc != null) {
+            if (pc![0usize] != 0i8) {
+                options_done = true;
+            };
+        };
+        i = i + 1usize;
+    };
+
+    if (files.len() == 0usize) {
+        c::fputs("touch: missing file operand\nTry 'touch --help' for more information.\n", c::stderr);
+        return 1;
+    };
+
+    if (selected_times != 0i32) {
+        access_time = (selected_times & 1i32) != 0i32;
+        modify_time = (selected_times & 2i32) != 0i32;
+    };
+
+    if (has_date_text && has_stamp_text) {
+        c::fputs("touch: cannot specify times from more than one source\n", c::stderr);
+        return 1;
+    };
+
+    let mut parsed: TouchTimespec = TouchTimespec { sec = 0i64, nsec = 0i64 };
+    let mut fixed_time: bool = false;
+    let mut explicit_time: bool = false;
+
+    if (has_date_text || has_stamp_text) {
+        explicit_time = true;
+        if (has_date_text && date_text == "now") {
+            fixed_time = false;
+        } else {
+            let mut ok: bool = false;
+            if (has_date_text) {
+                ok = parse_date(date_text, &mut parsed);
+            } else {
+                ok = parse_stamp(stamp_text, &mut parsed);
+            };
+            if (!ok) {
+                let mut bad_str: str = stamp_text;
+                if (has_date_text) { bad_str = date_text; };
+                c::fprintf(c::stderr, "touch: invalid date format '%s'\n", bad_str.data as *i8);
+                return 1;
+            };
+            fixed_time = true;
+        };
+    };
+
+    let mut ref_atime_sec: i64 = 0i64;
+    let mut ref_atime_nsec: i64 = 0i64;
+    let mut ref_mtime_sec: i64 = 0i64;
+    let mut ref_mtime_nsec: i64 = 0i64;
+    if (has_reference && !explicit_time) {
+        let err: i32 = platform_stat::zov_stat_get_times(reference.data as *i8, &mut ref_atime_sec, &mut ref_atime_nsec, &mut ref_mtime_sec, &mut ref_mtime_nsec);
+        if (err != 0i32) {
+            touch_error("failed to get attributes of", reference, err);
+            return 1;
+        };
+    };
+
+    let mut status: i32 = 0i32;
+    let omit: i64 = platform_stat::zov_utime_omit();
+    let now_val: i64 = platform_stat::zov_utime_now();
+    let mut noderef_val: i32 = 0i32;
+    if (no_dereference) { noderef_val = 1i32; };
+    let mut nocreate_val: i32 = 0i32;
+    if (no_create) { nocreate_val = 1i32; };
+
+    for (let k in 0usize..files.len()) {
+        let path: str = files.get(k);
+        let mut a_sec: i64 = 0i64;
+        let mut a_nsec: i64 = 0i64;
+        let mut m_sec: i64 = 0i64;
+        let mut m_nsec: i64 = 0i64;
+
+        if (has_reference && !explicit_time) {
+            a_sec = ref_atime_sec;
+            a_nsec = ref_atime_nsec;
+            m_sec = ref_mtime_sec;
+            m_nsec = ref_mtime_nsec;
+        } else if (fixed_time) {
+            a_sec = parsed.sec;
+            a_nsec = parsed.nsec;
+            m_sec = parsed.sec;
+            m_nsec = parsed.nsec;
+        } else {
+            a_sec = 0i64;
+            a_nsec = now_val;
+            m_sec = 0i64;
+            m_nsec = now_val;
+        };
+
+        if (!access_time) {
+            a_nsec = omit;
+        };
+        if (!modify_time) {
+            m_nsec = omit;
+        };
+
+        if (path == "-") {
+            let err: i32 = platform_stat::zov_touch_apply(path.data as *i8, a_sec, a_nsec, m_sec, m_nsec, noderef_val);
+            if (err != 0i32) {
+                touch_error("setting times of", path, err);
+                status = 1;
+            };
+            continue;
+        };
+
+        platform_stat::zov_touch_create_if_needed(path.data as *i8, nocreate_val, noderef_val);
+        let err: i32 = platform_stat::zov_touch_apply(path.data as *i8, a_sec, a_nsec, m_sec, m_nsec, noderef_val);
+        if (err != 0i32) {
+            if (no_create && platform_errno::zov_errno_is_enoent(err) != 0i32) {
+                continue;
+            };
+            touch_error("setting times of", path, err);
+            status = 1;
+        };
+    };
+
+    return status;
 };
