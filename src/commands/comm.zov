@@ -1,7 +1,10 @@
 use std::env as args;
 use std::io;
+use std::mem as mem;
 use <stdio.h> as c;
-use <comm_backend.h> as backend;
+use <string.h> as strc;
+use <platform_errno.h> as platform_errno;
+use <platform_locale.h> as platform_locale;
 use shared::io as stream;
 
 fn key(arg: str) str = {
@@ -15,6 +18,117 @@ fn prefix(value: str, full: str) bool = {
 
 fn help() void = {
     io::print("Usage: comm [OPTION]... FILE1 FILE2\nCompare sorted files FILE1 and FILE2 line by line.\n\nWhen FILE1 or FILE2 (not both) is -, read standard input.\n\nWith no options, produce three-column output.  Column one contains\nlines unique to FILE1, column two contains lines unique to FILE2,\nand column three contains lines common to both files.\n  -1     suppress column 1 (lines unique to FILE1)\n  -2     suppress column 2 (lines unique to FILE2)\n  -3     suppress column 3 (lines that appear in both files)\n      --check-order\n         check that the input is correctly sorted,\n         even if all input lines are pairable\n      --nocheck-order\n         do not check that the input is correctly sorted\n      --output-delimiter=STR\n         separate columns with STR\n      --total\n         output a summary\n  -z, --zero-terminated\n         line delimiter is NUL, not newline\n      --help\n         display this help and exit\n      --version\n         output version information and exit\n\nComparisons honor the rules specified by 'LC_COLLATE'.\n\nExamples:\n  comm -12 file1 file2  Print only lines present in both file1 and file2.\n  comm -3 file1 file2  Print lines in file1 not in file2, and vice versa.\n\nReport bugs to: bug-coreutils@gnu.org\nGNU coreutils home page: <https://www.gnu.org/software/coreutils/>\nGeneral help using GNU software: <https://www.gnu.org/gethelp/>\nReport any translation bugs to <https://translationproject.org/team/>\nFull documentation <https://www.gnu.org/software/coreutils/comm>\nor available locally via: info '(coreutils) comm invocation'\n");
+};
+
+type CommLine = struct {
+    data: *u8,
+    len: usize,
+    cap: usize,
+};
+
+fn line_init() CommLine = {
+    return CommLine { data = mem::alloc[u8](256usize), len = 0usize, cap = 256usize };
+};
+
+fn line_copy(dest: &mut CommLine, src: &CommLine) void = {
+    while (dest.cap < src.len) {
+        let new_cap: usize = dest.cap * 2usize;
+        dest.data = mem::reallocbuf[u8](dest.data, new_cap);
+        dest.cap = new_cap;
+    };
+    for (let i in 0usize..src.len) {
+        dest.data[i] = src.data[i];
+    };
+    dest.len = src.len;
+};
+
+fn read_line(fp: *c::FILE, term: u8, line: &mut CommLine) i32 = {
+    line.len = 0usize;
+    while (true) {
+        let ch: i32 = c::fgetc(fp);
+        if (ch == -1i32 || (ch as u8) == term) {
+            if (ch == -1i32 && stream::readerror(fp)) { return -1i32; };
+            if (ch == -1i32 && line.len == 0usize) { return 0i32; };
+            return 1i32;
+        };
+        if (line.len == line.cap) {
+            let next: usize = line.cap * 2usize;
+            line.data = mem::reallocbuf[u8](line.data, next);
+            line.cap = next;
+        };
+        line.data[line.len] = ch as u8;
+        line.len += 1usize;
+    };
+    return 0i32;
+};
+
+fn compare_lines(a: *u8, alen: usize, b: *u8, blen: usize) i32 = {
+    let mut min_len: usize = alen;
+    if (blen < min_len) { min_len = blen; };
+    for (let i in 0usize..min_len) {
+        if (a[i] != b[i]) {
+            if (a[i] < b[i]) { return -1i32; } else { return 1i32; };
+        };
+    };
+    if (alen < blen) { return -1i32; };
+    if (alen > blen) { return 1i32; };
+    return 0i32;
+};
+
+fn delimit(delimiter: str, count: usize) bool = {
+    if (delimiter.len == 0usize) {
+        for (let _i in 0usize..count) {
+            if (c::fputc(0i32, c::stdout) == -1i32) { return false; };
+        };
+        return true;
+    };
+    for (let _i in 0usize..count) {
+        if (!stream::putstr(c::stdout, delimiter)) { return false; };
+    };
+    return true;
+};
+
+fn emit_line(data: *u8, length: usize, col: usize, enabled1: bool, enabled2: bool, delimiter: str, term: u8) bool = {
+    let mut leading: usize = 0usize;
+    if (col >= 2usize && enabled1) { leading += 1usize; };
+    if (col >= 3usize && enabled2) { leading += 1usize; };
+    if (!delimit(delimiter, leading)) { return false; };
+    if (length > 0usize && !stream::writebytes(c::stdout, data, length)) { return false; };
+    return stream::putbyte(c::stdout, term);
+};
+
+fn format_num(n: usize, buf: *u8) usize = {
+    if (n == 0usize) { buf[0] = 48u8; return 1usize; };
+    let mut temp: usize = n;
+    let mut digits: [32]u8;
+    let mut count: usize = 0usize;
+    while (temp > 0usize) {
+        digits[count] = 48u8 + ((temp % 10usize) as u8);
+        count += 1usize;
+        temp = temp / 10usize;
+    };
+    for (let i in 0usize..count) {
+        buf[i] = digits[count - 1usize - i];
+    };
+    return count;
+};
+
+fn emit_total(one: usize, two: usize, both: usize, delimiter: str, term: u8) bool = {
+    let mut num1_buf: [32]u8;
+    let n1_len: usize = format_num(one, (&mut num1_buf[0usize]) as *u8);
+    let mut num2_buf: [32]u8;
+    let n2_len: usize = format_num(two, (&mut num2_buf[0usize]) as *u8);
+    let mut num3_buf: [32]u8;
+    let n3_len: usize = format_num(both, (&mut num3_buf[0usize]) as *u8);
+
+    if (!stream::writebytes(c::stdout, (&num1_buf[0usize]) as *u8, n1_len)) { return false; };
+    if (!delimit(delimiter, 1usize)) { return false; };
+    if (!stream::writebytes(c::stdout, (&num2_buf[0usize]) as *u8, n2_len)) { return false; };
+    if (!delimit(delimiter, 1usize)) { return false; };
+    if (!stream::writebytes(c::stdout, (&num3_buf[0usize]) as *u8, n3_len)) { return false; };
+    if (!delimit(delimiter, 1usize)) { return false; };
+    if (!stream::putstr(c::stdout, "total")) { return false; };
+    return stream::putbyte(c::stdout, term);
 };
 
 export fn run(start: usize, argc: usize) i32 = {
@@ -64,7 +178,138 @@ export fn run(start: usize, argc: usize) i32 = {
         files[count] = arg; count += 1usize; i += 1usize;
     };
     if (count != 2usize) { io::eprintln("comm: missing operand\nTry 'comm --help' for more information."); return 1; };
-    return backend::zov_comm_run(files[0usize].data as *i8, files[1usize].data as *i8,
-        col1 as i32, col2 as i32, col3 as i32, delimiter.data as *i8,
-        terminator, check_order as i32, total as i32);
+
+    platform_locale::zov_init_ctype_locale();
+
+    let path1: str = files[0usize];
+    let path2: str = files[1usize];
+
+    let mut one: *c::FILE = c::stdin;
+    let mut close_one: bool = false;
+    if (path1 != "-") {
+        let open_res: nullable *c::FILE = stream::openread(path1);
+        match (open_res) {
+            case let opened: *c::FILE => { one = opened; close_one = true; },
+            case null => {
+                let err: i32 = platform_errno::zov_errno_value();
+                c::fprintf(c::stderr, "comm: %s: %s\n", path1.data as *i8, strc::strerror(err));
+                return 1;
+            },
+        };
+    };
+
+    let mut two: *c::FILE = c::stdin;
+    let mut close_two: bool = false;
+    if (path2 != "-") {
+        let open_res: nullable *c::FILE = stream::openread(path2);
+        match (open_res) {
+            case let opened: *c::FILE => { two = opened; close_two = true; },
+            case null => {
+                if (close_one) { stream::closefile(one); };
+                let err: i32 = platform_errno::zov_errno_value();
+                c::fprintf(c::stderr, "comm: %s: %s\n", path2.data as *i8, strc::strerror(err));
+                return 1;
+            },
+        };
+    };
+
+    let mut line_a: CommLine = line_init();
+    let mut line_b: CommLine = line_init();
+    let mut prev_a: CommLine = line_init();
+    let mut prev_b: CommLine = line_init();
+    let mut have_prev_a: bool = false;
+    let mut have_prev_b: bool = false;
+
+    let mut only_a: usize = 0usize;
+    let mut only_b: usize = 0usize;
+    let mut common: usize = 0usize;
+
+    let mut has_a: i32 = read_line(one, terminator, &mut line_a);
+    let mut has_b: i32 = read_line(two, terminator, &mut line_b);
+    let mut validate_a: bool = has_a > 0i32;
+    let mut validate_b: bool = has_b > 0i32;
+    let mut status: i32 = 0;
+
+    if (has_a < 0i32 || has_b < 0i32) {
+        c::fprintf(c::stderr, "comm: read error\n");
+        status = 1;
+    } else {
+        while (has_a > 0i32 || has_b > 0i32) {
+            if (has_a > 0i32 && validate_a) {
+                validate_a = false;
+                if (check_order && have_prev_a && compare_lines(prev_a.data, prev_a.len, line_a.data, line_a.len) > 0i32) {
+                    c::fprintf(c::stderr, "comm: file 1 is not in sorted order\n");
+                    status = 1;
+                    break;
+                };
+            };
+            if (has_b > 0i32 && validate_b) {
+                validate_b = false;
+                if (check_order && have_prev_b && compare_lines(prev_b.data, prev_b.len, line_b.data, line_b.len) > 0i32) {
+                    c::fprintf(c::stderr, "comm: file 2 is not in sorted order\n");
+                    status = 1;
+                    break;
+                };
+            };
+
+            let mut cmp: i32 = 0i32;
+            if (has_a == 0i32) { cmp = 1i32; }
+            else if (has_b == 0i32) { cmp = -1i32; }
+            else { cmp = compare_lines(line_a.data, line_a.len, line_b.data, line_b.len); };
+
+            if (cmp < 0i32) {
+                if (col1 && !emit_line(line_a.data, line_a.len, 1usize, col1, col2, delimiter, terminator)) {
+                    status = 1; break;
+                };
+                only_a += 1usize;
+                line_copy(&mut prev_a, &line_a);
+                have_prev_a = true;
+                has_a = read_line(one, terminator, &mut line_a);
+                validate_a = has_a > 0i32;
+                if (has_a < 0i32) { c::fprintf(c::stderr, "comm: read error\n"); status = 1; break; };
+            } else if (cmp > 0i32) {
+                if (col2 && !emit_line(line_b.data, line_b.len, 2usize, col1, col2, delimiter, terminator)) {
+                    status = 1; break;
+                };
+                only_b += 1usize;
+                line_copy(&mut prev_b, &line_b);
+                have_prev_b = true;
+                has_b = read_line(two, terminator, &mut line_b);
+                validate_b = has_b > 0i32;
+                if (has_b < 0i32) { c::fprintf(c::stderr, "comm: read error\n"); status = 1; break; };
+            } else {
+                if (col3 && !emit_line(line_a.data, line_a.len, 3usize, col1, col2, delimiter, terminator)) {
+                    status = 1; break;
+                };
+                common += 1usize;
+                line_copy(&mut prev_a, &line_a);
+                line_copy(&mut prev_b, &line_b);
+                have_prev_a = true;
+                have_prev_b = true;
+                has_a = read_line(one, terminator, &mut line_a);
+                has_b = read_line(two, terminator, &mut line_b);
+                validate_a = has_a > 0i32;
+                validate_b = has_b > 0i32;
+                if (has_a < 0i32 || has_b < 0i32) { c::fprintf(c::stderr, "comm: read error\n"); status = 1; break; };
+            };
+        };
+    };
+
+    if (status == 0 && total) {
+        if (!emit_total(only_a, only_b, common, delimiter, terminator)) { status = 1; };
+    };
+
+    if (path1 == "-" && path2 == "-") {
+        c::fprintf(c::stderr, "comm: -\n");
+        status = 1;
+    };
+
+    mem::freeptr[u8](line_a.data);
+    mem::freeptr[u8](line_b.data);
+    mem::freeptr[u8](prev_a.data);
+    mem::freeptr[u8](prev_b.data);
+    if (close_one) { stream::closefile(one); };
+    if (close_two) { stream::closefile(two); };
+    if (!stream::finishoutput("comm")) { status = 1; };
+    return status;
 };
