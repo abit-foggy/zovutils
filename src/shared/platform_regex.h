@@ -142,4 +142,33 @@ static inline int zov_csplit_format_suffix(const char *format, unsigned digits, 
     return n >= 0 && (size_t)n < suffix_sz;
 }
 
+static inline void *zov_regex_compile_extended(const char *pattern) {
+    regex_t *r = (regex_t *)malloc(sizeof(regex_t));
+    if (!r) return NULL;
+    if (regcomp(r, pattern, REG_EXTENDED) != 0) {
+        free(r);
+        return NULL;
+    }
+    return (void *)r;
+}
+
+static inline void zov_regex_free_compiled(void *raw) {
+    if (!raw) return;
+    regex_t *r = (regex_t *)raw;
+    regfree(r);
+    free(r);
+}
+
+static inline int zov_regex_exec_range(void *raw, const char *str, int64_t *so, int64_t *eo) {
+    if (!raw) return 0;
+    regex_t *r = (regex_t *)raw;
+    regmatch_t m;
+    if (regexec(r, str, 1, &m, 0) == 0) {
+        if (so) *so = (int64_t)m.rm_so;
+        if (eo) *eo = (int64_t)m.rm_eo;
+        return 1;
+    }
+    return 0;
+}
+
 #endif

@@ -1,9 +1,818 @@
 use std::env as args;
-use <ptx_backend.h> as backend;
+use std::io;
+use std::vec as vec;
+use <stdio.h> as c;
+use <string.h> as strc;
+use <platform_errno.h> as platform_errno;
+use <platform_regex.h> as platform_regex;
+use shared::io as stream;
+
+type PtxEntry = struct {
+    word: String,
+    left: String,
+    right: String,
+    reference: String,
+    sentence_offset: bool,
+};
+
+fn format_u64(n: u64) String = {
+    if (n == 0u64) { return String::from("0"); };
+    let mut buf: [32]u8;
+    let mut count: usize = 0usize;
+    let mut temp: u64 = n;
+    while (temp > 0u64) {
+        buf[count] = 48u8 + ((temp % 10u64) as u8);
+        temp /= 10u64;
+        count += 1usize;
+    };
+    let mut rev: [32]u8;
+    for (let i in 0usize..count) {
+        rev[i] = buf[count - 1usize - i];
+    };
+    return String::from(zov_str_from_raw((&rev[0usize]) as *u8, count));
+};
+
+fn parse_long(value: str, out: &mut i64) bool = {
+    if (value.len == 0usize) { return false; };
+    let mut sign: i64 = 1i64;
+    let mut i: usize = 0usize;
+    if (value.data[0usize] == 45u8) {
+        sign = -1i64;
+        i = 1usize;
+    } else if (value.data[0usize] == 43u8) {
+        i = 1usize;
+    };
+    if (i == value.len) { return false; };
+    let mut n: i64 = 0i64;
+    while (i < value.len) {
+        let ch: u8 = value.data[i];
+        if (ch < 48u8 || ch > 57u8) { return false; };
+        let d: i64 = (ch - 48u8) as i64;
+        n = n * 10i64 + d;
+        i += 1usize;
+    };
+    *out = sign * n;
+    return true;
+};
+
+fn is_punct(ch: u8) bool = {
+    return (ch >= 33u8 && ch <= 47u8) || (ch >= 58u8 && ch <= 64u8) || (ch >= 91u8 && ch <= 96u8) || (ch >= 123u8 && ch <= 126u8);
+};
+
+fn is_space(ch: u8) bool = {
+    return ch == 32u8 || ch == 9u8 || ch == 10u8 || ch == 13u8 || ch == 11u8 || ch == 12u8;
+};
+
+fn eq_case_insensitive(a: str, b: str) bool = {
+    if (a.len != b.len) { return false; };
+    for (let i in 0usize..a.len) {
+        let mut ca: u8 = a.data[i];
+        let mut cb: u8 = b.data[i];
+        if (ca >= 65u8 && ca <= 90u8) { ca += 32u8; };
+        if (cb >= 65u8 && cb <= 90u8) { cb += 32u8; };
+        if (ca != cb) { return false; };
+    };
+    return true;
+};
+
+fn is_word_allowed(
+    word: str,
+    ignored: &vec::Vec[String],
+    has_ignored: bool,
+    only: &vec::Vec[String],
+    has_only: bool
+) bool = {
+    if (has_ignored) {
+        for (let i in 0usize..ignored.len()) {
+            if (eq_case_insensitive(word, ignored.getref(i).view())) {
+                return false;
+            };
+        };
+    };
+    if (has_only) {
+        for (let i in 0usize..only.len()) {
+            if (eq_case_insensitive(word, only.getref(i).view())) {
+                return true;
+            };
+        };
+        return false;
+    };
+    return true;
+};
+
+fn ptx_trim(s: str) String = {
+    let mut result: String = String::from("");
+    let mut i: usize = 0usize;
+    let mut first: bool = true;
+    while (i < s.len) {
+        while (i < s.len && is_space(s.data[i])) {
+            i += 1usize;
+        };
+        if (i == s.len) {
+            break;
+        };
+        let start_pos: usize = i;
+        while (i < s.len && !is_space(s.data[i])) {
+            i += 1usize;
+        };
+        let word: str = s[start_pos..i];
+        if (!first) {
+            result = result + " ";
+        };
+        result = result + word;
+        first = false;
+    };
+    return result;
+};
+
+fn ptx_compare(a: &PtxEntry, b: &PtxEntry, fold: bool) i32 = {
+    let aw: str = a.word.view();
+    let bw: str = b.word.view();
+    if (fold) {
+        let mut n: usize = aw.len;
+        if (bw.len < n) { n = bw.len; };
+        for (let i in 0usize..n) {
+            let mut ca: u8 = aw.data[i];
+            let mut cb: u8 = bw.data[i];
+            if (ca >= 65u8 && ca <= 90u8) { ca += 32u8; };
+            if (cb >= 65u8 && cb <= 90u8) { cb += 32u8; };
+            if (ca != cb) {
+                if (ca < cb) { return -1i32; };
+                return 1i32;
+            };
+        };
+        if (aw.len < bw.len) { return -1i32; };
+        if (aw.len > bw.len) { return 1i32; };
+    } else {
+        let mut n: usize = aw.len;
+        if (bw.len < n) { n = bw.len; };
+        for (let i in 0usize..n) {
+            let ca: u8 = aw.data[i];
+            let cb: u8 = bw.data[i];
+            if (ca != cb) {
+                if (ca < cb) { return -1i32; };
+                return 1i32;
+            };
+        };
+        if (aw.len < bw.len) { return -1i32; };
+        if (aw.len > bw.len) { return 1i32; };
+    };
+
+    if (fold) {
+        let mut n: usize = aw.len;
+        if (bw.len < n) { n = bw.len; };
+        for (let i in 0usize..n) {
+            let ca: u8 = aw.data[i];
+            let cb: u8 = bw.data[i];
+            if (ca != cb) {
+                if (ca < cb) { return -1i32; };
+                return 1i32;
+            };
+        };
+        if (aw.len < bw.len) { return -1i32; };
+        if (aw.len > bw.len) { return 1i32; };
+    };
+
+    let ar: str = a.reference.view();
+    let br: str = b.reference.view();
+    let mut nr: usize = ar.len;
+    if (br.len < nr) { nr = br.len; };
+    for (let i in 0usize..nr) {
+        let ca: u8 = ar.data[i];
+        let cb: u8 = br.data[i];
+        if (ca != cb) {
+            if (ca < cb) { return -1i32; };
+            return 1i32;
+        };
+    };
+    if (ar.len < br.len) { return -1i32; };
+    if (ar.len > br.len) { return 1i32; };
+    return 0i32;
+};
+
+fn swap_entries(entries: &mut vec::Vec[PtxEntry], i: usize, j: usize) void = {
+    if (i == j) { return; };
+    let d: *PtxEntry = entries.data!;
+    let temp: PtxEntry = d[i];
+    d[i] = d[j];
+    d[j] = temp;
+};
+
+fn ptx_qsort(entries: &mut vec::Vec[PtxEntry], low: usize, high: usize, fold: bool) void = {
+    if (low >= high) { return; };
+    let pivot_idx: usize = low + (high - low) / 2usize;
+    swap_entries(entries, low, pivot_idx);
+    let mut last: usize = low;
+    for (let i in (low + 1usize)..(high + 1usize)) {
+        if (ptx_compare(entries.getref(i), entries.getref(low), fold) < 0i32) {
+            last += 1usize;
+            swap_entries(entries, last, i);
+        };
+    };
+    swap_entries(entries, low, last);
+    if (last > low + 1usize) {
+        ptx_qsort(entries, low, last - 1usize, fold);
+    };
+    if (last + 1usize < high) {
+        ptx_qsort(entries, last + 1usize, high, fold);
+    };
+};
+
+fn ptx_sentence_bounds(line_str: str, pos: usize, re: *void, start_out: &mut usize, end_out: &mut usize) void = {
+    *start_out = 0usize;
+    *end_out = line_str.len;
+    let mut cursor: usize = 0usize;
+    while (cursor < line_str.len) {
+        let sub_ptr: *i8 = (&line_str.data[cursor]) as *i8;
+        let mut so: i64 = 0i64;
+        let mut eo: i64 = 0i64;
+        if (platform_regex::zov_regex_exec_range(re, sub_ptr, &mut so, &mut eo) == 0i32) {
+            break;
+        };
+        let a: usize = cursor + (so as usize);
+        let b: usize = cursor + (eo as usize);
+        if (b <= a) {
+            if (a >= line_str.len) { break; };
+            cursor = a + 1usize;
+            continue;
+        };
+        if (pos < b) {
+            *end_out = b;
+            return;
+        };
+        *start_out = b;
+        cursor = b;
+    };
+};
+
+fn load_words_file(path: str, list: &mut vec::Vec[String]) bool = {
+    let mut fp: nullable *c::FILE = null;
+    fp = c::fopen(path.data as *i8, "r".data as *i8);
+    if (fp == null) {
+        let err: i32 = platform_errno::zov_errno_value();
+        c::fprintf(c::stderr, "ptx: %s: %s\n", path.data as *i8, strc::strerror(err));
+        return false;
+    };
+    let f: *c::FILE = fp!;
+    let mut buf: vec::Vec[u8] = vec::new[u8]();
+    let mut chunk: [4096]u8;
+    while (true) {
+        let n: usize = c::fread((&mut chunk[0usize]) as *void, 1usize, 4096usize, f);
+        if (n > 0usize) {
+            buf.reserve(n);
+            for (let j in 0usize..n) {
+                buf.push(chunk[j]);
+            };
+        };
+        if (n < 4096usize) {
+            break;
+        };
+    };
+    c::fclose(f);
+
+    let mut p: usize = 0usize;
+    while (p < buf.len()) {
+        while (p < buf.len() && is_space(buf.data![p])) {
+            p += 1usize;
+        };
+        if (p == buf.len()) { break; };
+        let start_pos: usize = p;
+        while (p < buf.len() && !is_space(buf.data![p])) {
+            p += 1usize;
+        };
+        let w_str: str = zov_str_from_raw((&buf.data![start_pos]) as *u8, p - start_pos);
+        list.push(String::from(w_str));
+    };
+    return true;
+};
+
+fn help() void = {
+    c::puts("Usage: ptx [OPTION]... [INPUT]...\nOutput a permuted index, including context, of the words in the input files.\n  -A, --auto-reference       output automatically generated references\n  -G, --traditional          use traditional System V output\n  -b, --break-file=FILE      use word break characters from FILE\n  -f, --ignore-case          fold lower case to upper case for sorting\n  -g, --gap-size=NUMBER      gap size between output fields\n  -i, --ignore-file=FILE     read words to ignore from FILE\n  -o, --only-file=FILE       read words to include from FILE\n  -r, --references           first field of each line is a reference\n  -R, --right-side-refs      put references at the right\n  -t, --typeset-mode         use a default width of 100 columns\n  -w, --width=NUMBER         output width in columns\n      --help                 display this help and exit\n      --version              output version information and exit".data as *i8);
+};
+
 export fn run(start: usize, argc: usize) i32 = {
-    let count: usize = argc - start;
-    if (count > 4096usize) { return 1; };
-    let mut argv: [4096]*i8;
-    for (let i in 0usize..count) { argv[i] = args::argat(start + i).data as *i8; };
-    return backend::zov_ptx_run(count as i32, (&argv[0usize]) as **i8);
+    let mut auto_ref: bool = false;
+    let mut right_ref: bool = false;
+    let mut fold: bool = false;
+    let mut refs_in: bool = false;
+    let mut traditional: bool = false;
+    let mut width: usize = 72usize;
+    let mut gap: usize = 3usize;
+    let mut width_set: bool = false;
+    let mut typeset: bool = false;
+    let mut roff: bool = false;
+    let mut tex: bool = false;
+    let mut break_file: str = "";
+    let mut ignore_file: str = "";
+    let mut only_file: str = "";
+    let mut macro_name: str = "xx";
+    let mut truncation_flag: str = "/";
+    let mut word_pattern: str = "";
+    let mut sentence_pattern: str = "";
+
+    let mut files: vec::Vec[str] = vec::new[str]();
+    let mut i: usize = start;
+
+    while (i < argc) {
+        let a: str = args::argat(i);
+        if (a == "--version") { c::puts("ptx (zovutils) 0.10.61".data as *i8); return 0; };
+        if (a == "--help") { help(); stream::finishoutput("ptx"); return 0; };
+        if (a == "-A" || a == "--auto-reference") { auto_ref = true; i += 1usize; continue; };
+        if (a == "-R" || a == "--right-side-refs") { right_ref = true; i += 1usize; continue; };
+        if (a == "-f" || a == "--ignore-case") { fold = true; i += 1usize; continue; };
+        if (a == "-r" || a == "--references") { refs_in = true; i += 1usize; continue; };
+        if (a == "-G" || a == "--traditional") { traditional = true; i += 1usize; continue; };
+        if (a == "-O") { roff = true; i += 1usize; continue; };
+        if (a == "-T") { tex = true; i += 1usize; continue; };
+        if (a == "-t" || a == "--typeset-mode") { typeset = true; if (!width_set) { width = 100usize; }; i += 1usize; continue; };
+
+        let mut opt: u8 = 0u8;
+        let mut value: str = "";
+        let mut has_value: bool = false;
+
+        if (a == "-g" || a == "-w" || a == "-b" || a == "-i" || a == "-o" || a == "-F" || a == "-M" || a == "-S" || a == "-W") {
+            opt = a.data[1usize];
+            if (i + 1usize < argc) {
+                i += 1usize;
+                value = args::argat(i);
+                has_value = true;
+            };
+        } else if (a.len >= 9usize && a[0usize..9usize] == "--format=") {
+            let fmt_val: str = a[9usize..a.len];
+            if (fmt_val == "roff") { roff = true; }
+            else if (fmt_val == "tex") { tex = true; }
+            else {
+                c::fprintf(c::stderr, "ptx: invalid argument '%s' for '--format'\nValid arguments are:\n  - 'roff'\n  - 'tex'\nTry 'ptx --help' for more information.\n", fmt_val.data as *i8);
+                return 1;
+            };
+            i += 1usize;
+            continue;
+        } else if (a.len >= 18usize && a[0usize..18usize] == "--flag-truncation=") { opt = 70u8; value = a[18usize..a.len]; has_value = true; }
+        else if (a.len >= 13usize && a[0usize..13usize] == "--macro-name=") { opt = 77u8; value = a[13usize..a.len]; has_value = true; }
+        else if (a.len >= 18usize && a[0usize..18usize] == "--sentence-regexp=") { opt = 83u8; value = a[18usize..a.len]; has_value = true; }
+        else if (a.len >= 14usize && a[0usize..14usize] == "--word-regexp=") { opt = 87u8; value = a[14usize..a.len]; has_value = true; }
+        else if (a.len >= 11usize && a[0usize..11usize] == "--gap-size=") { opt = 103u8; value = a[11usize..a.len]; has_value = true; }
+        else if (a.len >= 8usize && a[0usize..8usize] == "--width=") { opt = 119u8; value = a[8usize..a.len]; has_value = true; }
+        else if (a.len >= 13usize && a[0usize..13usize] == "--break-file=") { opt = 98u8; value = a[13usize..a.len]; has_value = true; }
+        else if (a.len >= 14usize && a[0usize..14usize] == "--ignore-file=") { opt = 105u8; value = a[14usize..a.len]; has_value = true; }
+        else if (a.len >= 12usize && a[0usize..12usize] == "--only-file=") { opt = 111u8; value = a[12usize..a.len]; has_value = true; }
+        else if (a == "--gap-size" || a == "--width" || a == "--break-file" || a == "--ignore-file" || a == "--only-file" ||
+                 a == "--flag-truncation" || a == "--macro-name" || a == "--sentence-regexp" || a == "--word-regexp") {
+            if (a == "--gap-size") { opt = 103u8; }
+            else if (a == "--width") { opt = 119u8; }
+            else if (a == "--break-file") { opt = 98u8; }
+            else if (a == "--ignore-file") { opt = 105u8; }
+            else if (a == "--only-file") { opt = 111u8; }
+            else if (a == "--flag-truncation") { opt = 70u8; }
+            else if (a == "--macro-name") { opt = 77u8; }
+            else if (a == "--sentence-regexp") { opt = 83u8; }
+            else { opt = 87u8; };
+            if (i + 1usize < argc) {
+                i += 1usize;
+                value = args::argat(i);
+                has_value = true;
+            };
+        };
+
+        if (opt != 0u8) {
+            if (!has_value) {
+                if (a.len >= 2usize && a[0usize..2usize] == "--") {
+                    c::fprintf(c::stderr, "ptx: option '%s' requires an argument\nTry 'ptx --help' for more information.\n", a.data as *i8);
+                } else {
+                    c::fprintf(c::stderr, "ptx: option requires an argument -- '%c'\nTry 'ptx --help' for more information.\n", opt as i32);
+                };
+                return 1;
+            };
+
+            if (opt == 103u8 || opt == 119u8) { // 'g' or 'w'
+                let mut v: i64 = 0i64;
+                if (!parse_long(value, &mut v) || v < 0i64 || v > 10000i64 || (opt == 119u8 && v < 1i64)) {
+                    let mut opt_name: str = "gap width";
+                    if (opt == 119u8) {
+                        opt_name = "line width";
+                    };
+                    c::fprintf(c::stderr, "ptx: invalid %s: '%s'\n", opt_name.data as *i8, value.data as *i8);
+                    return 1;
+                };
+                if (opt == 103u8) {
+                    gap = v as usize;
+                } else {
+                    width = v as usize;
+                    width_set = true;
+                };
+            } else if (opt == 98u8) { // 'b'
+                break_file = value;
+            } else if (opt == 105u8) { // 'i'
+                ignore_file = value;
+            } else if (opt == 111u8) { // 'o'
+                only_file = value;
+            } else if (opt == 70u8) { // 'F'
+                truncation_flag = value;
+            } else if (opt == 77u8) { // 'M'
+                macro_name = value;
+            } else if (opt == 83u8) { // 'S'
+                sentence_pattern = value;
+            } else if (opt == 87u8) { // 'W'
+                word_pattern = value;
+            };
+            i += 1usize;
+            continue;
+        };
+
+        if (a.len > 0usize && a.data[0usize] == 45u8 && a != "-") {
+            c::fprintf(c::stderr, "ptx: unrecognized option '%s'\nTry 'ptx --help' for more information.\n", a.data as *i8);
+            return 1;
+        };
+
+        files.push(a);
+        i += 1usize;
+    };
+
+    if (traditional) {
+        auto_ref = false;
+        roff = true;
+    };
+    if (typeset && !width_set) {
+        width = 100usize;
+    };
+    if (files.len() == 0usize) {
+        files.push("-");
+    };
+
+    let mut breaks: [256]bool;
+    for (let b_idx in 0usize..256usize) {
+        breaks[b_idx] = false;
+    };
+    if (break_file.len == 0usize) {
+        for (let b_idx in 0usize..256usize) {
+            breaks[b_idx] = is_punct(b_idx as u8);
+        };
+    } else {
+        let mut bf: nullable *c::FILE = null;
+        bf = c::fopen(break_file.data as *i8, "rb".data as *i8);
+        if (bf == null) {
+            let err: i32 = platform_errno::zov_errno_value();
+            c::fprintf(c::stderr, "ptx: %s: %s\n", break_file.data as *i8, strc::strerror(err));
+            return 1;
+        };
+        let f: *c::FILE = bf!;
+        while (true) {
+            let ch: i32 = c::fgetc(f);
+            if (ch == -1i32) { break; };
+            breaks[(ch as u8) as usize] = true;
+        };
+        if (c::ferror(f) != 0i32) {
+            c::fprintf(c::stderr, "ptx: %s: read error\n", break_file.data as *i8);
+            c::fclose(f);
+            return 1;
+        };
+        c::fclose(f);
+    };
+
+    let mut ignored_words: vec::Vec[String] = vec::new[String]();
+    let mut only_words: vec::Vec[String] = vec::new[String]();
+    if (ignore_file.len > 0usize && !load_words_file(ignore_file, &mut ignored_words)) {
+        return 1;
+    };
+    if (only_file.len > 0usize && !load_words_file(only_file, &mut only_words)) {
+        return 1;
+    };
+
+    let mut word_re: nullable *void = null;
+    let mut sentence_re: nullable *void = null;
+    if (word_pattern.len > 0usize) {
+        word_re = platform_regex::zov_regex_compile_extended(word_pattern.data as *i8);
+        if (word_re == null) {
+            c::fprintf(c::stderr, "ptx: Invalid regular expression (for regexp '%s')\n", word_pattern.data as *i8);
+            return 1;
+        };
+    };
+    if (sentence_pattern.len > 0usize) {
+        sentence_re = platform_regex::zov_regex_compile_extended(sentence_pattern.data as *i8);
+        if (sentence_re == null) {
+            c::fprintf(c::stderr, "ptx: Invalid regular expression (for regexp '%s')\n", sentence_pattern.data as *i8);
+            if (word_re != null) {
+                platform_regex::zov_regex_free_compiled(word_re!);
+            };
+            return 1;
+        };
+    };
+
+    let mut entries: vec::Vec[PtxEntry] = vec::new[PtxEntry]();
+    let mut status: i32 = 0i32;
+
+    for (let fi in 0usize..files.len()) {
+        let fpath: str = files.get(fi);
+        let mut in_fp: nullable *c::FILE = null;
+        if (fpath == "-") {
+            in_fp = c::stdin;
+        } else {
+            in_fp = c::fopen(fpath.data as *i8, "r".data as *i8);
+        };
+        if (in_fp == null) {
+            let err: i32 = platform_errno::zov_errno_value();
+            c::fprintf(c::stderr, "ptx: %s: %s\n", fpath.data as *i8, strc::strerror(err));
+            status = 1i32;
+            continue;
+        };
+        let in_file: *c::FILE = in_fp!;
+        let mut file_buf: vec::Vec[u8] = vec::new[u8]();
+        let mut chunk: [8192]u8;
+        while (true) {
+            let nread: usize = c::fread((&mut chunk[0usize]) as *void, 1usize, 8192usize, in_file);
+            if (nread > 0usize) {
+                file_buf.reserve(nread);
+                for (let j in 0usize..nread) {
+                    file_buf.push(chunk[j]);
+                };
+            };
+            if (nread < 8192usize) {
+                if (c::ferror(in_file) != 0i32) {
+                    status = 1i32;
+                };
+                break;
+            };
+        };
+        if (fpath != "-") {
+            c::fclose(in_file);
+        };
+
+        file_buf.push(0u8); // null terminator
+        let file_len: usize = file_buf.len() - 1usize;
+        let whole_file_str: str = zov_str_from_raw(file_buf.data!, file_len);
+
+        let mut p: usize = 0usize;
+        let mut lineno: u64 = 1u64;
+        let mut have_first: bool = false;
+        let mut _first_begin: usize = 0usize;
+        let mut first_end: usize = 0usize;
+        let mut input_reference: String = String::from("");
+
+        while (p < file_len) {
+            if (file_buf.data![p] == 10u8) {
+                lineno += 1u64;
+                p += 1usize;
+                have_first = false;
+                input_reference = String::from("");
+                continue;
+            };
+
+            let mut begin: usize = 0usize;
+            let mut finish: usize = 0usize;
+
+            if (word_re != null) {
+                let sub_ptr: *i8 = (&file_buf.data![p]) as *i8;
+                let mut so: i64 = 0i64;
+                let mut eo: i64 = 0i64;
+                if (platform_regex::zov_regex_exec_range(word_re!, sub_ptr, &mut so, &mut eo) == 0i32) {
+                    break;
+                };
+                begin = p + (so as usize);
+                finish = p + (eo as usize);
+                if (finish <= begin) {
+                    p = begin + 1usize;
+                    continue;
+                };
+                p = finish;
+            } else {
+                let ch: u8 = file_buf.data![p];
+                if (is_space(ch)) {
+                    p += 1usize;
+                    continue;
+                };
+                begin = p;
+                while (p < file_len && !is_space(file_buf.data![p])) {
+                    p += 1usize;
+                };
+                finish = p;
+            };
+
+            if (!have_first) {
+                have_first = true;
+                _first_begin = begin;
+                first_end = finish;
+                if (refs_in) {
+                    let ref_slice: str = zov_str_from_raw((&file_buf.data![begin]) as *u8, finish - begin);
+                    input_reference = String::from(ref_slice);
+                    continue;
+                };
+            };
+
+            let word_slice: str = zov_str_from_raw((&file_buf.data![begin]) as *u8, finish - begin);
+            let allowed: bool = is_word_allowed(word_slice, &ignored_words, ignore_file.len > 0usize, &only_words, only_file.len > 0usize);
+            if (allowed) {
+                let mut ref_str: String = String::from("");
+                if (refs_in && !auto_ref && input_reference.view().len > 0usize) {
+                    ref_str = String::from(input_reference.view());
+                } else if (fpath == "-") {
+                    ref_str = String::from(":") + format_u64(lineno);
+                } else {
+                    ref_str = String::from(fpath) + ":" + format_u64(lineno);
+                };
+
+                let mut context_start: usize = 0usize;
+                if (refs_in) {
+                    context_start = first_end;
+                };
+                let mut context_end: usize = file_len;
+                if (sentence_re != null) {
+                    ptx_sentence_bounds(whole_file_str, begin, sentence_re!, &mut context_start, &mut context_end);
+                };
+                if (refs_in && context_start < first_end) {
+                    context_start = first_end;
+                };
+
+                let word_s: str = zov_str_from_raw((&file_buf.data![begin]) as *u8, finish - begin);
+                let left_s: str = zov_str_from_raw((&file_buf.data![context_start]) as *u8, begin - context_start);
+                let right_s: str = zov_str_from_raw((&file_buf.data![finish]) as *u8, context_end - finish);
+                let is_sent_off: bool = sentence_re != null && context_start > 0usize;
+
+                entries.push(PtxEntry {
+                    word = String::from(word_s),
+                    left = ptx_trim(left_s),
+                    right = ptx_trim(right_s),
+                    reference = String::from(ref_str.view()),
+                    sentence_offset = is_sent_off,
+                });
+            };
+
+            if (word_re == null && finish > begin + 1usize) {
+                for (let split in begin..(finish - 1usize)) {
+                    let bch: u8 = file_buf.data![split];
+                    if (breaks[bch as usize]) {
+                        let suf_slice: str = zov_str_from_raw((&file_buf.data![split + 1usize]) as *u8, finish - split - 1usize);
+                        let suf_allowed: bool = is_word_allowed(suf_slice, &ignored_words, ignore_file.len > 0usize, &only_words, only_file.len > 0usize);
+                        if (suf_allowed) {
+                            let mut ref_str: String = String::from("");
+                            if (refs_in && !auto_ref && input_reference.view().len > 0usize) {
+                                ref_str = String::from(input_reference.view());
+                            } else if (fpath == "-") {
+                                ref_str = String::from(":") + format_u64(lineno);
+                            } else {
+                                ref_str = String::from(fpath) + ":" + format_u64(lineno);
+                            };
+
+                            let mut context_start: usize = 0usize;
+                            if (refs_in) {
+                                context_start = first_end;
+                            };
+                            let mut context_end: usize = file_len;
+                            if (sentence_re != null) {
+                                ptx_sentence_bounds(whole_file_str, split + 1usize, sentence_re!, &mut context_start, &mut context_end);
+                            };
+                            if (refs_in && context_start < first_end) {
+                                context_start = first_end;
+                            };
+
+                            let left_sub: str = zov_str_from_raw((&file_buf.data![context_start]) as *u8, split + 1usize - context_start);
+                            let right_sub: str = zov_str_from_raw((&file_buf.data![finish]) as *u8, context_end - finish);
+                            let is_sent_off: bool = sentence_re != null && context_start > 0usize;
+
+                            entries.push(PtxEntry {
+                                word = String::from(suf_slice),
+                                left = ptx_trim(left_sub),
+                                right = ptx_trim(right_sub),
+                                reference = String::from(ref_str.view()),
+                                sentence_offset = is_sent_off,
+                            });
+                        };
+                    };
+                };
+            };
+        };
+    };
+
+    if (entries.len() > 1usize) {
+        ptx_qsort(&mut entries, 0usize, entries.len() - 1usize, fold);
+    };
+
+    for (let i_ent in 0usize..entries.len()) {
+        let e: &PtxEntry = entries.getref(i_ent);
+        let mut target: i32 = (width as i32) / 2i32;
+        if (!right_ref) {
+            target += gap as i32;
+        };
+        if (!right_ref && (auto_ref || refs_in)) {
+            target = ((width as i32) + (e.reference.view().len as i32) + 1i32) / 2i32 + 1i32;
+        };
+
+        let mut prefix: String = String::from("");
+        if (auto_ref && !right_ref) {
+            prefix = String::from(e.reference.view()) + ": ";
+        } else if (refs_in && !auto_ref && !right_ref) {
+            prefix = String::from(e.reference.view()) + " ";
+        };
+
+        let pl: usize = prefix.view().len;
+        let leftlen: usize = e.left.view().len;
+        let mut ref_str: str = "";
+        if (auto_ref || refs_in) {
+            ref_str = e.reference.view();
+        };
+
+        if (roff || tex) {
+            if (roff) {
+                if (leftlen == 0usize) {
+                    c::printf(".%s \"\" \"\" \"%s".data as *i8, macro_name.data as *i8, e.word.view().data as *i8);
+                    if (e.right.view().len > 0usize) {
+                        c::printf(" %s".data as *i8, e.right.view().data as *i8);
+                    };
+                    c::printf("\" \"\"".data as *i8);
+                } else {
+                    c::printf(".%s \"\" \"%s\" \"%s\" \"\"".data as *i8, macro_name.data as *i8, e.left.view().data as *i8, e.word.view().data as *i8);
+                    if (e.right.view().len > 0usize) {
+                        c::printf(" \"%s\"".data as *i8, e.right.view().data as *i8);
+                    };
+                };
+                if (ref_str.len > 0usize) {
+                    c::printf(" \"%s\"".data as *i8, ref_str.data as *i8);
+                };
+                c::putchar(10i32);
+            } else {
+                c::printf("\\%s ".data as *i8, macro_name.data as *i8);
+                c::putchar(123i32); c::putchar(125i32);
+                c::putchar(123i32); c::fwrite(e.left.view().data as *void, 1usize, e.left.view().len, c::stdout); c::putchar(125i32);
+                c::putchar(123i32); c::fwrite(e.word.view().data as *void, 1usize, e.word.view().len, c::stdout); c::putchar(125i32);
+                c::putchar(123i32);
+                if (e.right.view().len > 0usize) {
+                    c::putchar(32i32);
+                    c::fwrite(e.right.view().data as *void, 1usize, e.right.view().len, c::stdout);
+                };
+                c::putchar(125i32);
+                c::putchar(123i32); c::putchar(125i32);
+                c::putchar(123i32); c::fwrite(ref_str.data as *void, 1usize, ref_str.len, c::stdout); c::putchar(125i32);
+                c::putchar(10i32);
+            };
+            continue;
+        };
+
+        if (auto_ref && !right_ref && (pl as i32) > target) {
+            c::fwrite(prefix.view().data as *void, 1usize, pl, c::stdout);
+            if (leftlen > 0usize) {
+                c::putchar(32i32);
+                c::fputs(truncation_flag.data as *i8, c::stdout);
+                c::fputs("   ".data as *i8, c::stdout);
+            } else {
+                for (let _j in 0usize..4usize) { c::putchar(32i32); };
+            };
+            c::fwrite(e.word.view().data as *void, 1usize, e.word.view().len, c::stdout);
+            if (e.right.view().len > 0usize) {
+                c::fputs(truncation_flag.data as *i8, c::stdout);
+            };
+            c::putchar(10i32);
+            continue;
+        };
+
+        let mut before: i32 = 0i32;
+        if (leftlen > 0usize) {
+            before = gap as i32;
+        };
+        if (e.sentence_offset && leftlen == 0usize) {
+            target += 1i32;
+        };
+        let spaces: i32 = target - (pl as i32) - (leftlen as i32) - before;
+        c::fwrite(prefix.view().data as *void, 1usize, pl, c::stdout);
+        if (spaces > 0i32) {
+            for (let _j in 0usize..(spaces as usize)) { c::putchar(32i32); };
+        };
+        c::fwrite(e.left.view().data as *void, 1usize, leftlen, c::stdout);
+        if (before > 0i32) {
+            for (let _j in 0usize..(before as usize)) { c::putchar(32i32); };
+        };
+        c::fwrite(e.word.view().data as *void, 1usize, e.word.view().len, c::stdout);
+
+        let mut after: i32 = 0i32;
+        if (e.right.view().len > 0usize) {
+            after = 1i32;
+            if (is_punct(e.right.view().data[0usize])) {
+                after = 0i32;
+            };
+            if (after > 0i32) {
+                c::putchar(32i32);
+            };
+            c::fwrite(e.right.view().data as *void, 1usize, e.right.view().len, c::stdout);
+        };
+
+        if (right_ref && (auto_ref || refs_in)) {
+            let usedcols: i32 = target + (e.word.view().len as i32) + after + (e.right.view().len as i32);
+            let pad: i32 = (width as i32) + (gap as i32) - usedcols;
+            if (pad > 0i32) {
+                for (let _j in 0usize..(pad as usize)) { c::putchar(32i32); };
+            };
+            c::fwrite(e.reference.view().data as *void, 1usize, e.reference.view().len, c::stdout);
+        };
+        c::putchar(10i32);
+    };
+
+    if (word_re != null) {
+        platform_regex::zov_regex_free_compiled(word_re!);
+    };
+    if (sentence_re != null) {
+        platform_regex::zov_regex_free_compiled(sentence_re!);
+    };
+
+    if (c::fflush(c::stdout) != 0i32) {
+        status = 1i32;
+    };
+    return status;
 };
