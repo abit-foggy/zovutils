@@ -99,6 +99,18 @@ static inline int zov_change_directory(const char *path) {
     return chdir(path);
 }
 
+static inline int zov_chroot(const char *path) {
+#if defined(__APPLE__)
+    extern int chroot(const char *);
+#endif
+    return chroot(path);
+}
+
+static inline int zov_exec_shell(const char *shell) {
+    execl(shell, shell, (char *)NULL);
+    return errno;
+}
+
 static inline int zov_exec_command(const char *file, void *argv) {
     execvp(file, (char *const *)argv);
     return errno;

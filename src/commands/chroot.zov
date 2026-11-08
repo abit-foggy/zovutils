@@ -1,9 +1,79 @@
 use std::env as args;
-use <chroot_backend.h> as backend;
+use std::io;
+use <stdio.h> as c;
+use <string.h> as strc;
+use <stdlib.h> as stdlib;
+use <platform_errno.h> as platform_errno;
+use <platform_process.h> as platform_process;
+
 export fn run(start: usize, argc: usize) i32 = {
-    let count: usize = argc - start;
-    if (count > 4096usize) { return 1; };
-    let mut argv: [4096]*i8;
-    for (let i in 0usize..count) { argv[i] = args::argat(start + i).data as *i8; };
-    return backend::zov_chroot_run(count as i32, (&argv[0usize]) as **i8);
+    let mut i: usize = start;
+    while (i < argc) {
+        let a: str = args::argat(i);
+        if (a.len > 0usize && a.data[0usize] == 45u8 && a != "-") {
+            if (a == "--help") {
+                io::println("Usage: chroot NEWROOT [COMMAND [ARG]...]\n" +
+                            "Run COMMAND with root directory set to NEWROOT.\n" +
+                            "      --help     display this help and exit\n" +
+                            "      --version  output version information and exit");
+                return 0i32;
+            };
+            if (a == "--version") {
+                io::println("chroot (zovutils) 0.10.61");
+                return 0i32;
+            };
+            c::fprintf(c::stderr, "chroot: unrecognized option '%s'\nTry 'chroot --help' for more information.\n\0".data as *i8, a.data as *i8);
+            return 125i32;
+        };
+        break;
+    };
+
+    if (i >= argc) {
+        c::fputs("chroot: missing operand\nTry 'chroot --help' for more information.\n\0".data as *i8, c::stderr);
+        return 125i32;
+    };
+
+    let root: str = args::argat(i);
+    i += 1usize;
+
+    if (platform_process::zov_chroot(root.data as *i8) < 0i32) {
+        c::fprintf(c::stderr, "chroot: cannot change root directory to '%s': %s\n\0".data as *i8, root.data as *i8, strc::strerror(platform_errno::zov_errno_value()));
+        return 125i32;
+    };
+
+    if (platform_process::zov_change_directory("/\0".data as *i8) < 0i32) {
+        c::fprintf(c::stderr, "chroot: cannot change directory to '/': %s\n\0".data as *i8, strc::strerror(platform_errno::zov_errno_value()));
+        return 125i32;
+    };
+
+    if (i < argc) {
+        let cmd_count: usize = argc - i;
+        if (cmd_count > 4096usize) { return 125i32; };
+        let mut argv: [4097]*i8;
+        for (let j in 0usize..cmd_count) {
+            argv[j] = args::argat(i + j).data as *i8;
+        };
+        argv[cmd_count] = 0 as *i8;
+        let prog: str = args::argat(i);
+        platform_process::zov_exec_command(prog.data as *i8, (&mut argv[0usize]) as *void);
+        let err: i32 = platform_errno::zov_errno_value();
+        c::fprintf(c::stderr, "chroot: failed to run command '%s': %s\n\0".data as *i8, prog.data as *i8, strc::strerror(err));
+        if (platform_errno::zov_errno_is_enoent(err) != 0i32) {
+            return 127i32;
+        };
+        return 126i32;
+    };
+
+    let shell_env: nullable *i8 = stdlib::getenv("SHELL\0".data as *i8);
+    let mut shell_str: str = "/bin/sh";
+    if (shell_env != null && (shell_env!)[0usize] != 0i8) {
+        shell_str = zov_str_from_raw(shell_env! as *u8, strc::strlen(shell_env!));
+    };
+    platform_process::zov_exec_shell(shell_str.data as *i8);
+    let err: i32 = platform_errno::zov_errno_value();
+    c::fprintf(c::stderr, "chroot: failed to run command '%s': %s\n\0".data as *i8, shell_str.data as *i8, strc::strerror(err));
+    if (platform_errno::zov_errno_is_enoent(err) != 0i32) {
+        return 127i32;
+    };
+    return 126i32;
 };
