@@ -78,6 +78,10 @@ static inline int zov_errno_is_enotdir(int err) {
     return err == ENOTDIR;
 }
 
+static inline int zov_errno_enotdir_val(void) {
+    return ENOTDIR;
+}
+
 static inline int zov_errno_is_eexist(int err) {
     return err == EEXIST;
 }

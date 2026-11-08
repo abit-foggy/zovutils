@@ -1,10 +1,292 @@
 use std::env as args;
-use <mkdir_backend.h> as backend;
+use std::io as io;
+use std::vec;
+use <stdio.h> as c;
+use <string.h> as strc;
+use <stdlib.h> as stdlib;
+use <platform_errno.h> as platform_errno;
+use <platform_stat.h> as platform_stat;
+use <platform_quote.h> as platform_quote;
+use shared::mode as mode;
+
+fn is_option_prefix(arg: str, opt: str) bool = {
+    if (arg.len < 3usize || arg.len > opt.len) { return false; };
+    for (let i in 0usize..arg.len) {
+        if (arg.data[i] != opt.data[i]) { return false; };
+    };
+    return true;
+};
+
+fn print_help() = {
+    c::fputs("Usage: mkdir [OPTION]... DIRECTORY...\nCreate the DIRECTORY(ies), if they do not already exist.\n\nMandatory arguments to long options are mandatory for short options too.\n  -m, --mode=MODE\n         set file mode (as in chmod), not a=rwx - umask\n  -p, --parents\n         no error if existing, make parent directories as needed,\n         with their file modes unaffected by any -m option\n  -v, --verbose\n         print a message for each created directory\n  -Z\n         set SELinux security context of each created directory\n         to the default type\n      --context[=CTX]\n         like -Z, or if CTX is specified then set the\n         SELinux or SMACK security context to CTX\n      --help\n         display this help and exit\n      --version\n         output version information and exit\n\nReport bugs to: bug-coreutils@gnu.org\nGNU coreutils home page: <https://www.gnu.org/software/coreutils/>\nGeneral help using GNU software: <https://www.gnu.org/gethelp/>\nReport any translation bugs to <https://translationproject.org/team/>\nFull documentation <https://www.gnu.org/software/coreutils/mkdir>\nor available locally via: info '(coreutils) mkdir invocation'\n", c::stdout);
+};
+
+fn mkdir_error(path: *i8, error: i32) = {
+    c::fputs("mkdir: cannot create directory ", c::stderr);
+    platform_quote::zov_quote_shell(c::stderr, path);
+    c::fprintf(c::stderr, ": %s\n", strc::strerror(error));
+};
+
+fn mkdir_report_created(path: *i8) i32 = {
+    c::fputs("mkdir: created directory ", c::stdout);
+    platform_quote::zov_quote_shell(c::stdout, path);
+    c::fputc(10i32, c::stdout);
+    return 0i32;
+};
+
+fn mkdir_make_one(path: *i8, create_mode: u32, apply_mode: bool, final_mode: u32, verbose: bool, ignore_existing: bool) i32 = {
+    platform_errno::zov_errno_set(0i32);
+    if (platform_stat::zov_mkdir(path, create_mode) == 0i32) {
+        if (apply_mode && platform_stat::zov_chmod(path, final_mode) != 0i32) {
+            let error: i32 = platform_errno::zov_errno_value();
+            c::fputs("mkdir: cannot set permissions of ", c::stderr);
+            platform_quote::zov_quote_shell(c::stderr, path);
+            c::fprintf(c::stderr, ": %s\n", strc::strerror(error));
+            return 1i32;
+        };
+        if (verbose) {
+            return mkdir_report_created(path);
+        };
+        return 0i32;
+    };
+    let mut error: i32 = platform_errno::zov_errno_value();
+    if (ignore_existing && platform_errno::zov_errno_is_eexist(error) != 0i32) {
+        if (platform_stat::zov_is_directory(path) != 0i32) {
+            return 0i32;
+        };
+        error = platform_errno::zov_errno_enotdir_val();
+    };
+    mkdir_error(path, error);
+    return 1i32;
+};
+
+fn mkdir_make_parents(path: str, default_mode: u32, final_mode: u32, mode_set: bool, verbose: bool) i32 = {
+    let mut copy: vec::Vec[u8] = vec::new[u8]();
+    for (let i in 0usize..path.len) {
+        copy.push(path.data[i]);
+    };
+    copy.push(0u8);
+    let mut length: usize = path.len;
+    if (length == 0usize) {
+        let ptr: *i8 = (copy.data!) as *i8;
+        return mkdir_make_one(ptr, default_mode, false, final_mode, verbose, true);
+    };
+    while (length > 1usize && copy.get(length - 1usize) == 47u8) { // '/'
+        length -= 1usize;
+        copy.set(length, 0u8);
+    };
+    let mut status: i32 = 0i32;
+    for (let i in 1usize..(length + 1usize)) {
+        if (i != length && copy.get(i) != 47u8) {
+            continue;
+        };
+        let saved: u8 = copy.get(i);
+        copy.set(i, 0u8);
+        if (copy.get(0usize) != 0u8 && !(copy.get(0usize) == 46u8 && copy.get(1usize) == 0u8)) { // not "" and not "."
+            let is_final: bool = i == length;
+            let mut create_m: u32 = default_mode;
+            if (is_final && mode_set) {
+                create_m = final_mode;
+            };
+            let ptr: *i8 = (copy.data!) as *i8;
+            let rc: i32 = mkdir_make_one(ptr, create_m, is_final && mode_set, final_mode, verbose, true);
+            if (rc != 0i32) {
+                status = rc;
+                break;
+            };
+        };
+        copy.set(i, saved);
+    };
+    return status;
+};
 
 export fn run(start: usize, argc: usize) i32 = {
-    let count: usize = argc - start;
-    if (count > 4096usize) { return 1; };
-    let mut argv: [4096]*i8;
-    for (let i in 0usize..count) { argv[i] = args::argat(start + i).data as *i8; };
-    return backend::zov_mkdir_run(count as i32, (&argv[0usize]) as **i8);
+    let mut mode_text: str = "";
+    let mut mode_set: bool = false;
+    let mut context: str = "";
+    let mut context_option: bool = false;
+    let mut parents: bool = false;
+    let mut verbose: bool = false;
+    let mut options_done: bool = false;
+    let mut paths: vec::Vec[str] = vec::new[str]();
+
+    let mut i: usize = start;
+    while (i < argc) {
+        let a: str = args::argat(i);
+        if (!options_done && a.len == 2usize && a.data[0usize] == 45u8 && a.data[1usize] == 45u8) { // "--"
+            options_done = true;
+            i += 1usize;
+            continue;
+        };
+        if (!options_done && a.len >= 2usize && a.data[0usize] == 45u8 && a.data[1usize] == 45u8) { // "--..."
+            let mut eq_pos: usize = a.len;
+            for (let j in 2usize..a.len) {
+                if (a.data[j] == 61u8) { // '='
+                    eq_pos = j;
+                    break;
+                };
+            };
+            let key: str = a[0..eq_pos];
+            let has_eq: bool = eq_pos < a.len;
+            let mut val: str = "";
+            if (has_eq) {
+                val = a[(eq_pos + 1usize)..a.len];
+            };
+
+            if (is_option_prefix(key, "--help") ||
+                is_option_prefix(key, "--version") ||
+                is_option_prefix(key, "--parents") ||
+                is_option_prefix(key, "--verbose")) {
+                let mut name: str = "--help";
+                if (is_option_prefix(key, "--version")) { name = "--version"; }
+                else if (is_option_prefix(key, "--parents")) { name = "--parents"; }
+                else if (is_option_prefix(key, "--verbose")) { name = "--verbose"; };
+
+                if (has_eq) {
+                    c::fprintf(c::stderr, "mkdir: option '%s' doesn't allow an argument\nTry 'mkdir --help' for more information.\n", name.data as *i8);
+                    return 1i32;
+                };
+                if (is_option_prefix(key, "--help")) {
+                    print_help();
+                    return 0i32;
+                };
+                if (is_option_prefix(key, "--version")) {
+                    io::println("mkdir (zovutils) 0.10.61");
+                    return 0i32;
+                };
+                if (is_option_prefix(key, "--parents")) {
+                    parents = true;
+                } else {
+                    verbose = true;
+                };
+                i += 1usize;
+                continue;
+            };
+
+            if (is_option_prefix(key, "--mode")) {
+                if (has_eq) {
+                    mode_text = val;
+                    mode_set = true;
+                    i += 1usize;
+                } else if (i + 1usize < argc) {
+                    mode_text = args::argat(i + 1usize);
+                    mode_set = true;
+                    i += 2usize;
+                } else {
+                    c::fputs("mkdir: option '--mode' requires an argument\nTry 'mkdir --help' for more information.\n", c::stderr);
+                    return 1i32;
+                };
+                continue;
+            };
+
+            if (is_option_prefix(key, "--context")) {
+                context_option = true;
+                if (has_eq) {
+                    context = val;
+                };
+                i += 1usize;
+                continue;
+            };
+
+            c::fprintf(c::stderr, "mkdir: unrecognized option '%s'\nTry 'mkdir --help' for more information.\n", a.data as *i8);
+            return 1i32;
+        };
+
+        if (!options_done && a.len > 1usize && a.data[0usize] == 45u8) { // short options
+            let mut j: usize = 1usize;
+            let mut skip_remaining: bool = false;
+            while (j < a.len && !skip_remaining) {
+                let option: u8 = a.data[j];
+                if (option == 112u8) { // 'p'
+                    parents = true;
+                    j += 1usize;
+                } else if (option == 118u8) { // 'v'
+                    verbose = true;
+                    j += 1usize;
+                } else if (option == 90u8) { // 'Z'
+                    context_option = true;
+                    j += 1usize;
+                } else if (option == 109u8) { // 'm'
+                    if (j + 1usize < a.len) {
+                        mode_text = a[(j + 1usize)..a.len];
+                        mode_set = true;
+                        skip_remaining = true;
+                    } else if (i + 1usize < argc) {
+                        mode_text = args::argat(i + 1usize);
+                        mode_set = true;
+                        i += 1usize;
+                        skip_remaining = true;
+                    } else {
+                        c::fputs("mkdir: option requires an argument -- 'm'\nTry 'mkdir --help' for more information.\n", c::stderr);
+                        return 1i32;
+                    };
+                } else {
+                    c::fprintf(c::stderr, "mkdir: invalid option -- '%c'\nTry 'mkdir --help' for more information.\n", option as i32);
+                    return 1i32;
+                };
+            };
+            i += 1usize;
+            continue;
+        };
+
+        paths.push(a);
+        let pc: nullable *i8 = stdlib::getenv("POSIXLY_CORRECT");
+        if (pc != null && (pc!)[0usize] != 0i8) {
+            options_done = true;
+        };
+        i += 1usize;
+    };
+
+    if (paths.len() == 0usize) {
+        c::fputs("mkdir: missing operand\nTry 'mkdir --help' for more information.\n", c::stderr);
+        return 1i32;
+    };
+
+    if (context_option && context.len > 0usize) {
+        if (platform_stat::zov_context_enabled() == 0i32) {
+            c::fputs("mkdir: warning: ignoring --context; it requires an SELinux/SMACK-enabled kernel\n", c::stderr);
+        } else {
+            c::fputs("mkdir: failed to set default file creation context to ", c::stderr);
+            platform_quote::zov_quote_shell(c::stderr, context.data as *i8);
+            c::fputs(": Invalid argument\n", c::stderr);
+            return 1i32;
+        };
+    };
+
+    let mask: u32 = platform_stat::zov_get_umask();
+    let mut final_mode: u32 = 0x1ffu32; // 0777
+    if (mode_set) {
+        let res: mode::ParseModeResult = mode::parse_mode(mode_text, 0x1ffu32, mask, platform_errno::zov_platform_is_apple() != 0i32);
+        if (!res.valid) {
+            c::fputs("mkdir: invalid mode ", c::stderr);
+            platform_quote::zov_quote_shell(c::stderr, mode_text.data as *i8);
+            c::fputc(10i32, c::stderr);
+            return 1i32;
+        };
+        final_mode = res.mode;
+    };
+    let default_mode: u32 = 0x1ffu32 & ~mask;
+
+    let mut status: i32 = 0i32;
+    for (let pi in 0usize..paths.len()) {
+        let p: str = paths.get(pi);
+        let mut rc: i32 = 0i32;
+        if (parents) {
+            rc = mkdir_make_parents(p, default_mode, final_mode, mode_set, verbose);
+        } else {
+            let mut create_m: u32 = default_mode;
+            if (mode_set) {
+                create_m = final_mode;
+            };
+            rc = mkdir_make_one(p.data as *i8, create_m, mode_set, final_mode, verbose, false);
+        };
+        if (rc != 0i32) {
+            status = 1i32;
+        };
+    };
+
+    if (c::fflush(c::stdout) != 0i32) {
+        status = 1i32;
+    };
+    return status;
 };
