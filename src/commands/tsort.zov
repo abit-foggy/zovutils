@@ -1,9 +1,205 @@
 use std::env as args;
-use <tsort_backend.h> as backend;
+use std::io as io;
+use std::vec;
+use <stdio.h> as c;
+use <string.h> as strc;
+use <platform_errno.h> as platform_errno;
+
+type Token = struct {
+    start: usize,
+    len: usize,
+};
+
+fn token_eq(content: &vec::Vec[u8], a: Token, b: Token) bool = {
+    if (a.len != b.len) { return false; };
+    for (let i in 0usize..a.len) {
+        if (content.get(a.start + i) != content.get(b.start + i)) {
+            return false;
+        };
+    };
+    return true;
+};
+
+fn print_token(stream: *c::FILE, content: &vec::Vec[u8], t: Token) = {
+    for (let i in 0usize..t.len) {
+        c::fputc(content.get(t.start + i) as i32, stream);
+    };
+    c::fputc(10i32, stream);
+};
+
+fn find_or_add(nodes_tok: &mut vec::Vec[Token], nodes_indegree: &mut vec::Vec[usize], nodes_emitted: &mut vec::Vec[bool], content: &vec::Vec[u8], tok: Token) usize = {
+    for (let i in 0usize..nodes_tok.len()) {
+        if (token_eq(content, nodes_tok.get(i), tok)) {
+            return i;
+        };
+    };
+    let idx: usize = nodes_tok.len();
+    nodes_tok.push(tok);
+    nodes_indegree.push(0usize);
+    nodes_emitted.push(false);
+    return idx;
+};
+
+fn print_help() = {
+    c::fputs("Usage: tsort [OPTION] [FILE]\nWrite totally ordered list consistent with the partial ordering in FILE.\nWith no FILE, or when FILE is -, read standard input.\n      --help     display this help and exit\n      --version  output version information and exit\n", c::stdout);
+};
+
 export fn run(start: usize, argc: usize) i32 = {
-    let count: usize = argc - start;
-    if (count > 4096usize) { return 1; };
-    let mut argv: [4096]*i8;
-    for (let i in 0usize..count) { argv[i] = args::argat(start + i).data as *i8; };
-    return backend::zov_tsort_run(count as i32, (&argv[0usize]) as **i8);
+    let mut file: str = "";
+    let mut i: usize = start;
+    while (i < argc) {
+        let a: str = args::argat(i);
+        if (a == "--help") {
+            print_help();
+            return 0i32;
+        };
+        if (a == "--version") {
+            io::println("tsort (zovutils) 0.10.61");
+            return 0i32;
+        };
+        if (a.len > 0usize && a.data[0usize] == 45u8 && a != "-") {
+            c::fprintf(c::stderr, "tsort: unrecognized option '%s'\nTry 'tsort --help' for more information.\n", a.data as *i8);
+            return 1i32;
+        };
+        if (file != "") {
+            c::fprintf(c::stderr, "tsort: extra operand '%s'\nTry 'tsort --help' for more information.\n", a.data as *i8);
+            return 1i32;
+        };
+        file = a;
+        i += 1usize;
+    };
+
+    let mut f: *c::FILE = c::stdin;
+    let mut need_close: bool = false;
+    if (file != "" && file != "-") {
+        platform_errno::zov_errno_set(0i32);
+        let fp: nullable *c::FILE = c::fopen(file.data as *i8, "r".data as *i8);
+        if (fp == null) {
+            let err: i32 = platform_errno::zov_errno_value();
+            c::fprintf(c::stderr, "tsort: %s: %s\n", file.data as *i8, strc::strerror(err));
+            return 1i32;
+        };
+        f = fp!;
+        need_close = true;
+    };
+
+    let mut content: vec::Vec[u8] = vec::new[u8]();
+    let mut buf: [4096]u8;
+    while (true) {
+        let n: usize = c::fread((&buf[0usize]) as *void, 1usize, 4096usize, f);
+        if (n == 0usize) { break; };
+        for (let j in 0usize..n) {
+            content.push(buf[j]);
+        };
+    };
+    if (need_close) {
+        c::fclose(f);
+    };
+
+    let mut tokens: vec::Vec[Token] = vec::new[Token]();
+    let mut pos: usize = 0usize;
+    let clen: usize = content.len();
+    while (pos < clen) {
+        let ch: u8 = content.get(pos);
+        if (ch == 32u8 || (ch >= 9u8 && ch <= 13u8)) {
+            pos += 1usize;
+            continue;
+        };
+        let tok_start: usize = pos;
+        while (pos < clen) {
+            let c2: u8 = content.get(pos);
+            if (c2 == 32u8 || (c2 >= 9u8 && c2 <= 13u8)) {
+                break;
+            };
+            pos += 1usize;
+        };
+        tokens.push(Token{ start = tok_start, len = pos - tok_start });
+    };
+
+    if (tokens.len() % 2usize != 0usize) {
+        let mut display_file: str = "-";
+        if (file != "") {
+            display_file = file;
+        };
+        c::fprintf(c::stderr, "tsort: %s: input contains an odd number of tokens\n", display_file.data as *i8);
+        return 1i32;
+    };
+
+    let mut nodes_tok: vec::Vec[Token] = vec::new[Token]();
+    let mut nodes_indegree: vec::Vec[usize] = vec::new[usize]();
+    let mut nodes_emitted: vec::Vec[bool] = vec::new[bool]();
+    let mut edge_from: vec::Vec[usize] = vec::new[usize]();
+    let mut edge_to: vec::Vec[usize] = vec::new[usize]();
+
+    let mut pair_idx: usize = 0usize;
+    while (pair_idx < tokens.len()) {
+        let t1: Token = tokens.get(pair_idx);
+        let t2: Token = tokens.get(pair_idx + 1usize);
+        let id_a: usize = find_or_add(&mut nodes_tok, &mut nodes_indegree, &mut nodes_emitted, &content, t1);
+        let id_b: usize = find_or_add(&mut nodes_tok, &mut nodes_indegree, &mut nodes_emitted, &content, t2);
+
+        if (id_a != id_b) {
+            let mut exists: bool = false;
+            for (let e in 0usize..edge_from.len()) {
+                if (edge_from.get(e) == id_a && edge_to.get(e) == id_b) {
+                    exists = true;
+                    break;
+                };
+            };
+            if (!exists) {
+                edge_from.push(id_a);
+                edge_to.push(id_b);
+                nodes_indegree.set(id_b, nodes_indegree.get(id_b) + 1usize);
+            };
+        };
+
+        pair_idx += 2usize;
+    };
+
+    let mut queue: vec::Vec[usize] = vec::new[usize]();
+    for (let i in 0usize..nodes_tok.len()) {
+        if (nodes_indegree.get(i) == 0usize) {
+            queue.push(i);
+        };
+    };
+
+    let mut qh: usize = 0usize;
+    let mut done: usize = 0usize;
+    while (qh < queue.len()) {
+        let x: usize = queue.get(qh);
+        qh += 1usize;
+        nodes_emitted.set(x, true);
+        print_token(c::stdout, &content, nodes_tok.get(x));
+        done += 1usize;
+
+        for (let e in 0usize..edge_from.len()) {
+            if (edge_from.get(e) == x) {
+                let y: usize = edge_to.get(e);
+                let in_deg: usize = nodes_indegree.get(y) - 1usize;
+                nodes_indegree.set(y, in_deg);
+                if (in_deg == 0usize) {
+                    queue.push(y);
+                };
+            };
+        };
+    };
+
+    let mut status: i32 = 0i32;
+    if (done < nodes_tok.len()) {
+        let mut display_file: str = "-";
+        if (file != "") {
+            display_file = file;
+        };
+        c::fprintf(c::stderr, "tsort: %s: input contains a loop:\n", display_file.data as *i8);
+        for (let i in 0usize..nodes_tok.len()) {
+            if (!nodes_emitted.get(i)) {
+                c::fputs("tsort: ", c::stderr);
+                print_token(c::stderr, &content, nodes_tok.get(i));
+                print_token(c::stdout, &content, nodes_tok.get(i));
+            };
+        };
+        status = 1i32;
+    };
+
+    return status;
 };
