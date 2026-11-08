@@ -58,4 +58,12 @@ static inline int zov_errno_is_erange(void) {
     return errno == ERANGE;
 }
 
+static inline int zov_errno_is_pipe(int err) {
+    return err == EPIPE;
+}
+
+static inline int zov_errno_eio(void) {
+    return EIO;
+}
+
 #endif

@@ -1,9 +1,223 @@
 use std::env as args;
-use <tee_backend.h> as backend;
+use std::io;
+use std::vec as vec;
+use <stdio.h> as c;
+use <string.h> as strc;
+use <platform_io.h> as platform_io;
+use <platform_errno.h> as platform_errno;
+use <platform_process.h> as platform_process;
+use shared::io as stream;
+
+fn help() void = {
+    io::print("Usage: tee [OPTION]... [FILE]...\n");
+    io::print("Copy standard input to each FILE, and also to standard output.\n\n");
+    io::print("  -a, --append              append to the given FILEs, do not overwrite\n");
+    io::print("  -i, --ignore-interrupts   ignore interrupt signals\n");
+    io::print("  -p                        operate in warn-nopipe mode with pipes\n");
+    io::print("      --output-error[=MODE] set behavior on write error\n");
+    io::print("      --help                display this help and exit\n");
+    io::print("      --version             output version information and exit\n\n");
+    io::print("Report bugs to: bug-coreutils@gnu.org\n");
+    io::print("GNU coreutils home page: <https://www.gnu.org/software/coreutils/>\n");
+    io::print("General help using GNU software: <https://www.gnu.org/gethelp/>\n");
+    io::print("Report any translation bugs to <https://translationproject.org/team/>\n");
+    io::print("Full documentation <https://www.gnu.org/software/coreutils/tee>\n");
+    io::print("or available locally via: info '(coreutils) tee invocation'\n");
+};
+
+fn tee_mode(value: str) i32 = {
+    if (value == "warn") { return 1; };
+    if (value == "warn-nopipe") { return 2; };
+    if (value == "exit") { return 3; };
+    if (value == "exit-nopipe") { return 4; };
+    return 0;
+};
+
+fn tee_write_error(name: str, standard: bool, mode: i32, err: i32, fp: *c::FILE) bool = {
+    let is_pipe: bool = platform_errno::zov_errno_is_pipe(err) != 0i32;
+    let warn: bool = mode == 1 || !is_pipe;
+    let stop: bool = mode == 3 || (mode == 4 && !is_pipe) || (mode == 0 && !is_pipe);
+    if (warn) {
+        let mut name_ptr: *i8 = name.data as *i8;
+        if (standard) {
+            name_ptr = "standard output".data as *i8;
+        };
+        c::fprintf(c::stderr, "tee: '%s': %s\n", name_ptr, strc::strerror(err));
+    };
+    if (standard) {
+        c::fflush(fp);
+    } else {
+        c::fclose(fp);
+    };
+    return stop;
+};
+
 export fn run(start: usize, argc: usize) i32 = {
-    let count: usize = argc - start;
-    if (count > 4096usize) { return 1; };
-    let mut argv: [4096]*i8;
-    for (let i in 0usize..count) { argv[i] = args::argat(start + i).data as *i8; };
-    return backend::zov_tee_run(count as i32, (&argv[0usize]) as **i8);
+    let mut append: bool = false;
+    let mut ignore_int: bool = false;
+    let mut end: bool = false;
+    let mut mode: i32 = 0;
+    let mut status: i32 = 0;
+    let mut names = vec::new[str]();
+
+    let mut i: usize = start;
+    while (i < argc) {
+        let a: str = args::argat(i);
+        if (!end && a == "--") {
+            end = true;
+            i += 1usize;
+            continue;
+        };
+        if (!end && (a == "--help" || a == "--version")) {
+            if (a == "--version") {
+                io::println("tee (zovutils) 0.10.61");
+            } else {
+                help();
+            };
+            stream::finishoutput("tee");
+            return 0;
+        };
+        if (!end && (a == "-a" || a == "--append")) {
+            append = true;
+            i += 1usize;
+            continue;
+        };
+        if (!end && (a == "-i" || a == "--ignore-interrupts")) {
+            ignore_int = true;
+            i += 1usize;
+            continue;
+        };
+        if (!end && a == "-p") {
+            mode = 2;
+            i += 1usize;
+            continue;
+        };
+        if (!end && a == "--output-error") {
+            mode = 2;
+            i += 1usize;
+            continue;
+        };
+        if (!end && a.len >= 15usize && a[0usize..15usize] == "--output-error=") {
+            let val: str = a[15usize..a.len];
+            mode = tee_mode(val);
+            if (mode == 0) {
+                c::fprintf(c::stderr, "tee: invalid argument '%s' for '--output-error'\nValid arguments are:\n  - 'warn'\n  - 'warn-nopipe'\n  - 'exit'\n  - 'exit-nopipe'\nTry 'tee --help' for more information.\n", val.data as *i8);
+                return 1;
+            };
+            i += 1usize;
+            continue;
+        };
+        if (!end && a.len > 0usize && a.data[0usize] == 45u8 && a != "-") {
+            c::fprintf(c::stderr, "tee: unrecognized option '%s'\nTry 'tee --help' for more information.\n", a.data as *i8);
+            return 1;
+        };
+        names.push(a);
+        i += 1usize;
+    };
+
+    if (ignore_int) {
+        platform_process::zov_signal_ignore_interrupt();
+    };
+    platform_process::zov_signal_ignore_pipe();
+
+    let mut out_fps = vec::new[*c::FILE]();
+    let mut out_names = vec::new[str]();
+    let mut out_standards = vec::new[bool]();
+    let mut out_actives = vec::new[bool]();
+
+    out_fps.push(c::stdout);
+    out_names.push("standard output");
+    out_standards.push(true);
+    out_actives.push(true);
+    platform_io::zov_set_unbuffered(c::stdout);
+
+    let mut f_idx: usize = 0usize;
+    while (f_idx < names.len()) {
+        let name: str = names.get(f_idx);
+        let mut open_mode: *i8 = "wb".data as *i8;
+        if (append) { open_mode = "ab".data as *i8; };
+        let f: nullable *c::FILE = c::fopen(name.data as *i8, open_mode);
+        match (f) {
+            case let fp: *c::FILE => {
+                platform_io::zov_set_unbuffered(fp);
+                out_fps.push(fp);
+                out_names.push(name);
+                out_standards.push(false);
+                out_actives.push(true);
+            },
+            case null => {
+                let err: i32 = platform_errno::zov_errno_value();
+                c::fprintf(c::stderr, "tee: %s: %s\n", name.data as *i8, strc::strerror(err));
+                status = 1;
+            },
+        };
+        f_idx += 1usize;
+    };
+
+    let buf: [16384]u8;
+    let mut stop: bool = false;
+    while (!stop) {
+        let n: usize = stream::readbytes(c::stdin, ((&buf[0usize]) as *u8), 16384usize);
+        if (n == 0usize) { break; };
+        let mut idx: usize = 0usize;
+        while (idx < out_fps.len()) {
+            if (out_actives.get(idx)) {
+                platform_errno::zov_errno_set(0i32);
+                let written: usize = c::fwrite(((&buf[0usize]) as *void), 1usize, n, out_fps.get(idx));
+                if (written != n) {
+                    let mut err: i32 = platform_errno::zov_errno_value();
+                    if (err == 0i32) { err = platform_errno::zov_errno_eio(); };
+                    status = 1;
+                    out_actives.set(idx, false);
+                    if (tee_write_error(out_names.get(idx), out_standards.get(idx), mode, err, out_fps.get(idx))) {
+                        stop = true;
+                    };
+                };
+            };
+            idx += 1usize;
+        };
+        if (mode == 0 || mode == 2 || mode == 4) {
+            let mut active_count: usize = 0usize;
+            let mut chk: usize = 0usize;
+            while (chk < out_fps.len()) {
+                if (out_actives.get(chk)) { active_count += 1usize; };
+                chk += 1usize;
+            };
+            if (active_count == 0usize) { stop = true; };
+        };
+    };
+
+    if (stream::readerror(c::stdin)) { status = 1; };
+
+    let mut end_idx: usize = 0usize;
+    while (end_idx < out_fps.len()) {
+        if (out_actives.get(end_idx)) {
+            platform_errno::zov_errno_set(0i32);
+            if (c::fflush(out_fps.get(end_idx)) != 0i32) {
+                let mut err: i32 = platform_errno::zov_errno_value();
+                if (err == 0i32) { err = platform_errno::zov_errno_eio(); };
+                status = 1;
+                out_actives.set(end_idx, false);
+                if (tee_write_error(out_names.get(end_idx), out_standards.get(end_idx), mode, err, out_fps.get(end_idx))) {
+                    stop = true;
+                };
+            };
+            if (out_actives.get(end_idx) && !out_standards.get(end_idx)) {
+                platform_errno::zov_errno_set(0i32);
+                if (c::fclose(out_fps.get(end_idx)) != 0i32) {
+                    let mut err: i32 = platform_errno::zov_errno_value();
+                    if (err == 0i32) { err = platform_errno::zov_errno_eio(); };
+                    status = 1;
+                    let is_pipe: bool = platform_errno::zov_errno_is_pipe(err) != 0i32;
+                    let warn: bool = mode == 1 || !is_pipe;
+                    if (warn) {
+                        c::fprintf(c::stderr, "tee: '%s': %s\n", out_names.get(end_idx).data as *i8, strc::strerror(err));
+                    };
+                };
+            };
+        };
+        end_idx += 1usize;
+    };
+
+    return status;
 };

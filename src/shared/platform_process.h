@@ -302,4 +302,12 @@ static inline int zov_nanosleep_seconds(double seconds) {
     return 0;
 }
 
+static inline void zov_signal_ignore_interrupt(void) {
+    signal(SIGINT, SIG_IGN);
+}
+
+static inline void zov_signal_ignore_pipe(void) {
+    signal(SIGPIPE, SIG_IGN);
+}
+
 #endif

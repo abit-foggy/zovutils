@@ -111,4 +111,8 @@ static inline void zov_free_read_buffer(void *buffer) {
     free(buffer);
 }
 
+static inline void zov_set_unbuffered(FILE *fp) {
+    setvbuf(fp, NULL, _IONBF, 0);
+}
+
 #endif
