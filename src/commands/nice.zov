@@ -1,9 +1,139 @@
 use std::env as args;
-use <nice_logname_backend.h> as backend;
+use std::io;
+use <unistd.h> as u;
+use <stdio.h> as c;
+use <stdlib.h> as stdlib;
+use <string.h> as strc;
+use <platform_errno.h> as platform_errno;
+use <platform_process.h> as platform_process;
+
+type ParseAdj = struct {
+    ok: bool,
+    val: i32,
+};
+
+fn parse_adjustment(s: str) ParseAdj = {
+    let mut endp: *i8 = s.data as *i8;
+    let n: i64 = stdlib::strtol(s.data as *i8, (&mut endp) as **i8, 10);
+    if (endp == (s.data as *i8) || endp[0usize] != 0i8 || n < -2147483648i64 || n > 2147483647i64) {
+        return ParseAdj{ ok = false, val = 0i32 };
+    };
+    return ParseAdj{ ok = true, val = n as i32 };
+};
+
 export fn run(start: usize, argc: usize) i32 = {
-    let count: usize = argc - start;
-    if (count > 4096usize) { return 1; };
-    let mut argv: [4096]*i8;
-    for (let i in 0usize..count) { argv[i] = args::argat(start + i).data as *i8; };
-    return backend::zov_nice_run(count as i32, (&argv[0usize]) as **i8);
+    let mut adjust: i32 = 0i32;
+    let mut has_adjust: bool = false;
+    let mut i: usize = start;
+
+    while (i < argc) {
+        let a: str = args::argat(i);
+        if (a == "--help") {
+            io::println("Usage: nice [OPTION] [COMMAND [ARG]...]\nRun COMMAND with an adjusted niceness.\n  -n, --adjustment=N  add integer N to the priority\n      --help          display this help and exit\n      --version       output version information and exit");
+            return 0i32;
+        };
+        if (a == "--version") {
+            io::println("nice (zovutils) 0.10.61");
+            return 0i32;
+        };
+        if (a == "--") {
+            i += 1usize;
+            break;
+        };
+        if (a == "-n" || a == "--adjustment") {
+            if (i + 1usize >= argc) {
+                c::fprintf(c::stderr, "nice: option requires an argument -- 'n'\n");
+                return 125i32;
+            };
+            let adj_res: ParseAdj = parse_adjustment(args::argat(i + 1usize));
+            if (!adj_res.ok) {
+                c::fprintf(c::stderr, "nice: invalid adjustment '%s'\n", args::argat(i + 1usize).data as *i8);
+                return 125i32;
+            };
+            adjust = adj_res.val;
+            has_adjust = true;
+            i += 2usize;
+            continue;
+        };
+        if (a.len >= 13usize && a[0usize..13usize] == "--adjustment=") {
+            let adj_res: ParseAdj = parse_adjustment(a[13usize..a.len]);
+            if (!adj_res.ok) {
+                c::fprintf(c::stderr, "nice: invalid adjustment '%s'\n", a[13usize..a.len].data as *i8);
+                return 125i32;
+            };
+            adjust = adj_res.val;
+            has_adjust = true;
+            i += 1usize;
+            continue;
+        };
+        if (a.len >= 2usize && a.data[0usize] == 45u8 && a.data[1usize] >= 48u8 && a.data[1usize] <= 57u8) {
+            let adj_res: ParseAdj = parse_adjustment(a);
+            if (!adj_res.ok) {
+                c::fprintf(c::stderr, "nice: invalid adjustment '%s'\n", a.data as *i8);
+                return 125i32;
+            };
+            adjust = adj_res.val;
+            has_adjust = true;
+            i += 1usize;
+            continue;
+        };
+        if (a.len > 1usize && a.data[0usize] == 45u8 && a != "-") {
+            c::fprintf(c::stderr, "nice: unrecognized option '%s'\nTry 'nice --help' for more information.\n", a.data as *i8);
+            return 125i32;
+        };
+        break;
+    };
+
+    if (i >= argc) {
+        platform_errno::zov_errno_set(0i32);
+        let p: i32 = platform_process::zov_getpriority();
+        if (p == -1i32 && platform_errno::zov_errno_value() != 0i32) {
+            return 125i32;
+        };
+        let mut out_p: i32 = p;
+        if (has_adjust) {
+            out_p = p + adjust;
+        };
+        c::printf("%d\n", out_p);
+        return 0i32;
+    };
+
+    platform_errno::zov_errno_set(0i32);
+    let current: i32 = platform_process::zov_getpriority();
+    if (current == -1i32 && platform_errno::zov_errno_value() != 0i32) {
+        let err: i32 = platform_errno::zov_errno_value();
+        c::fprintf(c::stderr, "nice: cannot get niceness: %s\n", strc::strerror(err));
+        return 125i32;
+    };
+
+    let mut add_val: i64 = 10i64;
+    if (has_adjust) {
+        add_val = adjust as i64;
+    };
+    let mut wanted: i64 = (current as i64) + add_val;
+    if (wanted < -20i64) {
+        wanted = -20i64;
+    };
+    if (wanted > 19i64) {
+        wanted = 19i64;
+    };
+    if (platform_process::zov_setpriority(wanted as i32) < 0i32) {
+        let err: i32 = platform_errno::zov_errno_value();
+        c::fprintf(c::stderr, "nice: cannot set niceness: %s\n", strc::strerror(err));
+        return 125i32;
+    };
+
+    let cmd_count: usize = argc - i;
+    let mut exec_argv: [4096]nullable *i8;
+    for (let j in 0usize..cmd_count) {
+        exec_argv[j] = args::argat(i + j).data as *i8;
+    };
+    exec_argv[cmd_count] = null;
+    u::execvp(args::argat(i).data as *void, (&exec_argv[0usize]) as *void);
+    let err: i32 = platform_errno::zov_errno_value();
+    c::fprintf(c::stderr, "nice: '%s': %s\n", args::argat(i).data as *i8, strc::strerror(err));
+    if (platform_errno::zov_errno_is_enoent(err) != 0i32) {
+        return 127i32;
+    };
+    return 126i32;
 };

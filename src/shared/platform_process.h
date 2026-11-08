@@ -10,6 +10,7 @@
 #include <limits.h>
 #include <unistd.h>
 #include <time.h>
+#include <sys/resource.h>
 
 #ifndef NSIG
 #define NSIG 32
@@ -308,6 +309,58 @@ static inline void zov_signal_ignore_interrupt(void) {
 
 static inline void zov_signal_ignore_pipe(void) {
     signal(SIGPIPE, SIG_IGN);
+}
+
+static inline long zov_nprocessors_onln(void) {
+    long count = 0;
+#ifdef __linux__
+    FILE *status = fopen("/proc/self/status", "r");
+    char line[512];
+    if (status) {
+        while (fgets(line, sizeof(line), status)) {
+            if (strncmp(line, "Cpus_allowed_list:", 18) == 0) {
+                char *p = line + 18;
+                long total = 0;
+                while (*p && *p != '\n') {
+                    char *end;
+                    long first = strtol(p, &end, 10);
+                    if (end == p) break;
+                    p = end;
+                    long last = first;
+                    if (*p == '-') {
+                        last = strtol(p + 1, &end, 10);
+                        p = end;
+                    }
+                    if (last >= first) total += last - first + 1;
+                    if (*p == ',') ++p;
+                    else break;
+                }
+                if (total > 0) count = total;
+                break;
+            }
+        }
+        fclose(status);
+    }
+#endif
+    if (count <= 0) {
+        count = sysconf(_SC_NPROCESSORS_ONLN);
+        if (count <= 0) count = 1;
+    }
+    return count;
+}
+
+static inline long zov_nprocessors_conf(void) {
+    long installed = sysconf(_SC_NPROCESSORS_CONF);
+    if (installed > 0) return installed;
+    return zov_nprocessors_onln();
+}
+
+static inline int zov_getpriority(void) {
+    return getpriority(PRIO_PROCESS, 0);
+}
+
+static inline int zov_setpriority(int prio) {
+    return setpriority(PRIO_PROCESS, 0, prio);
 }
 
 #endif

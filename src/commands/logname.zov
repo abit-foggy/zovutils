@@ -1,9 +1,31 @@
 use std::env as args;
-use <nice_logname_backend.h> as backend;
+use std::io;
+use <unistd.h> as u;
+use <stdio.h> as c;
+
 export fn run(start: usize, argc: usize) i32 = {
-    let count: usize = argc - start;
-    if (count > 4096usize) { return 1; };
-    let mut argv: [4096]*i8;
-    for (let i in 0usize..count) { argv[i] = args::argat(start + i).data as *i8; };
-    return backend::zov_logname_run(count as i32, (&argv[0usize]) as **i8);
+    for (let i in start..argc) {
+        let a: str = args::argat(i);
+        if (a == "--help") {
+            io::println("Usage: logname [OPTION]\nPrint the name of the current user.\n  --help     display this help and exit\n  --version  output version information and exit");
+            return 0i32;
+        };
+        if (a == "--version") {
+            io::println("logname (zovutils) 0.10.61");
+            return 0i32;
+        };
+        if (a.len > 0usize && a.data[0usize] == 45u8) {
+            c::fprintf(c::stderr, "logname: unrecognized option '%s'\nTry 'logname --help' for more information.\n", a.data as *i8);
+        } else {
+            c::fprintf(c::stderr, "logname: extra operand '%s'\nTry 'logname --help' for more information.\n", a.data as *i8);
+        };
+        return 1i32;
+    };
+    let p: nullable *i8 = u::getlogin();
+    if (p == null) {
+        c::fprintf(c::stderr, "logname: no login name\n");
+        return 1i32;
+    };
+    c::puts(p!);
+    return 0i32;
 };

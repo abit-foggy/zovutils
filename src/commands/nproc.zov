@@ -1,10 +1,96 @@
 use std::env as args;
-use <nproc_backend.h> as backend;
+use std::io;
+use <stdio.h> as c;
+use <stdlib.h> as stdlib;
+use <platform_process.h> as platform_process;
 
 export fn run(start: usize, argc: usize) i32 = {
-    let count: usize = argc - start;
-    if (count > 4096usize) { return 1; };
-    let mut argv: [4096]*i8;
-    for (let i in 0usize..count) { argv[i] = args::argat(start + i).data as *i8; };
-    return backend::zov_nproc_run(count as i32, (&argv[0usize]) as **i8);
+    let mut all: bool = false;
+    let mut ignore: u64 = 0u64;
+
+    let mut i: usize = start;
+    while (i < argc) {
+        let a: str = args::argat(i);
+        if (a == "--help") {
+            io::println("Usage: nproc [OPTION]...\nPrint the number of processing units available.\n\n      --all       print the number of installed processors\n      --ignore=N  if possible, exclude N processing units\n      --help      display this help and exit\n      --version   output version information and exit\n\nReport bugs to: bug-coreutils@gnu.org\nGNU coreutils home page: <https://www.gnu.org/software/coreutils/>");
+            return 0i32;
+        };
+        if (a == "--version") {
+            io::println("nproc (zovutils) 0.10.61");
+            return 0i32;
+        };
+        if (a == "--all") {
+            all = true;
+            i += 1usize;
+            continue;
+        };
+        if (a == "--ignore" || (a.len >= 9usize && a[0usize..9usize] == "--ignore=")) {
+            let mut v: str = "";
+            let mut has_v: bool = false;
+            if (a.len >= 9usize && a[0usize..9usize] == "--ignore=") {
+                v = a[9usize..a.len];
+                has_v = true;
+                i += 1usize;
+            } else if (i + 1usize < argc) {
+                v = args::argat(i + 1usize);
+                has_v = true;
+                i += 2usize;
+            } else {
+                i += 1usize;
+            };
+
+            if (!has_v || v.len == 0usize) {
+                c::fputs("nproc: option '--ignore' requires an argument\nTry 'nproc --help' for more information.\n", c::stderr);
+                return 1i32;
+            };
+
+            let mut endp: *i8 = v.data as *i8;
+            let n: u64 = stdlib::strtoul(v.data as *i8, (&mut endp) as **i8, 10);
+            if (endp == (v.data as *i8) || endp[0usize] != 0i8) {
+                c::fprintf(c::stderr, "nproc: invalid number: '%s'\n", v.data as *i8);
+                return 1i32;
+            };
+            ignore = n;
+            continue;
+        };
+
+        c::fprintf(c::stderr, "nproc: unrecognized option '%s'\nTry 'nproc --help' for more information.\n", a.data as *i8);
+        return 1i32;
+    };
+
+    let mut count: i64 = 0i64;
+    if (all) {
+        count = platform_process::zov_nprocessors_conf();
+    } else {
+        count = platform_process::zov_nprocessors_onln();
+    };
+    if (count <= 0i64) {
+        count = 1i64;
+    };
+
+    let omp: nullable *i8 = stdlib::getenv("OMP_NUM_THREADS");
+    if (!all && omp != null) {
+        let p: *i8 = omp!;
+        if (p[0usize] != 0i8) {
+            let mut endp: *i8 = p;
+            let n: u64 = stdlib::strtoul(p, (&mut endp) as **i8, 10);
+            if (endp != p && (endp[0usize] == 0i8 || endp[0usize] == 44i8)) {
+                if (n > 0u64 && n < (count as u64)) {
+                    count = n as i64;
+                };
+            };
+        };
+    };
+
+    if (ignore >= (count as u64)) {
+        count = 1i64;
+    } else {
+        count -= ignore as i64;
+    };
+
+    c::printf("%ld\n", count);
+    if (c::ferror(c::stdout) != 0i32) {
+        return 1i32;
+    };
+    return 0i32;
 };
