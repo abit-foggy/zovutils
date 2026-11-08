@@ -132,7 +132,7 @@ static inline int zov_ptx_run(int argc, char **argv) {
     int nf = 0;
     for (int i = 0; i < argc; i++) {
         const char *a = argv[i];
-        if (!strcmp(a, "--version")) { puts("ptx (zovutils) 0.10.49"); free(files); return 0; }
+        if (!strcmp(a, "--version")) { puts("ptx (zovutils) 0.10.50"); free(files); return 0; }
         if (!strcmp(a, "--help")) {
             puts("Usage: ptx [OPTION]... [INPUT]...\nOutput a permuted index, including context, of the words in the input files.\n  -A, --auto-reference       output automatically generated references\n  -G, --traditional          use traditional System V output\n  -b, --break-file=FILE      use word break characters from FILE\n  -f, --ignore-case          fold lower case to upper case for sorting\n  -g, --gap-size=NUMBER      gap size between output fields\n  -i, --ignore-file=FILE     read words to ignore from FILE\n  -o, --only-file=FILE       read words to include from FILE\n  -r, --references           first field of each line is a reference\n  -R, --right-side-refs      put references at the right\n  -t, --typeset-mode         use a default width of 100 columns\n  -w, --width=NUMBER         output width in columns\n      --help                 display this help and exit\n      --version              output version information and exit");
             free(files); return 0;

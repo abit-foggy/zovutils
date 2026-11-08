@@ -44,7 +44,7 @@ export fn run(start: usize, argc: usize) i32 = {
             };
             if (option == "--version" || prefix(option, "--version")) {
                 if (arg.len != option.len) { io::eprintln("tac: option '--version' doesn't allow an argument\nTry 'tac --help' for more information."); return 1; };
-                io::println("tac (zovutils) 0.10.49"); return 0;
+                io::println("tac (zovutils) 0.10.50"); return 0;
             };
             if (option == "--before" || prefix(option, "--before")) {
                 if (arg.len != option.len) { io::eprintln("tac: option '--before' doesn't allow an argument\nTry 'tac --help' for more information."); return 1; };
