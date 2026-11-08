@@ -113,7 +113,7 @@ fn split_write_file(
         c::fprintf(c::stderr, "split: output file suffixes exhausted\n");
         return false;
     };
-    let filename_str: String = String::from(prefix) + suffix.view() + additional;
+    let filename_str: String = prefix + suffix.view() + additional;
     let name: str = filename_str.view();
 
     if (filter.len > 0usize) {

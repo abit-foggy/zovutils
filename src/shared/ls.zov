@@ -55,9 +55,9 @@ fn path_join(dir: str, name: str) String = {
         return String::from(name);
     };
     if (dir.data[dir.len - 1usize] == 47u8) {
-        return String::from(dir) + name;
+        return dir + name;
     };
-    return String::from(dir) + "/" + name;
+    return dir + "/" + name;
 };
 
 fn ls_digits(val: i64) i32 = {

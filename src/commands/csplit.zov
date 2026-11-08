@@ -238,7 +238,7 @@ fn write_csplit_piece(
 
     let suffix_len: usize = strc::strlen((&suffix_buf[0usize]) as *i8);
     let suffix_str: str = zov_str_from_raw((&suffix_buf[0usize]) as *u8, suffix_len);
-    let path_str: String = String::from(prefix) + suffix_str;
+    let path_str: String = prefix + suffix_str;
     let path: str = path_str.view();
 
     let fp: nullable *c::FILE = c::fopen(path.data as *i8, "wb".data as *i8);

@@ -15,22 +15,6 @@ type PtxEntry = struct {
     sentence_offset: bool,
 };
 
-fn format_u64(n: u64) String = {
-    if (n == 0u64) { return String::from("0"); };
-    let mut buf: [32]u8;
-    let mut count: usize = 0usize;
-    let mut temp: u64 = n;
-    while (temp > 0u64) {
-        buf[count] = 48u8 + ((temp % 10u64) as u8);
-        temp /= 10u64;
-        count += 1usize;
-    };
-    let mut rev: [32]u8;
-    for (let i in 0usize..count) {
-        rev[i] = buf[count - 1usize - i];
-    };
-    return String::from(zov_str_from_raw((&rev[0usize]) as *u8, count));
-};
 
 fn parse_long(value: str, out: &mut i64) bool = {
     if (value.len == 0usize) { return false; };
@@ -605,9 +589,9 @@ export fn run(start: usize, argc: usize) i32 = {
                 if (refs_in && !auto_ref && input_reference.view().len > 0usize) {
                     ref_str = String::from(input_reference.view());
                 } else if (fpath == "-") {
-                    ref_str = String::from(":") + format_u64(lineno);
+                    ref_str = ":" + lineno;
                 } else {
-                    ref_str = String::from(fpath) + ":" + format_u64(lineno);
+                    ref_str = fpath + ":" + lineno;
                 };
 
                 let mut context_start: usize = 0usize;
@@ -647,9 +631,9 @@ export fn run(start: usize, argc: usize) i32 = {
                             if (refs_in && !auto_ref && input_reference.view().len > 0usize) {
                                 ref_str = String::from(input_reference.view());
                             } else if (fpath == "-") {
-                                ref_str = String::from(":") + format_u64(lineno);
+                                ref_str = ":" + lineno;
                             } else {
-                                ref_str = String::from(fpath) + ":" + format_u64(lineno);
+                                ref_str = fpath + ":" + lineno;
                             };
 
                             let mut context_start: usize = 0usize;
@@ -698,9 +682,9 @@ export fn run(start: usize, argc: usize) i32 = {
 
         let mut prefix: String = String::from("");
         if (auto_ref && !right_ref) {
-            prefix = String::from(e.reference.view()) + ": ";
+            prefix = e.reference.view() + ": ";
         } else if (refs_in && !auto_ref && !right_ref) {
-            prefix = String::from(e.reference.view()) + " ";
+            prefix = e.reference.view() + " ";
         };
 
         let pl: usize = prefix.view().len;

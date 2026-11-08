@@ -94,9 +94,9 @@ export fn path_join(dir: str, name: str) String = {
         return String::from(name);
     };
     if (dir.data[dir.len - 1usize] == 47u8) {
-        return String::from(dir + name);
+        return dir + name;
     };
-    return String::from(dir + "/" + name);
+    return dir + "/" + name;
 };
 
 export fn make_parents(path: str) bool = {
@@ -175,7 +175,7 @@ export fn backup_existing(dest: str, backup_control: i32, suffix: str) bool = {
             return true;
         };
         if (!numbered) {
-            let mut candidate1: String = String::from(dest + ".~1~");
+            let mut candidate1: String = dest + ".~1~";
             let mut info1: ZovCpStat;
             numbered = platform_copy::zov_cp_stat(candidate1.view().data as *i8, 0i32, (&mut info1) as *void) == 0i32;
         };
@@ -191,7 +191,7 @@ export fn backup_existing(dest: str, backup_control: i32, suffix: str) bool = {
     if (numbered) {
         for (let i in 1usize..1000000usize) {
             let formatted_i: String = format_usize(i);
-            let mut num_str: String = String::from(dest) + ".~" + formatted_i.view() + "~";
+            let mut num_str: String = dest + ".~" + formatted_i.view() + "~";
             let mut cand_info: ZovCpStat;
             let st_res: i32 = platform_copy::zov_cp_stat(num_str.view().data as *i8, 0i32, (&mut cand_info) as *void);
             if (st_res != 0i32 && platform_copy::zov_cp_is_enoent(st_res) != 0i32) {
@@ -201,7 +201,7 @@ export fn backup_existing(dest: str, backup_control: i32, suffix: str) bool = {
         return false;
     };
 
-    let mut cand_simple: String = String::from(dest + suf);
+    let mut cand_simple: String = dest + suf;
     return platform_stat::zov_rename(null_dest.view().data as *i8, cand_simple.view().data as *i8) == 0i32;
 };
 
@@ -744,7 +744,7 @@ fn is_prefix(value: str, full: str) bool = {
 fn help_cp() void = {
     let open_brace: str = zov_str_from_raw((&[123u8][0usize]) as *u8, 1usize);
     let close_brace: str = zov_str_from_raw((&[125u8][0usize]) as *u8, 1usize);
-    let help_text: String = String::from(
+    let help_text: String =
           "Usage: cp [OPTION]... [-T] SOURCE DEST\n" +
           "  or:  cp [OPTION]... SOURCE... DIRECTORY\n" +
           "  or:  cp [OPTION]... -t DIRECTORY SOURCE...\n" +
@@ -865,14 +865,14 @@ fn help_cp() void = {
           "General help using GNU software: <https://www.gnu.org/gethelp/>\n" +
           "Report any translation bugs to <https://translationproject.org/team/>\n" +
           "Full documentation <https://www.gnu.org/software/coreutils/cp>\n" +
-          "or available locally via: info '(coreutils) cp invocation'\n");
+          "or available locally via: info '(coreutils) cp invocation'\n";
     c::fputs(help_text.view().data as *i8, c::stdout);
 };
 
 fn help_mv() void = {
     let open_brace: str = zov_str_from_raw((&[123u8][0usize]) as *u8, 1usize);
     let close_brace: str = zov_str_from_raw((&[125u8][0usize]) as *u8, 1usize);
-    let help_text: String = String::from(
+    let help_text: String =
           "Usage: mv [OPTION]... [-T] SOURCE DEST\n" +
           "  or:  mv [OPTION]... SOURCE... DIRECTORY\n" +
           "  or:  mv [OPTION]... -t DIRECTORY SOURCE...\n" +
@@ -942,7 +942,7 @@ fn help_mv() void = {
           "General help using GNU software: <https://www.gnu.org/gethelp/>\n" +
           "Report any translation bugs to <https://translationproject.org/team/>\n" +
           "Full documentation <https://www.gnu.org/software/coreutils/mv>\n" +
-          "or available locally via: info '(coreutils) mv invocation'\n");
+          "or available locally via: info '(coreutils) mv invocation'\n";
     c::fputs(help_text.view().data as *i8, c::stdout);
 };
 
