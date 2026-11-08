@@ -51,4 +51,22 @@ static inline size_t zov_regex_max_span(void *raw) {
     return r ? r->max_span : 0;
 }
 
+static inline void *zov_regex_compile_bre(const char *pattern) {
+    zov_regex *r = (zov_regex *)malloc(sizeof(zov_regex));
+    if (!r) return NULL;
+    r->max_span = strlen(pattern) + 1;
+    int rc = regcomp(&r->expr, pattern, 0);
+    if (rc != 0) {
+        free(r);
+        return NULL;
+    }
+    return (void *)r;
+}
+
+static inline int zov_regex_search(void *raw, const char *str) {
+    zov_regex *r = (zov_regex *)raw;
+    if (!r) return 0;
+    return regexec(&r->expr, str, 0, NULL, 0) == 0;
+}
+
 #endif

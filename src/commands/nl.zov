@@ -1,7 +1,10 @@
 use std::env as args;
 use std::io;
+use std::mem as mem;
 use <stdio.h> as c;
-use <nl_backend.h> as backend;
+use <string.h> as strc;
+use <platform_errno.h> as platform_errno;
+use <platform_regex.h> as platform_regex;
 use shared::io as stream;
 
 fn usage_error() void = { io::eprintln("Try 'nl --help' for more information."); };
@@ -63,6 +66,104 @@ fn help() void = {
     io::print("Report bugs to: bug-coreutils@gnu.org\nGNU coreutils home page: <https://www.gnu.org/software/coreutils/>\n");
     io::print("General help using GNU software: <https://www.gnu.org/gethelp/>\nReport any translation bugs to <https://translationproject.org/team/>\n");
     io::print("Full documentation <https://www.gnu.org/software/coreutils/nl>\nor available locally via: info '(coreutils) nl invocation'\n");
+};
+
+type NlLine = struct {
+    data: *u8,
+    len: usize,
+    cap: usize,
+};
+
+fn nl_read_line(fp: *c::FILE, line: &mut NlLine, terminated: &mut bool) i32 = {
+    line.len = 0usize;
+    *terminated = false;
+    while (true) {
+        let ch: i32 = c::fgetc(fp);
+        if (ch == -1i32) {
+            if (line.len != 0usize || stream::readerror(fp)) { return 1i32; };
+            return 0i32;
+        };
+        if (ch == 10i32) {
+            *terminated = true;
+            return 1i32;
+        };
+        if (line.len == line.cap) {
+            let mut next: usize = 256usize;
+            if (line.cap != 0usize) { next = line.cap * 2usize; };
+            line.data = mem::reallocbuf[u8](line.data, next);
+            line.cap = next;
+        };
+        line.data[line.len] = ch as u8;
+        line.len += 1usize;
+    };
+    return 0i32;
+};
+
+fn starts_section(line_data: *u8, line_len: usize, del: *u8, del_len: usize, count: usize) bool = {
+    if (del_len == 0usize || line_len < del_len * count) { return false; };
+    let total: usize = del_len * count;
+    for (let i in 0usize..total) {
+        if (line_data[i] != del[i % del_len]) { return false; };
+    };
+    return true;
+};
+
+fn nl_selected(style: u8, line_data: *u8, line_len: usize, rx: nullable *void, ready: bool) bool = {
+    if (style == 97u8) { return true; };
+    if (style == 116u8) { return line_len != 0usize; };
+    if (style == 110u8) { return false; };
+    if (style == 112u8 && ready) {
+        let text: *u8 = mem::alloc[u8](line_len + 1usize);
+        for (let i in 0usize..line_len) { text[i] = line_data[i]; };
+        text[line_len] = 0u8;
+        let matched: bool = platform_regex::zov_regex_search(rx!, text as *i8) != 0i32;
+        mem::freeptr[u8](text);
+        return matched;
+    };
+    return false;
+};
+
+fn nl_emit_number(number: usize, width: usize, format: u8, separator: str) bool = {
+    let mut num_str: [64]u8;
+    let mut num_len: usize = 0usize;
+    let mut temp: usize = number;
+    while (true) {
+        num_str[num_len] = 48u8 + ((temp % 10usize) as u8);
+        num_len += 1usize;
+        temp = temp / 10usize;
+        if (temp == 0usize) { break; };
+    };
+    let mut text: [64]u8;
+    for (let i in 0usize..num_len) {
+        text[i] = num_str[num_len - 1usize - i];
+    };
+    let mut pad: usize = 0usize;
+    if (width > num_len) { pad = width - num_len; };
+
+    if (format == 108u8) {
+        if (!stream::writebytes(c::stdout, (&text[0usize]) as *u8, num_len)) { return false; };
+        while (pad > 0usize) {
+            if (c::fputc(32i32, c::stdout) == -1i32) { return false; };
+            pad -= 1usize;
+        };
+    } else {
+        let mut fill: i32 = 32i32;
+        if (format == 122u8) { fill = 48i32; };
+        while (pad > 0usize) {
+            if (c::fputc(fill, c::stdout) == -1i32) { return false; };
+            pad -= 1usize;
+        };
+        if (!stream::writebytes(c::stdout, (&text[0usize]) as *u8, num_len)) { return false; };
+    };
+    return stream::putstr(c::stdout, separator);
+};
+
+fn nl_emit_blank(width: usize) bool = {
+    let count: usize = width + 1usize;
+    for (let _i in 0usize..count) {
+        if (c::fputc(32i32, c::stdout) == -1i32) { return false; };
+    };
+    return true;
 };
 
 export fn run(start: usize, argc: usize) i32 = {
@@ -155,11 +256,145 @@ export fn run(start: usize, argc: usize) i32 = {
         files[file_count] = arg; file_count += 1usize; i += 1usize;
     };
     if (file_count == 0usize) { files[0usize] = "-"; file_count = 1usize; };
-    let mut paths: [256]*i8;
-    for (let fi in 0usize..file_count) { paths[fi] = files[fi].data as *i8; };
-    return backend::zov_nl_run(file_count, ((&paths[0usize]) as **i8), body_style as i8,
-        header_style as i8, footer_style as i8, body_pattern.data as *i8,
-        header_pattern.data as *i8, footer_pattern.data as *i8, delimiter.data as *i8,
-        separator.data as *i8, increment as u64, start_number as u64, join_blank as u64,
-        width as u32, number_format as i8, no_renumber as i32);
+
+    let mut rx_header: nullable *void = null;
+    let mut rx_body: nullable *void = null;
+    let mut rx_footer: nullable *void = null;
+    if (header_style == 112u8) {
+        rx_header = platform_regex::zov_regex_compile_bre(header_pattern.data as *i8);
+        if (rx_header == null) {
+            io::eprintln("nl: invalid regular expression: " + header_pattern);
+            return 1;
+        };
+    };
+    if (body_style == 112u8) {
+        rx_body = platform_regex::zov_regex_compile_bre(body_pattern.data as *i8);
+        if (rx_body == null) {
+            io::eprintln("nl: invalid regular expression: " + body_pattern);
+            if (rx_header != null) { platform_regex::zov_regex_free(rx_header!); };
+            return 1;
+        };
+    };
+    if (footer_style == 112u8) {
+        rx_footer = platform_regex::zov_regex_compile_bre(footer_pattern.data as *i8);
+        if (rx_footer == null) {
+            io::eprintln("nl: invalid regular expression: " + footer_pattern);
+            if (rx_header != null) { platform_regex::zov_regex_free(rx_header!); };
+            if (rx_body != null) { platform_regex::zov_regex_free(rx_body!); };
+            return 1;
+        };
+    };
+
+    let mut del_buf: [4096]u8;
+    let mut del_len: usize = delimiter.len;
+    if (del_len == 1usize) {
+        del_buf[0usize] = delimiter.data[0usize];
+        del_buf[1usize] = 58u8;
+        del_len = 2usize;
+    } else if (del_len > 4096usize) {
+        if (rx_header != null) { platform_regex::zov_regex_free(rx_header!); };
+        if (rx_body != null) { platform_regex::zov_regex_free(rx_body!); };
+        if (rx_footer != null) { platform_regex::zov_regex_free(rx_footer!); };
+        io::eprintln("nl: section delimiter is too long");
+        return 1;
+    } else if (del_len != 0usize) {
+        for (let di in 0usize..del_len) { del_buf[di] = delimiter.data[di]; };
+    };
+
+    let mut section: usize = 1usize;
+    let mut number: usize = start_number;
+    let mut blank_run: usize = 0usize;
+    let mut line: NlLine = NlLine { data = mem::alloc[u8](256usize), len = 0usize, cap = 256usize };
+    let mut status: i32 = 0;
+
+    for (let f in 0usize..file_count) {
+        let path: str = files[f];
+        let is_stdin: bool = path == "-";
+        let mut fp: *c::FILE = c::stdin;
+        if (!is_stdin) {
+            let open_res: nullable *c::FILE = stream::openread(path);
+            match (open_res) {
+                case let opened: *c::FILE => { fp = opened; },
+                case null => {
+                    let err: i32 = platform_errno::zov_errno_value();
+                    c::fprintf(c::stderr, "nl: %s: %s\n", path.data as *i8, strc::strerror(err));
+                    status = 1;
+                    continue;
+                },
+            };
+        };
+        while (true) {
+            let mut terminated: bool = false;
+            let rc: i32 = nl_read_line(fp, &mut line, &mut terminated);
+            if (rc == 0i32) { break; };
+            if (rc < 0i32) {
+                c::fprintf(c::stderr, "nl: read error: %s\n", path.data as *i8);
+                status = 1;
+                break;
+            };
+
+            let mut marker: bool = false;
+            if (starts_section(line.data, line.len, (&del_buf[0usize]) as *u8, del_len, 3usize)) {
+                section = 2usize;
+                marker = true;
+            } else if (starts_section(line.data, line.len, (&del_buf[0usize]) as *u8, del_len, 2usize)) {
+                section = 1usize;
+                marker = true;
+            } else if (starts_section(line.data, line.len, (&del_buf[0usize]) as *u8, del_len, 1usize)) {
+                section = 0usize;
+                marker = true;
+            };
+
+            if (marker) {
+                if (c::fputc(10i32, c::stdout) == -1i32) { status = 1; };
+                if (!no_renumber) { number = start_number; };
+                blank_run = 0usize;
+                continue;
+            };
+
+            let blank: bool = line.len == 0usize;
+            if (blank) { blank_run += 1usize; } else { blank_run = 0usize; };
+
+            let mut style: u8 = body_style;
+            let mut rx: nullable *void = rx_body;
+            let mut ready: bool = body_style == 112u8;
+            if (section == 0usize) {
+                style = header_style; rx = rx_header; ready = header_style == 112u8;
+            } else if (section == 2usize) {
+                style = footer_style; rx = rx_footer; ready = footer_style == 112u8;
+            };
+
+            let mut selected: bool = nl_selected(style, line.data, line.len, rx, ready);
+            if (blank && join_blank > 1usize) {
+                selected = selected && (blank_run % join_blank == 0usize);
+            };
+
+            let mut ok: bool = true;
+            if (selected) {
+                ok = nl_emit_number(number, width, number_format, separator);
+            } else {
+                ok = nl_emit_blank(width);
+            };
+            if (line.len != 0usize && !stream::writebytes(c::stdout, line.data, line.len)) {
+                ok = false;
+            };
+            if (c::fputc(10i32, c::stdout) == -1i32) { ok = false; };
+            if (!ok) { status = 1; };
+            if (selected) {
+                if (18446744073709551615usize - number >= increment) {
+                    number += increment;
+                };
+            };
+            if (!terminated && stream::readerror(fp)) { status = 1; };
+        };
+        if (!is_stdin) {
+            stream::closefile(fp);
+        };
+    };
+    mem::freeptr[u8](line.data);
+    if (!stream::finishoutput("nl")) { status = 1; };
+    if (rx_header != null) { platform_regex::zov_regex_free(rx_header!); };
+    if (rx_body != null) { platform_regex::zov_regex_free(rx_body!); };
+    if (rx_footer != null) { platform_regex::zov_regex_free(rx_footer!); };
+    return status;
 };
