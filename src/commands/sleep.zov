@@ -57,7 +57,7 @@ export fn run(start: usize, argc: usize) i32 = {
                     io::eprintln("Try 'sleep --help' for more information.");
                     return 1;
                 };
-                io::println("sleep (zovutils) 0.10.55"); stream::finishoutput("sleep"); return 0;
+                io::println("sleep (zovutils) 0.10.56"); stream::finishoutput("sleep"); return 0;
             };
             io::eprintln("sleep: unrecognized option '" + arg + "'");
             io::eprintln("Try 'sleep --help' for more information.");

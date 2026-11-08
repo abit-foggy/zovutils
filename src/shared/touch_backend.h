@@ -303,7 +303,7 @@ static inline int zov_touch_run(int argc, int8_t **argv) {
             if (zov_touch_long(arg, "--help", keylen) || zov_touch_long(arg, "--version", keylen)) {
                 if (value != NULL) { fprintf(stderr, "touch: option '%s' doesn't allow an argument\n", keylen == 6 ? "--help" : "--version"); free(files); return 1; }
                 if (keylen == 6) { zov_touch_help(); free(files); return 0; }
-                puts("touch (zovutils) 0.10.55"); free(files); return 0;
+                puts("touch (zovutils) 0.10.56"); free(files); return 0;
             }
             if (zov_touch_long(arg, "--no-create", keylen)) {
                 if (value != NULL) { fputs("touch: option '--no-create' doesn't allow an argument\n", stderr); free(files); return 1; }
