@@ -1,10 +1,870 @@
 use std::env as args;
-use <factor_backend.h> as backend;
+use std::io;
+use std::vec;
+use <stdio.h> as c;
+use <ctype.h> as ctype;
+use <string.h> as strc;
+use shared::io as stream;
+
+type U128 = struct {
+    hi: u64,
+    lo: u64,
+};
+
+fn u128_make(hi: u64, lo: u64) U128 = {
+    return U128{ hi = hi, lo = lo };
+};
+
+fn u128_small(n: u64) U128 = {
+    return U128{ hi = 0u64, lo = n };
+};
+
+fn u128_cmp(a: U128, b: U128) i32 = {
+    if (a.hi < b.hi) { return -1i32; };
+    if (a.hi > b.hi) { return 1i32; };
+    if (a.lo < b.lo) { return -1i32; };
+    if (a.lo > b.lo) { return 1i32; };
+    return 0i32;
+};
+
+fn u128_zero(a: U128) bool = {
+    return a.hi == 0u64 && a.lo == 0u64;
+};
+
+fn u128_sub(a: U128, b: U128) U128 = {
+    let mut borrow: u64 = 0u64;
+    if (a.lo < b.lo) { borrow = 1u64; };
+    return U128{ hi = a.hi - b.hi - borrow, lo = a.lo - b.lo };
+};
+
+fn u128_add_checked(a: U128, b: U128, out: &mut U128) bool = {
+    let lo: u64 = a.lo + b.lo;
+    let mut carry: u64 = 0u64;
+    if (lo < a.lo) { carry = 1u64; };
+    let hi: u64 = a.hi + b.hi + carry;
+    *out = U128{ hi = hi, lo = lo };
+    if (hi < a.hi || (carry != 0u64 && hi == a.hi)) {
+        return true;
+    };
+    return false;
+};
+
+fn u128_shl(a: U128) U128 = {
+    return U128{ hi = (a.hi << 1u64) | (a.lo >> 63u64), lo = a.lo << 1u64 };
+};
+
+fn u128_shr(a: U128) U128 = {
+    return U128{ hi = a.hi >> 1u64, lo = (a.lo >> 1u64) | (a.hi << 63u64) };
+};
+
+fn u128_bit(a: U128, bit: u32) u32 = {
+    if (bit < 64u32) {
+        return ((a.lo >> (bit as u64)) & 1u64) as u32;
+    };
+    return ((a.hi >> ((bit - 64u32) as u64)) & 1u64) as u32;
+};
+
+fn u128_divmod(a: U128, m: U128, remainder: &mut U128) U128 = {
+    let mut r: U128 = u128_small(0u64);
+    let mut q: U128 = u128_small(0u64);
+    let mut i: i32 = 127i32;
+    while (i >= 0i32) {
+        let carry: bool = (r.hi >> 63u64) != 0u64;
+        r = u128_shl(r);
+        r.lo = r.lo | (u128_bit(a, i as u32) as u64);
+        if (carry || u128_cmp(r, m) >= 0i32) {
+            r = u128_sub(r, m);
+            if (i < 64i32) {
+                q.lo = q.lo | (1u64 << (i as u64));
+            } else {
+                q.hi = q.hi | (1u64 << ((i - 64i32) as u64));
+            };
+        };
+        i -= 1i32;
+    };
+    *remainder = r;
+    return q;
+};
+
+fn u128_mod(a: U128, m: U128) U128 = {
+    let mut rem: U128 = u128_small(0u64);
+    u128_divmod(a, m, &mut rem);
+    return rem;
+};
+
+fn u128_addmod(a: U128, b: U128, m: U128) U128 = {
+    let gap: U128 = u128_sub(m, b);
+    if (u128_cmp(a, gap) >= 0i32) {
+        return u128_sub(a, gap);
+    };
+    let mut carry: u64 = 0u64;
+    if (a.lo + b.lo < a.lo) { carry = 1u64; };
+    return U128{ hi = a.hi + b.hi + carry, lo = a.lo + b.lo };
+};
+
+fn u128_mulmod(a: U128, b: U128, m: U128) U128 = {
+    let mut r: U128 = u128_small(0u64);
+    let mut cur_a: U128 = a;
+    let mut cur_b: U128 = b;
+    while (!u128_zero(cur_b)) {
+        if ((cur_b.lo & 1u64) != 0u64) {
+            r = u128_addmod(r, cur_a, m);
+        };
+        cur_b = u128_shr(cur_b);
+        if (!u128_zero(cur_b)) {
+            cur_a = u128_addmod(cur_a, cur_a, m);
+        };
+    };
+    return r;
+};
+
+fn u128_powmod(a: U128, e: U128, m: U128) U128 = {
+    let mut r: U128 = u128_small(1u64);
+    let mut cur_a: U128 = a;
+    let mut cur_e: U128 = e;
+    while (!u128_zero(cur_e)) {
+        if ((cur_e.lo & 1u64) != 0u64) {
+            r = u128_mulmod(r, cur_a, m);
+        };
+        cur_e = u128_shr(cur_e);
+        if (!u128_zero(cur_e)) {
+            cur_a = u128_mulmod(cur_a, cur_a, m);
+        };
+    };
+    return r;
+};
+
+fn u128_modsmall(a: U128, d: u32) u32 = {
+    let mut r: u64 = 0u64;
+    let mut i: i32 = 127i32;
+    while (i >= 0i32) {
+        r = (r * 2u64 + (u128_bit(a, i as u32) as u64)) % (d as u64);
+        i -= 1i32;
+    };
+    return r as u32;
+};
+
+fn u128_divsmall(a: U128, d: u32, rem: &mut u32) U128 = {
+    let mut q: U128 = u128_small(0u64);
+    let mut r: u64 = 0u64;
+    let mut i: i32 = 127i32;
+    while (i >= 0i32) {
+        r = r * 2u64 + (u128_bit(a, i as u32) as u64);
+        if (r >= (d as u64)) {
+            r -= d as u64;
+            if (i < 64i32) {
+                q.lo = q.lo | (1u64 << (i as u64));
+            } else {
+                q.hi = q.hi | (1u64 << ((i - 64i32) as u64));
+            };
+        };
+        i -= 1i32;
+    };
+    *rem = r as u32;
+    return q;
+};
+
+fn u128_parse(s: str, out: &mut U128) bool = {
+    let mut n: U128 = u128_small(0u64);
+    if (s.len == 0usize) { return false; };
+    for (let i in 0usize..s.len) {
+        let ch: u8 = s.data[i];
+        if (ch < 48u8 || ch > 57u8) { return false; };
+        let mut t: U128 = u128_small(0u64);
+        for (let _step in 0usize..10usize) {
+            let mut q: U128 = u128_small(0u64);
+            if (u128_add_checked(t, n, &mut q)) { return false; };
+            t = q;
+        };
+        let mut q: U128 = u128_small(0u64);
+        if (u128_add_checked(t, u128_small((ch - 48u8) as u64), &mut q)) { return false; };
+        n = q;
+    };
+    *out = n;
+    return true;
+};
+
+fn u128_parse_vec(digits: &vec::Vec[u8], out: &mut U128) bool = {
+    let mut n: U128 = u128_small(0u64);
+    if (digits.length == 0usize) { return false; };
+    for (let i in 0usize..digits.length) {
+        let ch: u8 = digits.get(i);
+        if (ch < 48u8 || ch > 57u8) { return false; };
+        let mut t: U128 = u128_small(0u64);
+        for (let _step in 0usize..10usize) {
+            let mut q: U128 = u128_small(0u64);
+            if (u128_add_checked(t, n, &mut q)) { return false; };
+            t = q;
+        };
+        let mut q: U128 = u128_small(0u64);
+        if (u128_add_checked(t, u128_small((ch - 48u8) as u64), &mut q)) { return false; };
+        n = q;
+    };
+    *out = n;
+    return true;
+};
+
+fn u128_print(n: U128) void = {
+    if (u128_zero(n)) {
+        c::fputc(48i32, c::stdout);
+        return;
+    };
+    let mut digits: vec::Vec[u8] = vec::new[u8]();
+    let mut cur: U128 = n;
+    while (!u128_zero(cur)) {
+        let mut rem: u32 = 0u32;
+        cur = u128_divsmall(cur, 10u32, &mut rem);
+        digits.push((rem as u8) + 48u8);
+    };
+    let mut i: usize = digits.length;
+    while (i > 0usize) {
+        i -= 1usize;
+        c::fputc(digits.get(i) as i32, c::stdout);
+    };
+};
+
+fn u128_prime(n: U128) bool = {
+    if (n.hi == 0u64 && n.lo < 2u64) { return false; };
+    let primes: [25]u32 = [
+        2u32, 3u32, 5u32, 7u32, 11u32, 13u32, 17u32, 19u32, 23u32, 29u32,
+        31u32, 37u32, 41u32, 43u32, 47u32, 53u32, 59u32, 61u32, 67u32, 71u32,
+        73u32, 79u32, 83u32, 89u32, 97u32
+    ];
+    for (let i in 0usize..25usize) {
+        let p: u32 = primes[i];
+        let r: u32 = u128_modsmall(n, p);
+        if (r == 0u32) {
+            return n.hi == 0u64 && n.lo == (p as u64);
+        };
+    };
+    let nm1: U128 = u128_sub(n, u128_small(1u64));
+    let mut d: U128 = nm1;
+    let mut s: u32 = 0u32;
+    while ((d.lo & 1u64) == 0u64) {
+        d = u128_shr(d);
+        s += 1u32;
+    };
+    let bases: [20]u32 = [
+        2u32, 3u32, 5u32, 7u32, 11u32, 13u32, 17u32, 19u32, 23u32, 29u32,
+        31u32, 37u32, 41u32, 43u32, 47u32, 53u32, 59u32, 61u32, 67u32, 71u32
+    ];
+    for (let i in 0usize..20usize) {
+        let a: U128 = u128_mod(u128_small(bases[i] as u64), n);
+        if (u128_zero(a)) { continue; };
+        let mut x: U128 = u128_powmod(a, d, n);
+        if (u128_cmp(x, u128_small(1u64)) == 0i32 || u128_cmp(x, nm1) == 0i32) {
+            continue;
+        };
+        let mut j: u32 = 1u32;
+        while (j < s) {
+            x = u128_mulmod(x, x, n);
+            if (u128_cmp(x, nm1) == 0i32) { break; };
+            j += 1u32;
+        };
+        if (j == s) { return false; };
+    };
+    return true;
+};
+
+fn u128_gcd(a: U128, b: U128) U128 = {
+    let mut cur_a: U128 = a;
+    let mut cur_b: U128 = b;
+    while (!u128_zero(cur_b)) {
+        let r: U128 = u128_mod(cur_a, cur_b);
+        cur_a = cur_b;
+        cur_b = r;
+    };
+    return cur_a;
+};
+
+fn u128_rho(n: U128) U128 = {
+    if ((n.lo & 1u64) == 0u64) { return u128_small(2u64); };
+    for (let c_iter in 1u64..24u64) {
+        let cv: U128 = u128_small(c_iter);
+        let mut x: U128 = u128_small(2u64 + c_iter);
+        let mut y: U128 = x;
+        let mut d: U128 = u128_small(1u64);
+        let mut i: u32 = 0u32;
+        while (i < 250000u32 && u128_cmp(d, u128_small(1u64)) == 0i32) {
+            x = u128_addmod(u128_mulmod(x, x, n), cv, n);
+            y = u128_addmod(u128_mulmod(y, y, n), cv, n);
+            y = u128_addmod(u128_mulmod(y, y, n), cv, n);
+            let mut diff: U128 = u128_small(0u64);
+            if (u128_cmp(x, y) >= 0i32) {
+                diff = u128_sub(x, y);
+            } else {
+                diff = u128_sub(y, x);
+            };
+            d = u128_gcd(diff, n);
+            i += 1u32;
+        };
+        if (u128_cmp(d, u128_small(1u64)) > 0i32 && u128_cmp(d, n) < 0i32) {
+            return d;
+        };
+    };
+    return n;
+};
+
+fn u128_collect(n: U128, f: &mut vec::Vec[U128]) bool = {
+    if (n.hi == 0u64 && n.lo == 1u64) { return true; };
+    if (u128_prime(n)) {
+        if (f.length >= 128usize) { return false; };
+        f.push(n);
+        return true;
+    };
+    let pset: [15]u32 = [
+        2u32, 3u32, 5u32, 7u32, 11u32, 13u32, 17u32, 19u32, 23u32, 29u32,
+        31u32, 37u32, 41u32, 43u32, 47u32
+    ];
+    for (let i in 0usize..15usize) {
+        let p: u32 = pset[i];
+        if (u128_modsmall(n, p) == 0u32) {
+            if (f.length >= 128usize) { return false; };
+            f.push(u128_small(p as u64));
+            let mut rem: u32 = 0u32;
+            let q: U128 = u128_divsmall(n, p, &mut rem);
+            return rem == 0u32 && u128_collect(q, f);
+        };
+    };
+    let mut d_small: u32 = 53u32;
+    while (d_small <= 10000u32) {
+        if (u128_modsmall(n, d_small) == 0u32) {
+            if (f.length >= 128usize) { return false; };
+            f.push(u128_small(d_small as u64));
+            let mut rem: u32 = 0u32;
+            let q: U128 = u128_divsmall(n, d_small, &mut rem);
+            return rem == 0u32 && u128_collect(q, f);
+        };
+        d_small += 2u32;
+    };
+    let d: U128 = u128_rho(n);
+    if (u128_cmp(d, n) == 0i32) { return false; };
+    let mut rem: U128 = u128_small(0u64);
+    let q: U128 = u128_divmod(n, d, &mut rem);
+    return u128_zero(rem) && u128_collect(d, f) && u128_collect(q, f);
+};
+
+fn u128_sort(f: &mut vec::Vec[U128]) void = {
+    for (let i in 1usize..f.length) {
+        let v: U128 = f.get(i);
+        let mut j: usize = i;
+        while (j > 0usize && u128_cmp(f.get(j - 1usize), v) > 0i32) {
+            f.set(j, f.get(j - 1usize));
+            j -= 1usize;
+        };
+        f.set(j, v);
+    };
+};
+
+fn factor_addmod(a: u64, b: u64, m: u64) u64 = {
+    if (a >= m - b) { return a - (m - b); };
+    return a + b;
+};
+
+fn factor_mulmod(a: u64, b: u64, m: u64) u64 = {
+    let mut r: u64 = 0u64;
+    let mut cur_a: u64 = a;
+    let mut cur_b: u64 = b;
+    while (cur_b > 0u64) {
+        if ((cur_b & 1u64) != 0u64) {
+            r = factor_addmod(r, cur_a, m);
+        };
+        cur_b >>= 1u64;
+        if (cur_b > 0u64) {
+            cur_a = factor_addmod(cur_a, cur_a, m);
+        };
+    };
+    return r;
+};
+
+fn factor_powmod(a: u64, e: u64, m: u64) u64 = {
+    let mut r: u64 = 1u64;
+    let mut cur_a: u64 = a;
+    let mut cur_e: u64 = e;
+    while (cur_e > 0u64) {
+        if ((cur_e & 1u64) != 0u64) {
+            r = factor_mulmod(r, cur_a, m);
+        };
+        cur_e >>= 1u64;
+        if (cur_e > 0u64) {
+            cur_a = factor_mulmod(cur_a, cur_a, m);
+        };
+    };
+    return r;
+};
+
+fn factor_prime(n: u64) bool = {
+    if (n < 2u64) { return false; };
+    let small: [12]u32 = [2u32, 3u32, 5u32, 7u32, 11u32, 13u32, 17u32, 19u32, 23u32, 29u32, 31u32, 37u32];
+    for (let i in 0usize..12usize) {
+        let p: u64 = small[i] as u64;
+        if (n == p) { return true; };
+        if (n % p == 0u64) { return false; };
+    };
+    let mut d: u64 = n - 1u64;
+    let mut s: u32 = 0u32;
+    while ((d & 1u64) == 0u64) {
+        d >>= 1u64;
+        s += 1u32;
+    };
+    let bases: [7]u64 = [2u64, 325u64, 9375u64, 28178u64, 450775u64, 9780504u64, 1795265022u64];
+    for (let i in 0usize..7usize) {
+        let a: u64 = bases[i] % n;
+        if (a == 0u64) { continue; };
+        let mut x: u64 = factor_powmod(a, d, n);
+        if (x == 1u64 || x == n - 1u64) { continue; };
+        let mut j: u32 = 1u32;
+        while (j < s) {
+            x = factor_mulmod(x, x, n);
+            if (x == n - 1u64) { break; };
+            j += 1u32;
+        };
+        if (j == s) { return false; };
+    };
+    return true;
+};
+
+fn factor_gcd(a: u64, b: u64) u64 = {
+    let mut cur_a: u64 = a;
+    let mut cur_b: u64 = b;
+    while (cur_b > 0u64) {
+        let r: u64 = cur_a % cur_b;
+        cur_a = cur_b;
+        cur_b = r;
+    };
+    return cur_a;
+};
+
+fn factor_rho(n: u64) u64 = {
+    if ((n & 1u64) == 0u64) { return 2u64; };
+    for (let c_iter in 1u64..64u64) {
+        let mut x: u64 = 2u64 + c_iter;
+        let mut y: u64 = x;
+        let mut d: u64 = 1u64;
+        let mut iter: u64 = 0u64;
+        while (d == 1u64 && iter < 2000000u64) {
+            x = factor_addmod(factor_mulmod(x, x, n), c_iter, n);
+            y = factor_addmod(factor_mulmod(y, y, n), c_iter, n);
+            y = factor_addmod(factor_mulmod(y, y, n), c_iter, n);
+            let mut delta: u64 = 0u64;
+            if (x > y) { delta = x - y; } else { delta = y - x; };
+            d = factor_gcd(delta, n);
+            iter += 1u64;
+        };
+        if (d > 1u64 && d < n) { return d; };
+    };
+    return n;
+};
+
+fn factor_collect(n: u64, f: &mut vec::Vec[u64]) bool = {
+    if (n == 1u64) { return true; };
+    if (factor_prime(n)) {
+        if (f.length >= 64usize) { return false; };
+        f.push(n);
+        return true;
+    };
+    if ((n & 1u64) == 0u64) {
+        if (f.length >= 64usize) { return false; };
+        f.push(2u64);
+        return factor_collect(n / 2u64, f);
+    };
+    let d: u64 = factor_rho(n);
+    if (d == n) { return false; };
+    return factor_collect(d, f) && factor_collect(n / d, f);
+};
+
+fn factor_sort(f: &mut vec::Vec[u64]) void = {
+    for (let i in 1usize..f.length) {
+        let v: u64 = f.get(i);
+        let mut j: usize = i;
+        while (j > 0usize && f.get(j - 1usize) > v) {
+            f.set(j, f.get(j - 1usize));
+            j -= 1usize;
+        };
+        f.set(j, v);
+    };
+};
+
+fn factor_decimal_div(digits: &vec::Vec[u8], quotient: &mut vec::Vec[u8], divisor: u32) u32 = {
+    let mut rem: u64 = 0u64;
+    quotient.length = 0usize;
+    for (let i in 0usize..digits.length) {
+        let x: u64 = rem * 10u64 + ((digits.get(i) - 48u8) as u64);
+        quotient.push(((x / (divisor as u64)) as u8) + 48u8);
+        rem = x % (divisor as u64);
+    };
+    let mut start: usize = 0usize;
+    while (start + 1usize < quotient.length && quotient.get(start) == 48u8) {
+        start += 1usize;
+    };
+    if (start > 0usize) {
+        let mut tmp: vec::Vec[u8] = vec::new[u8]();
+        for (let i in start..quotient.length) {
+            tmp.push(quotient.get(i));
+        };
+        quotient.length = 0usize;
+        for (let i in 0usize..tmp.length) {
+            quotient.push(tmp.get(i));
+        };
+    };
+    return rem as u32;
+};
+
+fn factor_small_prime(n: u32) bool = {
+    if (n < 2u32) { return false; };
+    if ((n & 1u32) == 0u32) { return n == 2u32; };
+    let mut d: u32 = 3u32;
+    while (d <= n / d) {
+        if (n % d == 0u32) { return false; };
+        d += 2u32;
+    };
+    return true;
+};
+
+fn factor_big_decimal(token: &vec::Vec[u8], exponents: bool) bool = {
+    let mut start: usize = 0usize;
+    if (token.length > 0usize && token.get(0usize) == 43u8) { start = 1usize; };
+    let n: usize = token.length - start;
+    if (n == 0usize || n > 10000usize) { return false; };
+    for (let i in start..token.length) {
+        let ch: u8 = token.get(i);
+        if (ch < 48u8 || ch > 57u8) { return false; };
+    };
+    let mut remaining: vec::Vec[u8] = vec::new[u8]();
+    let mut quotient: vec::Vec[u8] = vec::new[u8]();
+    for (let i in start..token.length) {
+        remaining.push(token.get(i));
+    };
+    let mut rem_start: usize = 0usize;
+    while (rem_start + 1usize < remaining.length && remaining.get(rem_start) == 48u8) {
+        rem_start += 1usize;
+    };
+    if (rem_start > 0usize) {
+        let mut tmp: vec::Vec[u8] = vec::new[u8]();
+        for (let i in rem_start..remaining.length) {
+            tmp.push(remaining.get(i));
+        };
+        remaining.length = 0usize;
+        for (let i in 0usize..tmp.length) {
+            remaining.push(tmp.get(i));
+        };
+    };
+    for (let i in 0usize..remaining.length) {
+        c::fputc(remaining.get(i) as i32, c::stdout);
+    };
+    c::fputc(58i32, c::stdout); // ':'
+    let is_zero: bool = remaining.length == 1usize && remaining.get(0usize) == 48u8;
+    let is_one: bool = remaining.length == 1usize && remaining.get(0usize) == 49u8;
+    if (!is_zero && !is_one) {
+        let mut f: vec::Vec[u32] = vec::new[u32]();
+        let mut d: u32 = 2u32;
+        while (d <= 10000u32) {
+            if (factor_small_prime(d)) {
+                let mut rem: u32 = factor_decimal_div(&remaining, &mut quotient, d);
+                while (rem == 0u32) {
+                    remaining.length = 0usize;
+                    for (let i in 0usize..quotient.length) {
+                        remaining.push(quotient.get(i));
+                    };
+                    f.push(d);
+                    rem = factor_decimal_div(&remaining, &mut quotient, d);
+                };
+            };
+            d += 1u32;
+        };
+        let mut extras: vec::Vec[U128] = vec::new[U128]();
+        let is_now_one: bool = remaining.length == 1usize && remaining.get(0usize) == 49u8;
+        if (!is_now_one) {
+            if (remaining.length <= 39usize) {
+                let mut rest: U128 = u128_small(0u64);
+                if (u128_parse_vec(&remaining, &mut rest)) {
+                    let mut more: vec::Vec[U128] = vec::new[U128]();
+                    if (!u128_collect(rest, &mut more)) { return false; };
+                    u128_sort(&mut more);
+                    for (let i in 0usize..more.length) {
+                        let factor: U128 = more.get(i);
+                        if (factor.hi != 0u64) { return false; };
+                        if (factor.lo <= 4294967295u64) {
+                            f.push(factor.lo as u32);
+                        } else {
+                            extras.push(factor);
+                        };
+                    };
+                } else {
+                    return false;
+                };
+            } else {
+                return false;
+            };
+        };
+        let mut i: usize = 0usize;
+        while (i < f.length) {
+            let mut j: usize = i + 1usize;
+            while (j < f.length && f.get(j) == f.get(i)) {
+                j += 1usize;
+            };
+            c::fputc(32i32, c::stdout);
+            let val: u32 = f.get(i);
+            let mut buf: [16]u8;
+            let mut blen: usize = 0usize;
+            let mut v: u32 = val;
+            if (v == 0u32) {
+                buf[blen] = 48u8;
+                blen += 1usize;
+            } else {
+                let mut rev: [16]u8;
+                let mut rlen: usize = 0usize;
+                while (v > 0u32) {
+                    rev[rlen] = ((v % 10u32) as u8) + 48u8;
+                    rlen += 1usize;
+                    v /= 10u32;
+                };
+                while (rlen > 0usize) {
+                    rlen -= 1usize;
+                    buf[blen] = rev[rlen];
+                    blen += 1usize;
+                };
+            };
+            for (let b in 0usize..blen) {
+                c::fputc(buf[b] as i32, c::stdout);
+            };
+            if (exponents && j - i > 1usize) {
+                c::fputc(94i32, c::stdout); // '^'
+                let count: usize = j - i;
+                let mut rev: [16]u8;
+                let mut rlen: usize = 0usize;
+                let mut c_rem: usize = count;
+                while (c_rem > 0usize) {
+                    rev[rlen] = ((c_rem % 10usize) as u8) + 48u8;
+                    rlen += 1usize;
+                    c_rem /= 10usize;
+                };
+                while (rlen > 0usize) {
+                    rlen -= 1usize;
+                    c::fputc(rev[rlen] as i32, c::stdout);
+                };
+            } else if (!exponents) {
+                for (let _k in (i + 1usize)..j) {
+                    c::fputc(32i32, c::stdout);
+                    for (let b in 0usize..blen) {
+                        c::fputc(buf[b] as i32, c::stdout);
+                    };
+                };
+            };
+            i = j;
+        };
+        for (let k in 0usize..extras.length) {
+            c::fputc(32i32, c::stdout);
+            u128_print(extras.get(k));
+        };
+    };
+    c::fputc(10i32, c::stdout);
+    return c::ferror(c::stdout) == 0i32;
+};
+
+fn factor_one(token: &vec::Vec[u8], exponents: bool) bool = {
+    if (token.length == 0usize) { return false; };
+    let mut start: usize = 0usize;
+    if (token.length > 0usize && token.get(0usize) == 43u8) {
+        start = 1usize;
+    };
+    let mut digits: vec::Vec[u8] = vec::new[u8]();
+    for (let i in start..token.length) {
+        digits.push(token.get(i));
+    };
+    let mut n: U128 = u128_small(0u64);
+    if (!u128_parse_vec(&digits, &mut n)) {
+        let mut decimal: bool = digits.length > 0usize;
+        for (let i in 0usize..digits.length) {
+            let ch: u8 = digits.get(i);
+            if (ch < 48u8 || ch > 57u8) {
+                decimal = false;
+                break;
+            };
+        };
+        if (decimal) {
+            return factor_big_decimal(token, exponents);
+        };
+        c::fputs("factor: '", c::stderr);
+        for (let i in 0usize..token.length) {
+            c::fputc(token.get(i) as i32, c::stderr);
+        };
+        c::fputs("' is not a valid positive integer\n", c::stderr);
+        return false;
+    };
+    u128_print(n);
+    c::fputc(58i32, c::stdout); // ':'
+    if (n.hi != 0u64 || n.lo > 1u64) {
+        if (n.hi == 0u64) {
+            let mut factors: vec::Vec[u64] = vec::new[u64]();
+            if (!factor_collect(n.lo, &mut factors)) { return false; };
+            factor_sort(&mut factors);
+            if (exponents) {
+                let mut i: usize = 0usize;
+                while (i < factors.length) {
+                    let mut j: usize = i + 1usize;
+                    while (j < factors.length && factors.get(j) == factors.get(i)) {
+                        j += 1usize;
+                    };
+                    c::fputc(32i32, c::stdout);
+                    u128_print(u128_small(factors.get(i)));
+                    if (j - i > 1usize) {
+                        c::fputc(94i32, c::stdout);
+                        let count: usize = j - i;
+                        let mut rev: [16]u8;
+                        let mut rlen: usize = 0usize;
+                        let mut c_rem: usize = count;
+                        while (c_rem > 0usize) {
+                            rev[rlen] = ((c_rem % 10usize) as u8) + 48u8;
+                            rlen += 1usize;
+                            c_rem /= 10usize;
+                        };
+                        while (rlen > 0usize) {
+                            rlen -= 1usize;
+                            c::fputc(rev[rlen] as i32, c::stdout);
+                        };
+                    };
+                    i = j;
+                };
+            } else {
+                for (let i in 0usize..factors.length) {
+                    c::fputc(32i32, c::stdout);
+                    u128_print(u128_small(factors.get(i)));
+                };
+            };
+        } else {
+            let mut factors: vec::Vec[U128] = vec::new[U128]();
+            if (!u128_collect(n, &mut factors)) { return false; };
+            u128_sort(&mut factors);
+            let mut i: usize = 0usize;
+            while (i < factors.length) {
+                let mut j: usize = i + 1usize;
+                while (j < factors.length && u128_cmp(factors.get(j), factors.get(i)) == 0i32) {
+                    j += 1usize;
+                };
+                c::fputc(32i32, c::stdout);
+                u128_print(factors.get(i));
+                if (exponents && j - i > 1usize) {
+                    c::fputc(94i32, c::stdout);
+                    let count: usize = j - i;
+                    let mut rev: [16]u8;
+                    let mut rlen: usize = 0usize;
+                    let mut c_rem: usize = count;
+                    while (c_rem > 0usize) {
+                        rev[rlen] = ((c_rem % 10usize) as u8) + 48u8;
+                        rlen += 1usize;
+                        c_rem /= 10usize;
+                    };
+                    while (rlen > 0usize) {
+                        rlen -= 1usize;
+                        c::fputc(rev[rlen] as i32, c::stdout);
+                    };
+                } else if (!exponents) {
+                    for (let _k in (i + 1usize)..j) {
+                        c::fputc(32i32, c::stdout);
+                        u128_print(factors.get(i));
+                    };
+                };
+                i = j;
+            };
+        };
+    };
+    c::fputc(10i32, c::stdout);
+    return c::ferror(c::stdout) == 0i32;
+};
+
+fn factor_stdin(exponents: bool) i32 = {
+    let mut token: vec::Vec[u8] = vec::new[u8]();
+    let mut errors: i32 = 0i32;
+    while (true) {
+        let ch: i32 = c::getchar();
+        if (ch == -1i32) { break; };
+        if (ch == 32i32 || ch == 10i32 || ch == 13i32 || ch == 9i32) {
+            if (token.length > 0usize) {
+                if (!factor_one(&token, exponents)) {
+                    errors = 1i32;
+                };
+                token.length = 0usize;
+            };
+        } else {
+            token.push(ch as u8);
+        };
+    };
+    if (token.length > 0usize) {
+        if (!factor_one(&token, exponents)) {
+            errors = 1i32;
+        };
+    };
+    return errors;
+};
+
+fn print_help() void = {
+    io::println("Usage: factor [OPTION] [NUMBER]...");
+    io::println("Print the prime factors of each specified integer NUMBER.  If none");
+    io::println("are specified on the command line, read them from standard input.\n");
+    io::println("  -h, --exponents\n         print repeated factors in form p^e unless e is 1");
+    io::println("      --help\n         display this help and exit");
+    io::println("      --version\n         output version information and exit\n");
+    io::println("Report bugs to: bug-coreutils@gnu.org");
+    io::println("GNU coreutils home page: <https://www.gnu.org/software/coreutils/>");
+    io::println("General help using GNU software: <https://www.gnu.org/gethelp/>");
+    io::println("Report any translation bugs to <https://translationproject.org/team/>");
+    io::println("Full documentation <https://www.gnu.org/software/coreutils/factor>");
+    io::println("or available locally via: info '(coreutils) factor invocation'");
+};
 
 export fn run(start: usize, argc: usize) i32 = {
-    let count: usize = argc - start;
-    if (count > 4096usize) { return 1; };
-    let mut argv: [4096]*i8;
-    for (let i in 0usize..count) { argv[i] = args::argat(start + i).data as *i8; };
-    return backend::zov_factor_run(count as i32, (&argv[0usize]) as **i8);
+    let mut exponents: bool = false;
+    let mut options: bool = true;
+    let mut errors: i32 = 0i32;
+    let mut operands: usize = 0usize;
+
+    let mut i: usize = start;
+    while (i < argc) {
+        let a: str = args::argat(i);
+        if (options && a == "--") {
+            options = false;
+            i += 1usize;
+            continue;
+        };
+        if (options && a == "--help") {
+            print_help();
+            return 0i32;
+        };
+        if (options && a == "--version") {
+            io::println("factor (zovutils) 0.10.61");
+            return 0i32;
+        };
+        if (options && (a == "-h" || a == "--exponents")) {
+            exponents = true;
+            i += 1usize;
+            continue;
+        };
+        if (options && a.len >= 2usize && a[0usize..2usize] == "--") {
+            io::eprintln("factor: unrecognized option '" + a + "'");
+            io::eprintln("Try 'factor --help' for more information.");
+            return 1i32;
+        };
+        if (options && a.len >= 2usize && a.data[0usize] == 45u8) {
+            io::eprintln("factor: invalid option -- '" + a[1usize..2usize] + "'");
+            io::eprintln("Try 'factor --help' for more information.");
+            return 1i32;
+        };
+        operands += 1usize;
+        let mut tok: vec::Vec[u8] = vec::new[u8]();
+        for (let j in 0usize..a.len) {
+            tok.push(a.data[j]);
+        };
+        if (!factor_one(&tok, exponents)) {
+            errors = 1i32;
+        };
+        i += 1usize;
+    };
+    if (operands == 0usize) {
+        errors = factor_stdin(exponents);
+    };
+    if (!stream::finishoutput("factor")) {
+        return 1i32;
+    };
+    return errors;
 };
