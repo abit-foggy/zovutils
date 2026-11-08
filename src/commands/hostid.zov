@@ -1,9 +1,31 @@
 use std::env as args;
-use <hostid_backend.h> as backend;
+use std::io;
+use <unistd.h> as u;
+use <stdio.h> as c;
+
 export fn run(start: usize, argc: usize) i32 = {
-    let count: usize = argc - start;
-    if (count > 4096usize) { return 1; };
-    let mut argv: [4096]*i8;
-    for (let i in 0usize..count) { argv[i] = args::argat(start + i).data as *i8; };
-    return backend::zov_hostid_run(count as i32, (&argv[0usize]) as **i8);
+    for (let i in start..argc) {
+        let a: str = args::argat(i);
+        if (a == "--help") {
+            io::println("Usage: hostid [OPTION]");
+            io::println("Print the numeric identifier for the current host.");
+            io::println("  --help     display this help and exit");
+            io::println("  --version  output version information and exit");
+            return 0i32;
+        };
+        if (a == "--version") {
+            io::println("hostid (zovutils) 0.10.61");
+            return 0i32;
+        };
+        if (a.len > 0usize && a.data[0usize] == 45u8) {
+            c::fprintf(c::stderr, "hostid: unrecognized option '%s'\nTry 'hostid --help' for more information.\n", a.data as *i8);
+        } else {
+            c::fprintf(c::stderr, "hostid: extra operand '%s'\nTry 'hostid --help' for more information.\n", a.data as *i8);
+        };
+        return 1i32;
+    };
+
+    let id: i64 = u::gethostid();
+    c::printf("%08lx\n", (id as u64) & 0xffffffffu64);
+    return 0i32;
 };
