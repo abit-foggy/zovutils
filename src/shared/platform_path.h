@@ -108,4 +108,9 @@ static inline int zov_path_resolve(const char *path, int mode, int logical,
     return 0;
 }
 
+static inline long zov_path_name_max(const char *path) {
+    errno = 0;
+    return pathconf(path, _PC_NAME_MAX);
+}
+
 #endif

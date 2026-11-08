@@ -1,10 +1,140 @@
 use std::env as args;
-use <pathchk_backend.h> as backend;
+use std::io as io;
+use <stdio.h> as c;
+use <platform_path.h> as platform_path;
+
+fn print_help() = {
+    c::fputs("Usage: pathchk [OPTION]... NAME...\nDiagnose invalid or non-portable file names.\n\n  -p     check for most POSIX systems\n  -P     check for empty names and leading \"-\"\n      --portability  check for all POSIX systems (equivalent to -p -P)\n      --help         display this help and exit\n      --version      output version information and exit\n\nReport bugs to: bug-coreutils@gnu.org\nGNU coreutils home page: <https://www.gnu.org/software/coreutils/>\nGeneral help using GNU software: <https://www.gnu.org/gethelp/>\nReport any translation bugs to <https://translationproject.org/team/>\nFull documentation <https://www.gnu.org/software/coreutils/pathchk>\nor available locally via: info '(coreutils) pathchk invocation'\n", c::stdout);
+};
 
 export fn run(start: usize, argc: usize) i32 = {
-    let count: usize = argc - start;
-    if (count > 4096usize) { return 1; };
-    let mut argv: [4096]*i8;
-    for (let i in 0usize..count) { argv[i] = args::argat(start + i).data as *i8; };
-    return backend::zov_pathchk_run(count as i32, (&argv[0usize]) as **i8);
+    let mut portable: bool = false;
+    let mut strict: bool = false;
+    let mut options: bool = true;
+    let mut operands: usize = 0usize;
+    let mut status: i32 = 0i32;
+
+    let mut i: usize = start;
+    while (i < argc) {
+        let a: str = args::argat(i);
+        if (options && a == "--") {
+            options = false;
+            i += 1usize;
+            continue;
+        };
+        if (options && a == "--help") {
+            print_help();
+            return 0i32;
+        };
+        if (options && a == "--version") {
+            io::println("pathchk (zovutils) 0.10.61");
+            return 0i32;
+        };
+        if (options && a == "--portability") {
+            portable = true;
+            strict = true;
+            i += 1usize;
+            continue;
+        };
+        if (options && a.len > 1usize && a.data[0usize] == 45u8 && a.data[1usize] != 45u8) { // short options
+            for (let j in 1usize..a.len) {
+                let ch: u8 = a.data[j];
+                if (ch == 112u8) { // 'p'
+                    portable = true;
+                } else if (ch == 80u8) { // 'P'
+                    strict = true;
+                } else {
+                    c::fprintf(c::stderr, "pathchk: invalid option -- '%c'\nTry 'pathchk --help' for more information.\n", ch as i32);
+                    return 1i32;
+                };
+            };
+            i += 1usize;
+            continue;
+        };
+        if (options && a.len >= 2usize && a.data[0usize] == 45u8 && a.data[1usize] == 45u8) { // unrecognized long option
+            c::fprintf(c::stderr, "pathchk: unrecognized option '%s'\nTry 'pathchk --help' for more information.\n", a.data as *i8);
+            return 1i32;
+        };
+
+        operands += 1usize;
+        let len: usize = a.len;
+        if (len == 0usize) {
+            if (strict) {
+                c::fputs("pathchk: empty file name\n", c::stderr);
+            } else {
+                c::fputs("pathchk: '': No such file or directory\n", c::stderr);
+            };
+            status = 1i32;
+            i += 1usize;
+            continue;
+        };
+
+        if (strict && a.data[0usize] == 45u8) { // '-'
+            c::fprintf(c::stderr, "pathchk: leading '-' in file name '%s'\n", a.data as *i8);
+            status = 1i32;
+        };
+
+        if (portable) {
+            let mut component: usize = 0usize;
+            for (let j in 0usize..(len + 1usize)) {
+                let mut c_byte: u8 = 0u8;
+                if (j < len) {
+                    c_byte = a.data[j];
+                };
+                if (c_byte == 47u8 || c_byte == 0u8) { // '/' or '\0'
+                    if (component > 14usize) {
+                        let start_idx: usize = j - component;
+                        c::fprintf(c::stderr, "pathchk: limit 14 exceeded by length %zu of file name component '%.*s'\n", component, component as i32, (&a.data[start_idx]) as *i8);
+                        status = 1i32;
+                    };
+                    component = 0usize;
+                } else {
+                    let is_port: bool = (c_byte >= 65u8 && c_byte <= 90u8) ||
+                                       (c_byte >= 97u8 && c_byte <= 122u8) ||
+                                       (c_byte >= 48u8 && c_byte <= 57u8) ||
+                                       c_byte == 46u8 || c_byte == 95u8 || c_byte == 45u8;
+                    if (!is_port) {
+                        if (c_byte == 32u8) {
+                            c::fprintf(c::stderr, "pathchk: non-portable character ' ' in file name '%s'\n", a.data as *i8);
+                        } else {
+                            c::fprintf(c::stderr, "pathchk: non-portable character %03o in file name '%s'\n", c_byte as i32, a.data as *i8);
+                        };
+                        status = 1i32;
+                        break;
+                    };
+                    component += 1usize;
+                };
+            };
+            if (len > 255usize) {
+                c::fprintf(c::stderr, "pathchk: limit 255 exceeded by length %zu of file name '%s'\n", len, a.data as *i8);
+                status = 1i32;
+            };
+        } else {
+            let mut start_pos: usize = 0usize;
+            let mut j: usize = 0usize;
+            while (j <= len) {
+                if (j == len || a.data[j] == 47u8) { // end or '/'
+                    let part_len: usize = j - start_pos;
+                    if (part_len > 0usize) {
+                        let lim: i64 = platform_path::zov_path_name_max(".".data as *i8);
+                        if (lim > 0i64 && (part_len as i64) > lim) {
+                            c::fprintf(c::stderr, "pathchk: component is too long: '%.*s'\n", part_len as i32, (&a.data[start_pos]) as *i8);
+                            status = 1i32;
+                        };
+                    };
+                    start_pos = j + 1usize;
+                };
+                j += 1usize;
+            };
+        };
+
+        i += 1usize;
+    };
+
+    if (operands == 0usize) {
+        c::fputs("pathchk: missing operand\nTry 'pathchk --help' for more information.\n", c::stderr);
+        return 1i32;
+    };
+
+    return status;
 };
