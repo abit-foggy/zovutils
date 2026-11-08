@@ -205,7 +205,7 @@ export fn run(start: usize, argc: usize) i32 = {
 
             if (key == "TERM") {
                 term_seen = true;
-                let term_env: nullable *i8 = stdlib::getenv("TERM".data as *i8);
+                let term_env: nullable *i8 = stdlib::getenv("TERM\0".data as *i8);
                 if (term_env != null) {
                     let owned_val: String = String::from(value);
                     let rc: i32 = fnmatch::fnmatch(owned_val.view().data as *i8, term_env!, 0i32);
@@ -242,7 +242,7 @@ export fn run(start: usize, argc: usize) i32 = {
         for (let idx in 0usize..keys.len()) {
             let k: &String = keys.getref(idx);
             let v: &String = values.getref(idx);
-            c::printf("\033[%sm%s\t%s\033[0m\n", v.view().data as *i8, k.view().data as *i8, v.view().data as *i8);
+            c::printf("\x1b[%sm%s\t%s\x1b[0m\n".data as *i8, v.view().data as *i8, k.view().data as *i8, v.view().data as *i8);
         };
         return 0;
     };
