@@ -1,0 +1,589 @@
+use std::env as args;
+use std::io;
+use std::vec;
+use <stdio.h> as c;
+use <string.h> as strc;
+use <platform_errno.h> as platform_errno;
+use io as stream;
+
+fn b64_value(c_byte: u8, url: bool, ignore: bool) i32 = {
+    if (c_byte >= 65u8 && c_byte <= 90u8) { return (c_byte - 65u8) as i32; };
+    if (c_byte >= 97u8 && c_byte <= 122u8) { return (c_byte - 97u8 + 26u8) as i32; };
+    if (c_byte >= 48u8 && c_byte <= 57u8) { return (c_byte - 48u8 + 52u8) as i32; };
+    let mut b62: u8 = 43u8;
+    if (url) { b62 = 45u8; };
+    if (c_byte == b62) { return 62i32; };
+    let mut b63: u8 = 47u8;
+    if (url) { b63 = 95u8; };
+    if (c_byte == b63) { return 63i32; };
+    if (c_byte == 10u8 || c_byte == 13u8 || c_byte == 9u8 || c_byte == 32u8) { return -2i32; };
+    if (ignore) { return -2i32; };
+    return -1i32;
+};
+
+fn parse_wrap(v: str, wrap: &mut i32) bool = {
+    if (v.len == 0usize) { return false; };
+    let mut n: i32 = 0i32;
+    for (let i in 0usize..v.len) {
+        let ch: u8 = v.data[i];
+        if (ch < 48u8 || ch > 57u8) { return false; };
+        n = n * 10i32 + ((ch - 48u8) as i32);
+    };
+    *wrap = n;
+    return true;
+};
+
+fn print_help(program: str) void = {
+    io::println("Usage: " + program + " [OPTION]... [FILE]");
+    io::println("Base-encode or decode FILE, or standard input, to standard output.");
+    io::println("  -d, --decode          decode data");
+    io::println("  -i, --ignore-garbage  when decoding, ignore non-alphabet characters");
+    io::println("  -w, --wrap=COLS       wrap encoded lines after COLS character (default 76)");
+    io::println("      --help            display this help and exit");
+    io::println("      --version         output version information and exit");
+};
+
+fn emit_out(ch: u8, wrap: i32, col: &mut i32) void = {
+    if (wrap > 0i32 && *col >= wrap) {
+        c::fputc(10i32, c::stdout);
+        *col = 0i32;
+    };
+    c::fputc(ch as i32, c::stdout);
+    *col += 1i32;
+};
+
+export fn run_basenc(program: str, start: usize, argc: usize) i32 = {
+    let mut decode: bool = false;
+    let mut ignore: bool = false;
+    let mut wrap: i32 = 76i32;
+    let mut url: bool = false;
+    let mut mode: i32 = 0i32;
+    if (program == "base32") { mode = 1i32; };
+    let mut file: str = "";
+    let mut has_file: bool = false;
+
+    let is_basenc: bool = program == "basenc";
+
+    let mut i: usize = start;
+    while (i < argc) {
+        let a: str = args::argat(i);
+        if (a == "--help") {
+            print_help(program);
+            return 0;
+        };
+        if (a == "--version") {
+            io::println(program + " (zovutils) 0.10.61");
+            return 0;
+        };
+        if (a == "-d" || a == "--decode") {
+            decode = true;
+            i += 1usize;
+            continue;
+        };
+        if (a == "-i" || a == "--ignore-garbage") {
+            ignore = true;
+            i += 1usize;
+            continue;
+        };
+        if (is_basenc && a == "--base64url") {
+            mode = 0i32;
+            url = true;
+            i += 1usize;
+            continue;
+        };
+        if (is_basenc && a == "--base32") {
+            mode = 1i32;
+            url = false;
+            i += 1usize;
+            continue;
+        };
+        if (is_basenc && a == "--base32hex") {
+            mode = 2i32;
+            url = false;
+            i += 1usize;
+            continue;
+        };
+        if (is_basenc && a == "--base16") {
+            mode = 3i32;
+            url = false;
+            i += 1usize;
+            continue;
+        };
+        if (is_basenc && a == "--base2msbf") {
+            mode = 4i32;
+            url = false;
+            i += 1usize;
+            continue;
+        };
+        if (is_basenc && a == "--base2lsbf") {
+            mode = 5i32;
+            url = false;
+            i += 1usize;
+            continue;
+        };
+        if (is_basenc && a == "--base58") {
+            mode = 6i32;
+            url = false;
+            i += 1usize;
+            continue;
+        };
+        if (is_basenc && a == "--z85") {
+            mode = 7i32;
+            url = false;
+            i += 1usize;
+            continue;
+        };
+        if (is_basenc && a == "--base64") {
+            mode = 0i32;
+            url = false;
+            i += 1usize;
+            continue;
+        };
+        if (a == "-w" || (a.len >= 7usize && a[0usize..7usize] == "--wrap=")) {
+            let mut v: str = "";
+            if (a == "-w") {
+                if (i + 1usize < argc) {
+                    i += 1usize;
+                    v = args::argat(i);
+                } else {
+                    io::eprintln(program + ": option requires an argument -- 'w'");
+                    return 1;
+                };
+            } else {
+                v = a[7usize..a.len];
+            };
+            if (!parse_wrap(v, &mut wrap)) {
+                io::eprintln(program + ": invalid wrap size: " + v);
+                return 1;
+            };
+            i += 1usize;
+            continue;
+        };
+        if (a.len > 0usize && a.data[0usize] == 45u8 && a != "-") {
+            io::eprintln(program + ": unrecognized option '" + a + "'\nTry '" + program + " --help' for more information.");
+            return 1;
+        };
+        if (has_file) {
+            io::eprintln(program + ": extra operand '" + a + "'\nTry '" + program + " --help' for more information.");
+            return 1;
+        };
+        file = a;
+        has_file = true;
+        i += 1usize;
+    };
+
+    let mut in_fp: *c::FILE = c::stdin;
+    if (has_file && file != "-") {
+        let opened: nullable *c::FILE = stream::openread(file);
+        match (opened) {
+            case let fp: *c::FILE => { in_fp = fp; },
+            case null => {
+                let err: i32 = platform_errno::zov_errno_value();
+                let err_str: *i8 = (strc::strerror(err))!;
+                io::eprint(program + ": " + file + ": ");
+                c::fputs(err_str, c::stderr);
+                c::fputc(10i32, c::stderr);
+                return 1;
+            },
+        };
+    };
+
+    let mut data = vec::new[u8]();
+    let mut buf: [16384]u8;
+    while (true) {
+        let r: usize = c::fread((&buf[0usize]) as *void, 1usize, 16384usize, in_fp);
+        if (r == 0usize) { break; };
+        for (let j in 0usize..r) {
+            data.push(buf[j]);
+        };
+    };
+    if (stream::readerror(in_fp)) {
+        let err: i32 = platform_errno::zov_errno_value();
+        let err_str: *i8 = (strc::strerror(err))!;
+        io::eprint(program + ": read error: ");
+        c::fputs(err_str, c::stderr);
+        c::fputc(10i32, c::stderr);
+        if (in_fp != c::stdin) { c::fclose(in_fp); };
+        return 1;
+    };
+    if (in_fp != c::stdin) {
+        c::fclose(in_fp);
+    };
+
+    let n: usize = data.len();
+    let mut alphabet: str = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    if (mode == 1i32) {
+        alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+    } else if (mode == 2i32) {
+        alphabet = "0123456789ABCDEFGHIJKLMNOPQRSTUV";
+    } else if (mode == 3i32) {
+        alphabet = "0123456789ABCDEF";
+    } else if (mode == 6i32) {
+        alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+    } else if (mode == 7i32) {
+        alphabet = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ.-:+=^!/*?&<>()[]\{}@%$#";
+    } else if (url) {
+        alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+    };
+
+    let mut status: i32 = 0i32;
+    let mut col: i32 = 0i32;
+
+    if (!decode) {
+        if (mode == 3i32) {
+            for (let j in 0usize..n) {
+                let b: u8 = data.get(j);
+                emit_out(alphabet.data[(b >> 4) as usize], wrap, &mut col);
+                emit_out(alphabet.data[(b & 15u8) as usize], wrap, &mut col);
+            };
+            if (n > 0usize && wrap > 0i32) { c::fputc(10i32, c::stdout); };
+        } else if (mode == 4i32 || mode == 5i32) {
+            for (let j in 0usize..n) {
+                let b: u8 = data.get(j);
+                for (let bit in 0usize..8usize) {
+                    let mut bit_shift: usize = bit;
+                    if (mode == 4i32) { bit_shift = 7usize - bit; };
+                    let bit_val: u8 = (b >> (bit_shift as u8)) & 1u8;
+                    let mut ch: u8 = 48u8;
+                    if (bit_val == 1u8) { ch = 49u8; };
+                    emit_out(ch, wrap, &mut col);
+                };
+            };
+            if (n > 0usize && wrap > 0i32) { c::fputc(10i32, c::stdout); };
+        } else if (mode == 6i32) {
+            let mut zeros: usize = 0usize;
+            while (zeros < n && data.get(zeros) == 0u8) {
+                zeros += 1usize;
+            };
+            let cap: usize = n * 2usize + 1usize;
+            let mut digits = vec::new[u8]();
+            for (let _k in 0usize..cap) { digits.push(0u8); };
+            let mut used: usize = 0usize;
+            for (let j in zeros..n) {
+                let mut carry: u32 = data.get(j) as u32;
+                let mut d_j: usize = 0usize;
+                let mut k: usize = cap;
+                while (k > 0usize && (carry > 0u32 || d_j < used)) {
+                    k -= 1usize;
+                    carry += 256u32 * (digits.get(k) as u32);
+                    digits.set(k, (carry % 58u32) as u8);
+                    carry = carry / 58u32;
+                    d_j += 1usize;
+                };
+                used = d_j;
+            };
+            for (let _z in 0usize..zeros) {
+                emit_out(49u8, wrap, &mut col);
+            };
+            let mut first_digit: usize = cap - used;
+            while (first_digit < cap && digits.get(first_digit) == 0u8) {
+                first_digit += 1usize;
+            };
+            for (let j in first_digit..cap) {
+                emit_out(alphabet.data[digits.get(j) as usize], wrap, &mut col);
+            };
+            if ((n > 0usize || used > 0usize) && wrap > 0i32) {
+                c::fputc(10i32, c::stdout);
+            };
+        } else if (mode == 7i32) {
+            if (n % 4usize != 0usize) {
+                io::eprintln(program + ": invalid input (length must be multiple of 4 characters)");
+                status = 1i32;
+            } else {
+                let mut j: usize = 0usize;
+                while (j < n) {
+                    let mut v: u64 = ((data.get(j) as u64) << 24) |
+                                     ((data.get(j + 1usize) as u64) << 16) |
+                                     ((data.get(j + 2usize) as u64) << 8) |
+                                     (data.get(j + 3usize) as u64);
+                    let mut out: [5]u8;
+                    let mut k: usize = 5usize;
+                    while (k > 0usize) {
+                        k -= 1usize;
+                        out[k] = alphabet.data[(v % 85u64) as usize];
+                        v = v / 85u64;
+                    };
+                    for (let p in 0usize..5usize) {
+                        emit_out(out[p], wrap, &mut col);
+                    };
+                    j += 4usize;
+                };
+                if (n > 0usize && wrap > 0i32) {
+                    c::fputc(10i32, c::stdout);
+                };
+            };
+        } else {
+            let mut width: u32 = 6u32;
+            if (mode == 1i32 || mode == 2i32) { width = 5u32; };
+            let mut bits: u32 = 0u32;
+            let mut nb: u32 = 0u32;
+            for (let j in 0usize..n) {
+                bits = (bits << 8) | (data.get(j) as u32);
+                nb += 8u32;
+                while (nb >= width) {
+                    nb -= width;
+                    let idx: u32 = (bits >> nb) & ((1u32 << width) - 1u32);
+                    emit_out(alphabet.data[idx as usize], wrap, &mut col);
+                };
+            };
+            if (nb > 0u32) {
+                let idx: u32 = (bits << (width - nb)) & ((1u32 << width) - 1u32);
+                emit_out(alphabet.data[idx as usize], wrap, &mut col);
+            };
+            if (mode == 1i32 || mode == 2i32) {
+                let rem: usize = n % 5usize;
+                let mut pad: usize = 0usize;
+                if (rem == 1usize) { pad = 6usize; }
+                else if (rem == 2usize) { pad = 4usize; }
+                else if (rem == 3usize) { pad = 3usize; }
+                else if (rem == 4usize) { pad = 1usize; };
+                for (let _p in 0usize..pad) {
+                    emit_out(61u8, wrap, &mut col);
+                };
+            } else {
+                let rem: usize = n % 3usize;
+                let mut pad: usize = 0usize;
+                if (rem == 1usize) { pad = 2usize; }
+                else if (rem == 2usize) { pad = 1usize; };
+                for (let _p in 0usize..pad) {
+                    emit_out(61u8, wrap, &mut col);
+                };
+            };
+            if (n > 0usize && wrap > 0i32) {
+                c::fputc(10i32, c::stdout);
+            };
+        };
+    } else if (mode == 3i32) {
+        let mut high: i32 = -1i32;
+        for (let j in 0usize..n) {
+            let c_byte: u8 = data.get(j);
+            let mut v: i32 = -1i32;
+            if (c_byte >= 48u8 && c_byte <= 57u8) { v = (c_byte - 48u8) as i32; }
+            else if (c_byte >= 65u8 && c_byte <= 70u8) { v = (c_byte - 65u8 + 10u8) as i32; }
+            else if (c_byte >= 97u8 && c_byte <= 102u8) { v = (c_byte - 97u8 + 10u8) as i32; };
+            if (v < 0i32) {
+                if (c_byte == 10u8 || c_byte == 13u8 || c_byte == 32u8 || c_byte == 9u8) { continue; };
+                if (ignore) { continue; };
+                io::eprintln(program + ": invalid input");
+                status = 1i32;
+                break;
+            };
+            if (high < 0i32) {
+                high = v;
+            } else {
+                c::fputc((high << 4) | v, c::stdout);
+                high = -1i32;
+            };
+        };
+        if (status == 0i32 && high >= 0i32) {
+            io::eprintln(program + ": invalid input");
+            status = 1i32;
+        };
+    } else if (mode == 4i32 || mode == 5i32) {
+        let mut byte_acc: u32 = 0u32;
+        let mut nb: u32 = 0u32;
+        for (let j in 0usize..n) {
+            let c_byte: u8 = data.get(j);
+            if (c_byte == 10u8 || c_byte == 13u8 || c_byte == 32u8 || c_byte == 9u8) { continue; };
+            if (c_byte != 48u8 && c_byte != 49u8) {
+                if (ignore) { continue; };
+                io::eprintln(program + ": invalid input");
+                status = 1i32;
+                break;
+            };
+            let v: u32 = (c_byte - 48u8) as u32;
+            if (mode == 4i32) {
+                byte_acc = (byte_acc << 1) | v;
+            } else {
+                byte_acc = byte_acc | (v << nb);
+            };
+            nb += 1u32;
+            if (nb == 8u32) {
+                c::fputc(byte_acc as i32, c::stdout);
+                byte_acc = 0u32;
+                nb = 0u32;
+            };
+        };
+        if (status == 0i32 && nb > 0u32) {
+            io::eprintln(program + ": invalid input");
+            status = 1i32;
+        };
+    } else if (mode == 6i32) {
+        let abc: str = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+        let mut zeros: usize = 0usize;
+        let mut pos: usize = 0usize;
+        while (pos < n && (data.get(pos) == 10u8 || data.get(pos) == 13u8 || data.get(pos) == 32u8 || data.get(pos) == 9u8)) {
+            pos += 1usize;
+        };
+        while (pos < n && data.get(pos) == 49u8) {
+            zeros += 1usize;
+            pos += 1usize;
+        };
+        let cap: usize = n + 1usize;
+        let mut bytes = vec::new[u8]();
+        for (let _k in 0usize..cap) { bytes.push(0u8); };
+        let mut used: usize = 0usize;
+        while (pos < n) {
+            let c_byte: u8 = data.get(pos);
+            if (c_byte == 10u8 || c_byte == 13u8 || c_byte == 32u8 || c_byte == 9u8) {
+                pos += 1usize;
+                continue;
+            };
+            let mut found: i32 = -1i32;
+            for (let ai in 0usize..abc.len) {
+                if (abc.data[ai] == c_byte) {
+                    found = ai as i32;
+                    break;
+                };
+            };
+            if (found < 0i32) {
+                if (ignore) { pos += 1usize; continue; };
+                io::eprintln(program + ": invalid input");
+                status = 1i32;
+                break;
+            };
+            let mut carry: u32 = found as u32;
+            let mut d_j: usize = 0usize;
+            let mut k: usize = cap;
+            while (k > 0usize && (carry > 0u32 || d_j < used)) {
+                k -= 1usize;
+                carry += 58u32 * (bytes.get(k) as u32);
+                bytes.set(k, (carry & 255u32) as u8);
+                carry = carry >> 8;
+                d_j += 1usize;
+            };
+            used = d_j;
+            pos += 1usize;
+        };
+        if (status == 0i32) {
+            for (let _z in 0usize..zeros) {
+                c::fputc(0i32, c::stdout);
+            };
+            let mut first_byte: usize = cap - used;
+            while (first_byte < cap && bytes.get(first_byte) == 0u8) {
+                first_byte += 1usize;
+            };
+            for (let j in first_byte..cap) {
+                c::fputc(bytes.get(j) as i32, c::stdout);
+            };
+        };
+    } else if (mode == 7i32) {
+        let abc: str = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ.-:+=^!/*?&<>()[]\{}@%$#";
+        let mut len: usize = 0usize;
+        for (let j in 0usize..n) {
+            let b: u8 = data.get(j);
+            if (b != 10u8 && b != 13u8 && b != 32u8 && b != 9u8) {
+                len += 1usize;
+            };
+        };
+        if (len % 5usize != 0usize) {
+            io::eprintln(program + ": invalid input");
+            status = 1i32;
+        } else {
+            let mut value: u64 = 0u64;
+            let mut count: usize = 0usize;
+            for (let j in 0usize..n) {
+                let c_byte: u8 = data.get(j);
+                if (c_byte == 10u8 || c_byte == 13u8 || c_byte == 32u8 || c_byte == 9u8) {
+                    continue;
+                };
+                let mut found: i32 = -1i32;
+                for (let ai in 0usize..abc.len) {
+                    if (abc.data[ai] == c_byte) {
+                        found = ai as i32;
+                        break;
+                    };
+                };
+                if (found < 0i32) {
+                    if (ignore) { continue; };
+                    io::eprintln(program + ": invalid input");
+                    status = 1i32;
+                    break;
+                };
+                value = value * 85u64 + (found as u64);
+                count += 1usize;
+                if (count == 5usize) {
+                    if (value > 4294967295u64) {
+                        io::eprintln(program + ": invalid input");
+                        status = 1i32;
+                        break;
+                    };
+                    c::fputc(((value >> 24) & 255u64) as i32, c::stdout);
+                    c::fputc(((value >> 16) & 255u64) as i32, c::stdout);
+                    c::fputc(((value >> 8) & 255u64) as i32, c::stdout);
+                    c::fputc((value & 255u64) as i32, c::stdout);
+                    value = 0u64;
+                    count = 0usize;
+                };
+            };
+        };
+    } else {
+        let mut width: u32 = 6u32;
+        if (mode == 1i32 || mode == 2i32) { width = 5u32; };
+        let mut bits: u32 = 0u32;
+        let mut nb: u32 = 0u32;
+        let mut symbols: usize = 0usize;
+        let mut padding: usize = 0usize;
+        let mut last: u32 = 0u32;
+        let mut ended: bool = false;
+        for (let j in 0usize..n) {
+            let c_byte: u8 = data.get(j);
+            if (c_byte == 61u8) {
+                ended = true;
+                padding += 1usize;
+                continue;
+            };
+            let mut v: i32 = -1i32;
+            if (mode == 1i32) {
+                if (c_byte >= 65u8 && c_byte <= 90u8) { v = (c_byte - 65u8) as i32; }
+                else if (c_byte >= 97u8 && c_byte <= 122u8) { v = (c_byte - 97u8 + 26u8) as i32; }
+                else if (c_byte >= 50u8 && c_byte <= 55u8) { v = (c_byte - 50u8 + 26u8) as i32; };
+            } else if (mode == 2i32) {
+                if (c_byte >= 48u8 && c_byte <= 57u8) { v = (c_byte - 48u8) as i32; }
+                else if (c_byte >= 65u8 && c_byte <= 86u8) { v = (c_byte - 65u8 + 10u8) as i32; }
+                else if (c_byte >= 97u8 && c_byte <= 118u8) { v = (c_byte - 97u8 + 10u8) as i32; };
+            } else {
+                v = b64_value(c_byte, url, ignore);
+            };
+            if (v == -2i32 || c_byte == 10u8 || c_byte == 13u8 || c_byte == 9u8 || c_byte == 32u8) {
+                continue;
+            };
+            if (v < 0i32 || ended) {
+                if (ignore) { continue; };
+                io::eprintln(program + ": invalid input");
+                status = 1i32;
+                break;
+            };
+            if (mode == 0i32) {
+                symbols += 1usize;
+                last = v as u32;
+            };
+            bits = (bits << width) | (v as u32);
+            nb += width;
+            if (nb >= 8u32) {
+                nb -= 8u32;
+                c::fputc(((bits >> nb) & 255u32) as i32, c::stdout);
+            };
+        };
+        if (status == 0i32 && mode == 0i32) {
+            let rem: usize = symbols % 4usize;
+            let mut bad: bool = false;
+            if (padding > 0usize) {
+                let cond1: bool = rem == 2usize && padding == 2usize && (last & 15u32) == 0u32;
+                let cond2: bool = rem == 3usize && padding == 1usize && (last & 3u32) == 0u32;
+                bad = !cond1 && !cond2;
+            } else {
+                bad = rem == 1usize || (rem == 2usize && (last & 15u32) != 0u32) || (rem == 3usize && (last & 3u32) != 0u32);
+            };
+            if (bad) {
+                io::eprintln(program + ": invalid input");
+                status = 1i32;
+            };
+        };
+    };
+
+    if (!stream::finishoutput(program)) {
+        status = 1i32;
+    };
+    return status;
+};
