@@ -88,7 +88,7 @@ export fn run(start: usize, argc: usize) i32 = {
             if (key == "--split-only" || is_prefix(key, "--split-only")) { split_only = true; i += 1usize; continue; };
             if (key == "--uniform-spacing" || is_prefix(key, "--uniform-spacing")) { uniform = true; i += 1usize; continue; };
             if (key == "--help" || is_prefix(key, "--help")) { help(); stream::finishoutput("fmt"); return 0; };
-            if (key == "--version" || is_prefix(key, "--version")) { io::println("fmt (zovutils) 0.10.57"); stream::finishoutput("fmt"); return 0; };
+            if (key == "--version" || is_prefix(key, "--version")) { io::println("fmt (zovutils) 0.10.58"); stream::finishoutput("fmt"); return 0; };
             io::eprintln("fmt: unrecognized option '" + arg + "'"); usage_error(); return 1;
         };
         if (!options_done && arg.len > 1usize && arg.data[0usize] == 45u8) {
