@@ -10,6 +10,9 @@
 #include <sys/types.h>
 #include <sys/utsname.h>
 #include <unistd.h>
+#if defined(__linux__)
+#include <sys/xattr.h>
+#endif
 
 #if defined(__APPLE__)
 #include <mach-o/arch.h>
@@ -131,6 +134,34 @@ static inline int zov_get_security_context(char *buf, size_t buf_sz) {
 
 static inline int zov_selinux_active(void) {
     return access("/sys/fs/selinux", F_OK) == 0;
+}
+
+static inline int zov_chcon_set_context(const char *context, const char *path, int follow) {
+#if defined(__linux__)
+    int rc = follow ? setxattr(path, "security.selinux", context, strlen(context) + 1, 0)
+                    : lsetxattr(path, "security.selinux", context, strlen(context) + 1, 0);
+    return rc == 0 ? 0 : errno;
+#else
+    (void)context; (void)path; (void)follow;
+    return ENOTSUP;
+#endif
+}
+
+static inline int zov_runcon_set_exec_context(const char *context) {
+#if defined(__linux__)
+    if (access("/sys/fs/selinux", F_OK) < 0) {
+        return -1;
+    }
+    FILE *f = fopen("/proc/self/attr/exec", "w");
+    if (!f) return errno;
+    if (fprintf(f, "%s", context) < 0 || fclose(f) < 0) {
+        return -2;
+    }
+    return 0;
+#else
+    (void)context;
+    return -3;
+#endif
 }
 
 #endif

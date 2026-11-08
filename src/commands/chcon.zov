@@ -1,9 +1,73 @@
 use std::env as args;
-use <context_backend.h> as backend;
+use std::io;
+use std::vec;
+use <stdio.h> as c;
+use <string.h> as strc;
+use <platform_identity.h> as platform_identity;
+
 export fn run(start: usize, argc: usize) i32 = {
-    let count: usize = argc - start;
-    if (count > 4096usize) { return 1; };
-    let mut argv: [4096]*i8;
-    for (let i in 0usize..count) { argv[i] = args::argat(start + i).data as *i8; };
-    return backend::zov_chcon_run(count as i32, (&argv[0usize]) as **i8);
+    let mut follow: i32 = 1i32;
+    let mut files: vec::Vec[str] = vec::new[str]();
+
+    let mut i: usize = start;
+    while (i < argc) {
+        let a: str = args::argat(i);
+        if (a == "--help") {
+            io::println("Usage: chcon [OPTION]... CONTEXT FILE...\n" +
+                        "Change the security context of each FILE to CONTEXT.\n" +
+                        "  -h, --no-dereference  affect symbolic links instead of referenced files\n" +
+                        "  -R, --recursive       operate on files and directories recursively\n" +
+                        "      --help             display this help and exit\n" +
+                        "      --version          output version information and exit");
+            return 0i32;
+        };
+        if (a == "--version") {
+            io::println("chcon (zovutils) 0.10.61");
+            return 0i32;
+        };
+        if (a == "-h" || a == "--no-dereference") {
+            follow = 0i32;
+            i += 1usize;
+            continue;
+        };
+        if (a == "-R" || a == "--recursive") {
+            i += 1usize;
+            continue;
+        };
+        if (a.len > 0usize && a.data[0usize] == 45u8 && a != "-") {
+            c::fprintf(c::stderr, "chcon: unrecognized option '%s'\nTry 'chcon --help' for more information.\n\0".data as *i8, a.data as *i8);
+            return 1i32;
+        };
+        files.push(a);
+        i += 1usize;
+    };
+
+    if (files.len() < 2usize) {
+        c::fputs("chcon: missing operand\nTry 'chcon --help' for more information.\n\0".data as *i8, c::stderr);
+        return 1i32;
+    };
+
+    let context: str = files.get(0usize);
+    let mut has_colon: bool = false;
+    for (let k in 0usize..context.len) {
+        if (context.data[k] == 58u8) { // ':'
+            has_colon = true;
+            break;
+        };
+    };
+    if (!has_colon) {
+        c::fprintf(c::stderr, "chcon: invalid context: '%s': Invalid argument\n\0".data as *i8, context.data as *i8);
+        return 1i32;
+    };
+
+    let mut status: i32 = 0i32;
+    for (let f in 1usize..files.len()) {
+        let file_path: str = files.get(f);
+        let rc: i32 = platform_identity::zov_chcon_set_context(context.data as *i8, file_path.data as *i8, follow);
+        if (rc != 0i32) {
+            c::fprintf(c::stderr, "chcon: failed to change context of '%s' to '%s': %s\n\0".data as *i8, file_path.data as *i8, context.data as *i8, strc::strerror(rc));
+            status = 1i32;
+        };
+    };
+    return status;
 };
