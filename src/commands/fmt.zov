@@ -1,7 +1,10 @@
 use std::env as args;
 use std::io;
+use std::mem as mem;
 use <stdio.h> as c;
-use <fmt_backend.h> as backend;
+use <string.h> as strc;
+use <platform_errno.h> as platform_errno;
+use <platform_locale.h> as platform_locale;
 use shared::io as stream;
 
 fn usage_error() void = { io::eprintln("Try 'fmt --help' for more information."); };
@@ -19,9 +22,9 @@ fn parse_width(value: str) usize = {
     if (value.len == 0usize) { return 0usize; };
     let mut n: usize = 0usize;
     for (let i in 0usize..value.len) {
-        let c: u8 = value.data[i];
-        if (c < 48u8 || c > 57u8) { return 0usize; };
-        let digit: usize = (c - 48u8) as usize;
+        let digit_ch: u8 = value.data[i];
+        if (digit_ch < 48u8 || digit_ch > 57u8) { return 0usize; };
+        let digit: usize = (digit_ch - 48u8) as usize;
         if (n > (18446744073709551615usize - digit) / 10usize) { return 0usize; };
         n = n * 10usize + digit;
     };
@@ -51,6 +54,213 @@ fn help() void = {
     io::print("Report bugs to: bug-coreutils@gnu.org\nGNU coreutils home page: <https://www.gnu.org/software/coreutils/>\n");
     io::print("General help using GNU software: <https://www.gnu.org/gethelp/>\nReport any translation bugs to <https://translationproject.org/team/>\n");
     io::print("Full documentation <https://www.gnu.org/software/coreutils/fmt>\nor available locally via: info '(coreutils) fmt invocation'\n");
+};
+
+type FmtLine = struct {
+    data: *u8,
+    len: usize,
+    cap: usize,
+};
+
+fn line_init() FmtLine = {
+    return FmtLine { data = mem::alloc[u8](256usize), len = 0usize, cap = 256usize };
+};
+
+fn fmt_read_line(fp: *c::FILE, line: &mut FmtLine, terminated: &mut bool) i32 = {
+    line.len = 0usize;
+    *terminated = false;
+    while (true) {
+        let ch: i32 = c::fgetc(fp);
+        if (ch == -1i32) {
+            if (stream::readerror(fp)) { return -1i32; };
+            if (line.len == 0usize) { return 0i32; };
+            return 1i32;
+        };
+        if (ch == 10i32) {
+            *terminated = true;
+            return 1i32;
+        };
+        if (line.len == line.cap) {
+            let next: usize = line.cap * 2usize;
+            line.data = mem::reallocbuf[u8](line.data, next);
+            line.cap = next;
+        };
+        line.data[line.len] = ch as u8;
+        line.len += 1usize;
+    };
+    return 0i32;
+};
+
+fn fmt_char_width(s: *u8, n: usize, column: usize, bytes_out: &mut usize) usize = {
+    let c_byte: u8 = s[0];
+    if (c_byte == 9u8) { // '\t'
+        *bytes_out = 1usize;
+        return 8usize - (column % 8usize);
+    };
+    let mut b_count: usize = 1usize;
+    let mut w: usize = 1usize;
+    platform_locale::zov_fold_next_char(s, n, &mut b_count, &mut w);
+    *bytes_out = b_count;
+    return w;
+};
+
+fn fmt_columns(s: *u8, n: usize, initial_column: usize) usize = {
+    let mut column: usize = initial_column;
+    let mut i: usize = 0usize;
+    let max_val: usize = 18446744073709551615usize;
+    while (i < n) {
+        let mut bytes: usize = 1usize;
+        let width: usize = fmt_char_width(((&s[i]) as *u8), n - i, column, &mut bytes);
+        let mut new_col: usize = max_val;
+        if (width <= max_val - column) { new_col = column + width; };
+        column = new_col;
+        i += bytes;
+    };
+    return column - initial_column;
+};
+
+fn fmt_space(c_byte: u8) bool = {
+    return c_byte == 32u8 || c_byte == 9u8;
+};
+
+fn fmt_indent(data: *u8, len: usize) usize = {
+    let mut i: usize = 0usize;
+    while (i < len && fmt_space(data[i])) {
+        i += 1usize;
+    };
+    return i;
+};
+
+fn fmt_sentence(word: *u8, length: usize) bool = {
+    if (length == 0usize) { return false; };
+    let c_byte: u8 = word[length - 1usize];
+    return c_byte == 46u8 || c_byte == 63u8 || c_byte == 33u8;
+};
+
+fn emit_prefix(prefix: str, indent: *u8, indent_length: usize, column: &mut usize) bool = {
+    if (prefix.len > 0usize && !stream::writebytes(c::stdout, prefix.data as *u8, prefix.len)) {
+        return false;
+    };
+    if (indent_length > 0usize && !stream::writebytes(c::stdout, indent, indent_length)) {
+        return false;
+    };
+    let prefix_cols: usize = fmt_columns(prefix.data as *u8, prefix.len, 0usize);
+    let indent_cols: usize = fmt_columns(indent, indent_length, prefix_cols);
+    *column = prefix_cols + indent_cols;
+    return true;
+};
+
+fn emit_paragraph(lines: *FmtLine, count: usize, width: usize, goal: usize, uniform: bool,
+                  crown: bool, tagged: bool, split_only: bool, prefix: str) bool = {
+    if (count == 0usize) { return true; };
+    let first_l: FmtLine = lines[0usize];
+    let indent_first_length: usize = fmt_indent(first_l.data, first_l.len);
+    let mut indent_second_length: usize = indent_first_length;
+    if (count > 1usize) {
+        let second_l: FmtLine = lines[1usize];
+        indent_second_length = fmt_indent(second_l.data, second_l.len);
+    };
+    let indent_first: *u8 = first_l.data;
+    let mut indent_hanging: *u8 = indent_first;
+    let mut indent_hanging_length: usize = indent_first_length;
+    if (crown || tagged) {
+        let mut idx: usize = 0usize;
+        if (count > 1usize) { idx = 1usize; };
+        let hanging_l: FmtLine = lines[idx];
+        indent_hanging = hanging_l.data;
+        indent_hanging_length = indent_second_length;
+    };
+
+    let mut column: usize = 0usize;
+    let mut have_word: bool = false;
+    let mut previous_sentence: bool = false;
+    if (!emit_prefix(prefix, indent_first, indent_first_length, &mut column)) { return false; };
+
+    let mut sentence_spaces: [2]u8;
+    sentence_spaces[0usize] = 32u8;
+    sentence_spaces[1usize] = 32u8;
+
+    let max_val: usize = 18446744073709551615usize;
+
+    for (let li in 0usize..count) {
+        let line_ref: FmtLine = lines[li];
+        let mut p: usize = fmt_indent(line_ref.data, line_ref.len);
+        let mut first_word: bool = true;
+        while (p < line_ref.len) {
+            let gap_start: usize = p;
+            while (p < line_ref.len && fmt_space(line_ref.data[p])) { p += 1usize; };
+            let gap_length: usize = p - gap_start;
+            let word_start: usize = p;
+            while (p < line_ref.len && !fmt_space(line_ref.data[p])) { p += 1usize; };
+            if (word_start == p) { continue; };
+            let word_length: usize = p - word_start;
+
+            let mut gap: *u8 = ((&line_ref.data[gap_start]) as *u8);
+            let mut use_gap: usize = gap_length;
+            if (li > 0usize && first_word) {
+                if (have_word) {
+                    if (previous_sentence) { use_gap = 2usize; } else { use_gap = 1usize; };
+                } else {
+                    use_gap = 0usize;
+                };
+                gap = (&sentence_spaces[0usize]) as *u8;
+            } else if (uniform && have_word) {
+                if (previous_sentence) { use_gap = 2usize; } else { use_gap = 1usize; };
+                gap = (&sentence_spaces[0usize]) as *u8;
+            };
+            if (!have_word) { use_gap = 0usize; };
+
+            let mut gap_columns: usize = fmt_columns(gap, use_gap, column);
+            let word_ptr: *u8 = ((&line_ref.data[word_start]) as *u8);
+            let word_columns: usize = fmt_columns(word_ptr, word_length, column + gap_columns);
+
+            let mut new_column: usize = max_val;
+            if (gap_columns <= max_val - column) { new_column = column + gap_columns; };
+            if (word_columns <= max_val - new_column) { new_column = new_column + word_columns; } else { new_column = max_val; };
+
+            let mut should_wrap: bool = false;
+            if (have_word) {
+                if (gap_columns > max_val - column || word_columns > max_val - column - gap_columns) {
+                    should_wrap = true;
+                } else if (split_only) {
+                    if (new_column > width) { should_wrap = true; };
+                } else {
+                    if (new_column >= width || (goal != 0usize && column >= goal)) {
+                        should_wrap = true;
+                    };
+                };
+            };
+            if (should_wrap) {
+                if (c::fputc(10i32, c::stdout) == -1i32) { return false; };
+                if (!emit_prefix(prefix, indent_hanging, indent_hanging_length, &mut column)) {
+                    return false;
+                };
+                use_gap = 0usize;
+                gap_columns = 0usize;
+            };
+
+            if (use_gap > 0usize && !stream::writebytes(c::stdout, gap, use_gap)) { return false; };
+            if (word_length > 0usize && !stream::writebytes(c::stdout, word_ptr, word_length)) { return false; };
+            let mut col_after_gap: usize = max_val;
+            if (gap_columns <= max_val - column) { col_after_gap = column + gap_columns; };
+            let mut col_after_word: usize = max_val;
+            if (word_columns <= max_val - col_after_gap) { col_after_word = col_after_gap + word_columns; };
+            column = col_after_word;
+            previous_sentence = fmt_sentence(word_ptr, word_length);
+            have_word = true;
+            first_word = false;
+        };
+    };
+    return c::fputc(10i32, c::stdout) != -1i32;
+};
+
+fn check_prefix(line: *u8, len: usize, prefix: str) bool = {
+    if (prefix.len == 0usize) { return true; };
+    if (len < prefix.len) { return false; };
+    for (let i in 0usize..prefix.len) {
+        if (line[i] != prefix.data[i]) { return false; };
+    };
+    return true;
 };
 
 export fn run(start: usize, argc: usize) i32 = {
@@ -128,8 +338,135 @@ export fn run(start: usize, argc: usize) i32 = {
         files[file_count] = arg; file_count += 1usize; i += 1usize;
     };
     if (file_count == 0usize) { files[0usize] = "-"; file_count = 1usize; };
-    let mut paths: [256]*i8;
-    for (let fi in 0usize..file_count) { paths[fi] = files[fi].data as *i8; };
-    return backend::zov_fmt_run(file_count, ((&paths[0usize]) as **i8), width, goal,
-        uniform as i32, split_only as i32, crown as i32, tagged as i32, prefix.data as *i8);
+
+    platform_locale::zov_init_ctype_locale();
+
+    let mut para_lines: *FmtLine = mem::alloc[FmtLine](16usize);
+    let mut para_count: usize = 0usize;
+    let mut para_cap: usize = 16usize;
+
+    let mut line: FmtLine = line_init();
+    let mut status: i32 = 0;
+
+    for (let f in 0usize..file_count) {
+        let path: str = files[f];
+        let is_stdin: bool = path == "-";
+        let mut fp: *c::FILE = c::stdin;
+        if (!is_stdin) {
+            let open_res: nullable *c::FILE = stream::openread(path);
+            match (open_res) {
+                case let opened: *c::FILE => { fp = opened; },
+                case null => {
+                    let err: i32 = platform_errno::zov_errno_value();
+                    c::fprintf(c::stderr, "fmt: cannot open '%s' for reading: %s\n", path.data as *i8, strc::strerror(err));
+                    status = 1;
+                    continue;
+                },
+            };
+        };
+
+        while (true) {
+            let mut terminated: bool = false;
+            let rc: i32 = fmt_read_line(fp, &mut line, &mut terminated);
+            if (rc == 0i32) { break; };
+            if (rc < 0i32) {
+                c::fprintf(c::stderr, "fmt: read error: %s\n", path.data as *i8);
+                status = 1;
+                break;
+            };
+            let matches_prefix: bool = check_prefix(line.data, line.len, prefix);
+            if (split_only || !matches_prefix) {
+                if (para_count > 0usize) {
+                    if (!emit_paragraph(para_lines, para_count, width, goal, uniform, crown, tagged, split_only, prefix)) {
+                        status = 1;
+                    };
+                    for (let k in 0usize..para_count) {
+                        mem::freeptr[u8](para_lines[k].data);
+                    };
+                    para_count = 0usize;
+                };
+                if (!matches_prefix) {
+                    if (line.len > 0usize && !stream::writebytes(c::stdout, line.data, line.len)) {
+                        status = 1;
+                    };
+                    if (terminated && c::fputc(10i32, c::stdout) == -1i32) {
+                        status = 1;
+                    };
+                } else {
+                    let content_start: usize = prefix.len;
+                    let content_len: usize = line.len - content_start;
+                    let mut one_line: [1]FmtLine;
+                    one_line[0usize] = FmtLine {
+                        data = ((&line.data[content_start]) as *u8),
+                        len = content_len,
+                        cap = 0usize,
+                    };
+                    if (!emit_paragraph((&one_line[0usize]) as *FmtLine, 1usize, width, goal, uniform, crown, tagged, split_only, prefix)) {
+                        status = 1;
+                    };
+                };
+                continue;
+            };
+
+            let prefix_length: usize = prefix.len;
+            let mut blank_start: usize = prefix_length;
+            while (blank_start < line.len && fmt_space(line.data[blank_start])) {
+                blank_start += 1usize;
+            };
+            if (blank_start == line.len) {
+                if (para_count > 0usize) {
+                    if (!emit_paragraph(para_lines, para_count, width, goal, uniform, crown, tagged, split_only, prefix)) {
+                        status = 1;
+                    };
+                    for (let k in 0usize..para_count) {
+                        mem::freeptr[u8](para_lines[k].data);
+                    };
+                    para_count = 0usize;
+                };
+                if (prefix_length > 0usize && !stream::writebytes(c::stdout, prefix.data as *u8, prefix_length)) {
+                    status = 1;
+                };
+                if (c::fputc(10i32, c::stdout) == -1i32) {
+                    status = 1;
+                };
+                continue;
+            };
+
+            let item_len: usize = line.len - prefix_length;
+            let copy_data: *u8 = mem::alloc[u8](item_len);
+            for (let b_i in 0usize..item_len) {
+                copy_data[b_i] = line.data[prefix_length + b_i];
+            };
+            if (para_count == para_cap) {
+                let next_cap: usize = para_cap * 2usize;
+                para_lines = mem::reallocbuf[FmtLine](para_lines, next_cap);
+                para_cap = next_cap;
+            };
+            para_lines[para_count] = FmtLine {
+                data = copy_data,
+                len = item_len,
+                cap = item_len,
+            };
+            para_count += 1usize;
+        };
+
+        if (para_count > 0usize) {
+            if (!emit_paragraph(para_lines, para_count, width, goal, uniform, crown, tagged, split_only, prefix)) {
+                status = 1;
+            };
+            for (let k in 0usize..para_count) {
+                mem::freeptr[u8](para_lines[k].data);
+            };
+            para_count = 0usize;
+        };
+
+        if (!is_stdin) {
+            stream::closefile(fp);
+        };
+    };
+
+    mem::freeptr[FmtLine](para_lines);
+    mem::freeptr[u8](line.data);
+    if (!stream::finishoutput("fmt")) { status = 1; };
+    return status;
 };
