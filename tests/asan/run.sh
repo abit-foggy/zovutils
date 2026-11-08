@@ -17,4 +17,5 @@ chmod +x "$wrapper_dir/cc"
 PATH="$wrapper_dir:$PATH" ZOVUTILS_REAL_CC="$cc_path" \
     "${ZOVC:-zovc}" build --release
 ASAN_OPTIONS="${ASAN_OPTIONS:-detect_leaks=1:abort_on_error=1}" \
+GNU_COREUTILS_DIR="${GNU_COREUTILS_DIR:-/tmp/zovutils-coreutils-9.11/bin}" \
     python3 tests/parity/run.py
