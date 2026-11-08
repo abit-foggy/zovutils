@@ -66,6 +66,22 @@ static inline int zov_errno_is_enoent(int err) {
     return err == ENOENT;
 }
 
+static inline int zov_errno_is_enotempty(int err) {
+#ifdef EEXIST
+    return err == ENOTEMPTY || err == EEXIST;
+#else
+    return err == ENOTEMPTY;
+#endif
+}
+
+static inline int zov_errno_is_enotdir(int err) {
+    return err == ENOTDIR;
+}
+
+static inline int zov_errno_is_eexist(int err) {
+    return err == EEXIST;
+}
+
 static inline int zov_errno_eio(void) {
     return EIO;
 }

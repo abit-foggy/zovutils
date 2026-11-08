@@ -1,10 +1,194 @@
 use std::env as args;
-use <rmdir_backend.h> as backend;
+use std::io as io;
+use std::vec;
+use <stdio.h> as c;
+use <unistd.h> as u;
+use <string.h> as strc;
+use <stdlib.h> as stdlib;
+use <platform_errno.h> as platform_errno;
+use <platform_quote.h> as platform_quote;
+
+fn is_option_prefix(arg: str, opt: str) bool = {
+    if (arg.len < 3usize || arg.len > opt.len) { return false; };
+    for (let i in 0usize..arg.len) {
+        if (arg.data[i] != opt.data[i]) { return false; };
+    };
+    return true;
+};
+
+fn print_help() = {
+    c::fputs("Usage: rmdir [OPTION]... DIRECTORY...\nRemove the DIRECTORY(ies), if they are empty.\n\n      --ignore-fail-on-non-empty\n         ignore each failure to remove a non-empty directory\n  -p, --parents\n         remove DIRECTORY and its ancestors;\n         e.g., 'rmdir -p a/b' is similar to 'rmdir a/b a'\n  -v, --verbose\n         output a diagnostic for every directory processed\n      --help\n         display this help and exit\n      --version\n         output version information and exit\n\nReport bugs to: bug-coreutils@gnu.org\nGNU coreutils home page: <https://www.gnu.org/software/coreutils/>\nGeneral help using GNU software: <https://www.gnu.org/gethelp/>\nReport any translation bugs to <https://translationproject.org/team/>\nFull documentation <https://www.gnu.org/software/coreutils/rmdir>\nor available locally via: info '(coreutils) rmdir invocation'\n", c::stdout);
+};
+
+fn remove_one(path: *i8, verbose: bool, ignore_nonempty: bool, ancestor: bool) bool = {
+    if (verbose) {
+        c::fputs("rmdir: removing directory, ", c::stdout);
+        platform_quote::zov_quote_shell(c::stdout, path);
+        c::fputc(10i32, c::stdout);
+    };
+    platform_errno::zov_errno_set(0i32);
+    if (u::rmdir(path) == 0i32) {
+        return true;
+    };
+    let error: i32 = platform_errno::zov_errno_value();
+    if (ignore_nonempty && platform_errno::zov_errno_is_enotempty(error) != 0i32) {
+        return true;
+    };
+    let ancestor_error: bool = ancestor && platform_errno::zov_errno_is_enotdir(error) == 0i32 && platform_errno::zov_errno_is_enoent(error) == 0i32;
+    if (ancestor_error) {
+        c::fputs("rmdir: failed to remove directory ", c::stderr);
+    } else {
+        c::fputs("rmdir: failed to remove ", c::stderr);
+    };
+    platform_quote::zov_quote_shell(c::stderr, path);
+    c::fprintf(c::stderr, ": %s\n", strc::strerror(error));
+    return false;
+};
+
+fn rmdir_path(path: str, parents: bool, verbose: bool, ignore_nonempty: bool) bool = {
+    let mut copy: vec::Vec[u8] = vec::new[u8]();
+    for (let i in 0usize..path.len) {
+        copy.push(path.data[i]);
+    };
+    copy.push(0u8);
+    let mut length: usize = path.len;
+    while (length > 1usize && copy.get(length - 1usize) == 47u8) { // '/'
+        length -= 1usize;
+        copy.set(length, 0u8);
+    };
+    let mut ok: bool = true;
+    let mut ancestor: bool = false;
+    while (true) {
+        let ptr: *i8 = (copy.data!) as *i8;
+        if (!remove_one(ptr, verbose, ignore_nonempty, ancestor)) {
+            ok = false;
+            break;
+        };
+        if (!parents) { break; };
+        while (length > 1usize && copy.get(length - 1usize) == 47u8) {
+            length -= 1usize;
+            copy.set(length, 0u8);
+        };
+        let mut slash: usize = length;
+        while (slash > 0usize && copy.get(slash - 1usize) != 47u8) {
+            slash -= 1usize;
+        };
+        if (slash == 0usize) { break; };
+        if (slash == 1usize) {
+            copy.set(1usize, 0u8);
+            length = 1usize;
+        } else {
+            length = slash - 1usize;
+            copy.set(length, 0u8);
+            while (length > 1usize && copy.get(length - 1usize) == 47u8) {
+                length -= 1usize;
+                copy.set(length, 0u8);
+            };
+        };
+        ancestor = true;
+    };
+    return ok;
+};
 
 export fn run(start: usize, argc: usize) i32 = {
-    let count: usize = argc - start;
-    if (count > 4096usize) { return 1; };
-    let mut argv: [4096]*i8;
-    for (let i in 0usize..count) { argv[i] = args::argat(start + i).data as *i8; };
-    return backend::zov_rmdir_run(count as i32, (&argv[0usize]) as **i8);
+    let mut parents: bool = false;
+    let mut verbose: bool = false;
+    let mut ignore_nonempty: bool = false;
+    let mut options_done: bool = false;
+    let mut paths: vec::Vec[str] = vec::new[str]();
+
+    let mut i: usize = start;
+    while (i < argc) {
+        let a: str = args::argat(i);
+        if (!options_done && a.len == 2usize && a.data[0usize] == 45u8 && a.data[1usize] == 45u8) { // "--"
+            options_done = true;
+            i += 1usize;
+            continue;
+        };
+        if (!options_done && a.len >= 2usize && a.data[0usize] == 45u8 && a.data[1usize] == 45u8) { // "--..."
+            let mut eq_pos: usize = a.len;
+            for (let j in 2usize..a.len) {
+                if (a.data[j] == 61u8) { // '='
+                    eq_pos = j;
+                    break;
+                };
+            };
+            let key: str = a[0..eq_pos];
+            let has_eq: bool = eq_pos < a.len;
+
+            if (is_option_prefix(key, "--help") ||
+                is_option_prefix(key, "--version") ||
+                is_option_prefix(key, "--parents") ||
+                is_option_prefix(key, "--verbose") ||
+                is_option_prefix(key, "--ignore-fail-on-non-empty")) {
+                let mut name: str = "--help";
+                if (is_option_prefix(key, "--version")) { name = "--version"; }
+                else if (is_option_prefix(key, "--parents")) { name = "--parents"; }
+                else if (is_option_prefix(key, "--verbose")) { name = "--verbose"; }
+                else if (is_option_prefix(key, "--ignore-fail-on-non-empty")) { name = "--ignore-fail-on-non-empty"; };
+
+                if (has_eq) {
+                    c::fprintf(c::stderr, "rmdir: option '%s' doesn't allow an argument\nTry 'rmdir --help' for more information.\n", name.data as *i8);
+                    return 1i32;
+                };
+                if (is_option_prefix(key, "--help")) {
+                    print_help();
+                    return 0i32;
+                };
+                if (is_option_prefix(key, "--version")) {
+                    io::println("rmdir (zovutils) 0.10.61");
+                    return 0i32;
+                };
+                if (is_option_prefix(key, "--parents")) {
+                    parents = true;
+                } else if (is_option_prefix(key, "--verbose")) {
+                    verbose = true;
+                } else {
+                    ignore_nonempty = true;
+                };
+                i += 1usize;
+                continue;
+            };
+            c::fprintf(c::stderr, "rmdir: unrecognized option '%s'\nTry 'rmdir --help' for more information.\n", a.data as *i8);
+            return 1i32;
+        };
+        if (!options_done && a.len > 1usize && a.data[0usize] == 45u8) { // short option
+            for (let j in 1usize..a.len) {
+                let ch: u8 = a.data[j];
+                if (ch == 112u8) { // 'p'
+                    parents = true;
+                } else if (ch == 118u8) { // 'v'
+                    verbose = true;
+                } else {
+                    c::fprintf(c::stderr, "rmdir: invalid option -- '%c'\nTry 'rmdir --help' for more information.\n", ch as i32);
+                    return 1i32;
+                };
+            };
+            i += 1usize;
+            continue;
+        };
+        paths.push(a);
+        let pc: nullable *i8 = stdlib::getenv("POSIXLY_CORRECT");
+        if (pc != null && (pc!)[0usize] != 0i8) {
+            options_done = true;
+        };
+        i += 1usize;
+    };
+
+    if (paths.len() == 0usize) {
+        c::fputs("rmdir: missing operand\nTry 'rmdir --help' for more information.\n", c::stderr);
+        return 1i32;
+    };
+
+    let mut status: i32 = 0i32;
+    for (let p in 0usize..paths.len()) {
+        if (!rmdir_path(paths.get(p), parents, verbose, ignore_nonempty)) {
+            status = 1i32;
+        };
+    };
+
+    if (c::fflush(c::stdout) != 0i32) {
+        return 1i32;
+    };
+    return status;
 };
