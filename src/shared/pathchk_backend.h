@@ -13,7 +13,7 @@ static inline int zov_pathchk_run(int argc, int8_t **argv) {
         const char *a = (const char *)argv[i];
         if (options && !strcmp(a, "--")) { options = 0; continue; }
         if (options && !strcmp(a, "--help")) { puts("Usage: pathchk [OPTION]... NAME...\nDiagnose invalid or non-portable file names.\n\n  -p     check for most POSIX systems\n  -P     check for empty names and leading \"-\"\n      --portability  check for all POSIX systems (equivalent to -p -P)\n      --help         display this help and exit\n      --version      output version information and exit\n\nReport bugs to: bug-coreutils@gnu.org\nGNU coreutils home page: <https://www.gnu.org/software/coreutils/>\nGeneral help using GNU software: <https://www.gnu.org/gethelp/>\nReport any translation bugs to <https://translationproject.org/team/>\nFull documentation <https://www.gnu.org/software/coreutils/pathchk>\nor available locally via: info '(coreutils) pathchk invocation'"); return 0; }
-        if (options && !strcmp(a, "--version")) { puts("pathchk (zovutils) 0.10.38"); return 0; }
+        if (options && !strcmp(a, "--version")) { puts("pathchk (zovutils) 0.10.40"); return 0; }
         if (options && (!strcmp(a, "--portability"))) { portable = strict = 1; continue; }
         if (options && a[0] == '-' && a[1] && a[1] != '-') {
             for (size_t j = 1; a[j]; ++j) { if (a[j] == 'p') portable = 1; else if (a[j] == 'P') strict = 1; else { fprintf(stderr, "pathchk: invalid option -- '%c'\nTry 'pathchk --help' for more information.\n", a[j]); return 1; } }

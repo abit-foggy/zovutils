@@ -33,7 +33,7 @@ static inline int zov_tee_run(int argc,char**argv) {
         const char*a=argv[i];
         if(!end&&!strcmp(a,"--")){end=1;continue;}
         if(!end&&(!strcmp(a,"--help")||!strcmp(a,"--version"))) {
-            if(!strcmp(a,"--version"))puts("tee (zovutils) 0.10.38");
+            if(!strcmp(a,"--version"))puts("tee (zovutils) 0.10.40");
             else puts("Usage: tee [OPTION]... [FILE]...\nCopy standard input to each FILE, and also to standard output.\n  -a, --append              append to the given FILEs, do not overwrite\n  -i, --ignore-interrupts   ignore interrupt signals\n  -p                        operate in warn-nopipe mode with pipes\n      --output-error[=MODE] set behavior on write error\n      --help                display this help and exit\n      --version             output version information and exit");
             free(names);return 0;
         }

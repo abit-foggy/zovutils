@@ -21,7 +21,7 @@ static inline int zov_basenc_run(const char *program, int argc, char **argv) {
     for (int i=0;i<argc;i++) {
         const char *a=argv[i];
         if (!strcmp(a,"--help")) { fprintf(stdout,"Usage: %s [OPTION]... [FILE]\nBase-encode or decode FILE, or standard input, to standard output.\n  -d, --decode          decode data\n  -i, --ignore-garbage  when decoding, ignore non-alphabet characters\n  -w, --wrap=COLS       wrap encoded lines after COLS character (default 76)\n      --help            display this help and exit\n      --version         output version information and exit\n",program); return 0; }
-        if (!strcmp(a,"--version")) { printf("%s (zovutils) 0.10.38\n",program); return 0; }
+        if (!strcmp(a,"--version")) { printf("%s (zovutils) 0.10.40\n",program); return 0; }
         if (!strcmp(a,"-d")||!strcmp(a,"--decode")) {decode=1;continue;}
         if (!strcmp(a,"-i")||!strcmp(a,"--ignore-garbage")) {ignore=1;continue;}
         if (!strcmp(program,"basenc")&&(!strcmp(a,"--base64url"))) {mode=0;url=1;continue;}
@@ -55,7 +55,29 @@ static inline int zov_basenc_run(const char *program, int argc, char **argv) {
     else if(mode==4||mode==5){unsigned byte=0,nb=0;for(size_t i=0;i<n;i++){unsigned char c=data[i];if(c=='\n'||c=='\r'||c==' '||c=='\t')continue;if(c!='0'&&c!='1'){if(ignore)continue;fprintf(stderr,"%s: invalid input\n",program);status=1;break;}unsigned v=(unsigned)(c-'0');if(mode==4)byte=(byte<<1)|v;else byte|=v<<nb;nb++;if(nb==8){putchar((int)byte);byte=0;nb=0;}}if(!status&&nb){fprintf(stderr,"%s: invalid input\n",program);status=1;}}
     else if(mode==6){static const char*abc="123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";size_t zeros=0,pos=0;while(pos<n&&(data[pos]=='\n'||data[pos]=='\r'||data[pos]==' '||data[pos]=='\t'))pos++;while(pos<n&&data[pos]=='1'){zeros++;pos++;}size_t cap=n+1;unsigned char*bytes=(unsigned char*)calloc(cap,1);if(!bytes){free(data);return 1;}size_t used=0;for(;pos<n;pos++){unsigned char c=data[pos];if(c=='\n'||c=='\r'||c==' '||c=='\t')continue;const char*q=strchr(abc,c);if(!q){if(ignore)continue;fprintf(stderr,"%s: invalid input\n",program);status=1;break;}unsigned carry=(unsigned)(q-abc);size_t j=0;for(size_t k=cap;k>0&&(carry||j<used);k--,j++){carry+=58u*bytes[k-1];bytes[k-1]=(unsigned char)(carry&255u);carry>>=8;}used=j;}if(!status){for(size_t i=0;i<zeros;i++)putchar(0);size_t first=cap-used;while(first<cap&&!bytes[first])first++;for(size_t i=first;i<cap;i++)putchar(bytes[i]);}free(bytes);}
     else if(mode==7){static const char*abc="0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ.-:+=^!/*?&<>()[]{}@%$#";size_t len=0;for(size_t i=0;i<n;i++)if(data[i]!='\n'&&data[i]!='\r'&&data[i]!=' '&&data[i]!='\t')len++;if(len%5){fprintf(stderr,"%s: invalid input\n",program);status=1;}else{uint64_t value=0;unsigned count=0;for(size_t i=0;i<n;i++){unsigned char c=data[i];if(c=='\n'||c=='\r'||c==' '||c=='\t')continue;const char*q=strchr(abc,c);if(!q){if(ignore)continue;fprintf(stderr,"%s: invalid input\n",program);status=1;break;}value=value*85u+(uint64_t)(q-abc);if(++count==5){if(value>0xffffffffULL){fprintf(stderr,"%s: invalid input\n",program);status=1;break;}putchar((int)(value>>24));putchar((int)(value>>16));putchar((int)(value>>8));putchar((int)value);value=0;count=0;}}}}
-    else {unsigned width=mode==1||mode==2?5u:6u,bits=0,nb=0;int ended=0;for(size_t i=0;i<n;i++){unsigned char c=data[i];if(c=='='){ended=1;continue;}int v=-1;if(mode==1){if(c>='A'&&c<='Z')v=c-'A';else if(c>='a'&&c<='z')v=c-'a';else if(c>='2'&&c<='7')v=c-'2'+26;}else if(mode==2){if(c>='0'&&c<='9')v=c-'0';else if(c>='A'&&c<='V')v=c-'A'+10;else if(c>='a'&&c<='v')v=c-'a'+10;}else v=zov_b64_value(c,url,ignore);if(v==-2||c=='\n'||c=='\r'||c=='\t'||c==' ')continue;if(v<0||ended){if(ignore)continue;fprintf(stderr,"%s: invalid input\n",program);status=1;break;}bits=(bits<<width)|(unsigned)v;nb+=width;if(nb>=8){nb-=8;putchar((bits>>nb)&255);}}}
+    else {
+        unsigned width=mode==1||mode==2?5u:6u,bits=0,nb=0,symbols=0,padding=0,last=0;
+        int ended=0;
+        for(size_t i=0;i<n;i++){
+            unsigned char c=data[i];
+            if(c=='='){ended=1;padding++;continue;}
+            int v=-1;
+            if(mode==1){if(c>='A'&&c<='Z')v=c-'A';else if(c>='a'&&c<='z')v=c-'a'+26;else if(c>='2'&&c<='7')v=c-'2'+26;}
+            else if(mode==2){if(c>='0'&&c<='9')v=c-'0';else if(c>='A'&&c<='V')v=c-'A'+10;else if(c>='a'&&c<='v')v=c-'a'+10;}
+            else v=zov_b64_value(c,url,ignore);
+            if(v==-2||c=='\n'||c=='\r'||c=='\t'||c==' ')continue;
+            if(v<0||ended){if(ignore)continue;fprintf(stderr,"%s: invalid input\n",program);status=1;break;}
+            if(mode==0){symbols++;last=(unsigned)v;}
+            bits=(bits<<width)|(unsigned)v;nb+=width;
+            if(nb>=8){nb-=8;putchar((bits>>nb)&255);}
+        }
+        if(!status&&mode==0){
+            unsigned rem=symbols%4;
+            int bad=padding ? !((rem==2&&padding==2&&(last&15u)==0)||(rem==3&&padding==1&&(last&3u)==0))
+                            : (rem==1||(rem==2&&(last&15u)!=0)||(rem==3&&(last&3u)!=0));
+            if(bad){fprintf(stderr,"%s: invalid input\n",program);status=1;}
+        }
+    }
 #undef OUT
     if(ferror(stdout))status=1;free(data);return status;
 }

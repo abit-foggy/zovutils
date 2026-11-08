@@ -98,7 +98,7 @@ static inline int zov_readlink_run(int argc, int8_t **argv) {
             if (RL_LONG("--help") || RL_LONG("--version")) {
                 const char *name = RL_LONG("--help") ? "--help" : "--version";
                 if (eq) { fprintf(stderr, "readlink: option '%s' doesn't allow an argument\nTry 'readlink --help' for more information.\n", name); free(paths); return 1; }
-                if (strcmp(name, "--help") == 0) zov_readlink_help(); else puts("readlink (zovutils) 0.10.38");
+                if (strcmp(name, "--help") == 0) zov_readlink_help(); else puts("readlink (zovutils) 0.10.40");
                 free(paths); return 0;
             }
             if (RL_LONG("--canonicalize")) { mode = 1; continue; }
