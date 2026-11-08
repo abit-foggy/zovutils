@@ -93,11 +93,10 @@ fn od_print_c(ch: u8, out_buf: *u8) usize = {
     if (ch == 12u8) { out_buf[0usize] = 92u8; out_buf[1usize] = 102u8; return 2usize; };
     if (ch == 13u8) { out_buf[0usize] = 92u8; out_buf[1usize] = 114u8; return 2usize; };
     if (ch >= 32u8 && ch < 127u8) { out_buf[0usize] = ch; return 1usize; };
-    out_buf[0usize] = 92u8;
-    out_buf[1usize] = 48u8 + ((ch / 64u8) & 7u8);
-    out_buf[2usize] = 48u8 + ((ch / 8u8) & 7u8);
-    out_buf[3usize] = 48u8 + (ch & 7u8);
-    return 4usize;
+    out_buf[0usize] = 48u8 + ((ch / 64u8) & 7u8);
+    out_buf[1usize] = 48u8 + ((ch / 8u8) & 7u8);
+    out_buf[2usize] = 48u8 + (ch & 7u8);
+    return 3usize;
 };
 
 fn is_printable(ch: u8) bool = {
