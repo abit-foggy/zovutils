@@ -331,6 +331,23 @@ static inline void zov_format_time(int64_t t, char *buf, size_t buflen) {
     snprintf(buf, buflen, "%s.000000000 +0000", b);
 }
 
+static inline int zov_format_strftime(int64_t sec, int utc, const char *format, char *buf, size_t buflen) {
+    time_t t = (time_t)sec;
+    struct tm tmv;
+    struct tm *pt = utc ? gmtime_r(&t, &tmv) : localtime_r(&t, &tmv);
+    if (!pt) return -1;
+    size_t n = strftime(buf, buflen, format, pt);
+    if (!n && *format) return -2;
+    return 0;
+}
+
+static inline int zov_stat_mtime(const char *path, int64_t *mtime_out) {
+    struct stat st;
+    if (stat(path, &st) != 0) return errno;
+    if (mtime_out) *mtime_out = (int64_t)st.st_mtime;
+    return 0;
+}
+
 static inline int zov_linkat(const char *source, const char *destination, int follow) {
     if (linkat(AT_FDCWD, source, AT_FDCWD, destination, follow ? AT_SYMLINK_FOLLOW : 0) != 0) {
         return errno;

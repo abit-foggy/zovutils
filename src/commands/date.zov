@@ -1,9 +1,160 @@
 use std::env as args;
-use <date_backend.h> as backend;
+use std::io;
+use <stdio.h> as c;
+use <string.h> as strc;
+use <stdlib.h> as stdlib;
+use <platform_stat.h> as platform_stat;
+
+fn parse_i64(s: str, out: &mut i64) bool = {
+    if (s.len == 0usize) { return false; };
+    let mut i: usize = 0usize;
+    let mut neg: bool = false;
+    if (s.data[0usize] == 45u8) { // '-'
+        neg = true;
+        i += 1usize;
+    } else if (s.data[0usize] == 43u8) { // '+'
+        i += 1usize;
+    };
+    if (i >= s.len) { return false; };
+    let mut val: i64 = 0i64;
+    while (i < s.len) {
+        let b: u8 = s.data[i];
+        if (b < 48u8 || b > 57u8) { return false; };
+        val = val * 10i64 + ((b - 48u8) as i64);
+        i += 1usize;
+    };
+    if (neg) {
+        *out = -val;
+    } else {
+        *out = val;
+    };
+    return true;
+};
+
 export fn run(start: usize, argc: usize) i32 = {
-    let count: usize = argc - start;
-    if (count > 4096usize) { return 1; };
-    let mut argv: [4096]*i8;
-    for (let i in 0usize..count) { argv[i] = args::argat(start + i).data as *i8; };
-    return backend::zov_date_run(count as i32, (&argv[0usize]) as **i8);
+    let mut utc: i32 = 0i32;
+    let mut datearg: str = "";
+    let mut has_datearg: bool = false;
+    let mut ref: str = "";
+    let mut has_ref: bool = false;
+    let mut fmt: str = "";
+    let mut has_fmt: bool = false;
+
+    let mut i: usize = start;
+    while (i < argc) {
+        let a: str = args::argat(i);
+        if (a == "--help") {
+            io::println("Usage: date [OPTION]... [+FORMAT]\n" +
+                        "Display the current time in the given FORMAT.\n" +
+                        "  -u, --utc, --universal  print or set Coordinated Universal Time (UTC)\n" +
+                        "  -d, --date=STRING       display time described by STRING, not now\n" +
+                        "  -r, --reference=FILE    display the last modification time of FILE\n" +
+                        "      --help              display this help and exit\n" +
+                        "      --version           output version information and exit");
+            return 0i32;
+        };
+        if (a == "--version") {
+            io::println("date (zovutils) 0.10.61");
+            return 0i32;
+        };
+        if (a == "-u" || a == "--utc" || a == "--universal") {
+            utc = 1i32;
+            i += 1usize;
+            continue;
+        };
+        if (a == "-d" || a == "--date") {
+            if (i + 1usize >= argc) {
+                c::fputs("date: option requires an argument -- 'd'\n\0".data as *i8, c::stderr);
+                return 1i32;
+            };
+            i += 1usize;
+            datearg = args::argat(i);
+            has_datearg = true;
+            i += 1usize;
+            continue;
+        };
+        if (a.len >= 7usize && a[0usize..7usize] == "--date=") {
+            datearg = a[7usize..a.len];
+            has_datearg = true;
+            i += 1usize;
+            continue;
+        };
+        if (a == "-r" || a == "--reference") {
+            if (i + 1usize >= argc) {
+                c::fputs("date: option requires an argument -- 'r'\n\0".data as *i8, c::stderr);
+                return 1i32;
+            };
+            i += 1usize;
+            ref = args::argat(i);
+            has_ref = true;
+            i += 1usize;
+            continue;
+        };
+        if (a.len >= 12usize && a[0usize..12usize] == "--reference=") {
+            ref = a[12usize..a.len];
+            has_ref = true;
+            i += 1usize;
+            continue;
+        };
+        if (a.len > 0usize && a.data[0usize] == 43u8) { // '+'
+            if (has_fmt) {
+                c::fputs("date: multiple output formats specified\n\0".data as *i8, c::stderr);
+                return 1i32;
+            };
+            fmt = a[1usize..a.len];
+            has_fmt = true;
+            i += 1usize;
+            continue;
+        };
+        if (a.len > 1usize && a.data[0usize] == 45u8) {
+            c::fprintf(c::stderr, "date: unrecognized option '%s'\nTry 'date --help' for more information.\n\0".data as *i8, a.data as *i8);
+            return 1i32;
+        };
+        c::fprintf(c::stderr, "date: extra operand '%s'\nTry 'date --help' for more information.\n\0".data as *i8, a.data as *i8);
+        return 1i32;
+    };
+
+    let mut t: i64 = platform_stat::zov_time_now_sec();
+    if (has_ref) {
+        let mut mtime: i64 = 0i64;
+        let rc: i32 = platform_stat::zov_stat_mtime(ref.data as *i8, &mut mtime);
+        if (rc != 0i32) {
+            c::fprintf(c::stderr, "date: %s: %s\n\0".data as *i8, ref.data as *i8, strc::strerror(rc));
+            return 1i32;
+        };
+        t = mtime;
+    };
+
+    if (has_datearg) {
+        if (datearg.len > 1usize && datearg.data[0usize] == 64u8) { // '@'
+            let sec_str: str = datearg[1usize..datearg.len];
+            let mut sec_val: i64 = 0i64;
+            if (!parse_i64(sec_str, &mut sec_val)) {
+                c::fprintf(c::stderr, "date: invalid date '%s'\n\0".data as *i8, datearg.data as *i8);
+                return 1i32;
+            };
+            t = sec_val;
+        } else {
+            c::fprintf(c::stderr, "date: invalid date '%s'\n\0".data as *i8, datearg.data as *i8);
+            return 1i32;
+        };
+    };
+
+    let mut out: [8192]u8;
+    let mut format_str: str = "%a %b %e %H:%M:%S %Z %Y\0";
+    if (has_fmt) {
+        format_str = fmt;
+    };
+    let rc: i32 = platform_stat::zov_format_strftime(t, utc, format_str.data as *i8, (&mut out[0usize]) as *i8, 8192usize);
+    if (rc == -1i32) {
+        c::fputs("date: cannot represent the date\n\0".data as *i8, c::stderr);
+        return 1i32;
+    };
+    if (rc == -2i32) {
+        c::fputs("date: format string is too long\n\0".data as *i8, c::stderr);
+        return 1i32;
+    };
+
+    c::puts((&mut out[0usize]) as *i8);
+    return 0i32;
 };
