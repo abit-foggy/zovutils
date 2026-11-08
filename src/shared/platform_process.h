@@ -562,5 +562,17 @@ static inline int zov_stdbuf_setup_preload_slice(
     return 0;
 }
 
+static inline FILE *zov_popen_write(const char *command) {
+    return popen(command, "w");
+}
+
+static inline int zov_pclose(FILE *pipe) {
+    return pclose(pipe);
+}
+
+static inline int zov_setenv(const char *name, const char *value, int overwrite) {
+    return setenv(name, value, overwrite);
+}
+
 #endif
 
