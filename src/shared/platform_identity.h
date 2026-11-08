@@ -116,4 +116,22 @@ static inline int zov_get_current_groups(uint32_t *groups_out, int max_groups) {
     return count;
 }
 
+static inline int zov_get_security_context(char *buf, size_t buf_sz) {
+    FILE *f = fopen("/proc/self/attr/current", "r");
+    if (!f) return errno;
+    if (!fgets(buf, buf_sz, f)) {
+        int err = errno;
+        fclose(f);
+        return err ? err : EIO;
+    }
+    fclose(f);
+    buf[strcspn(buf, "\r\n")] = '\0';
+    return 0;
+}
+
+static inline int zov_selinux_active(void) {
+    return access("/sys/fs/selinux", F_OK) == 0;
+}
+
 #endif
+

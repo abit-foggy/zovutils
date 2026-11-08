@@ -1,9 +1,95 @@
 use std::env as args;
-use <groups_backend.h> as backend;
+use std::io;
+use <stdio.h> as c;
+use <string.h> as strc;
+use <platform_errno.h> as platform_errno;
+use <platform_identity.h> as platform_identity;
+
+fn print_group(gid: u32, numeric: bool) void = {
+    if (!numeric) {
+        let name: nullable *i8 = platform_identity::zov_group_name(gid);
+        if (name != null) {
+            c::fputs(name!, c::stdout);
+            return;
+        };
+    };
+    c::printf("%lu\0".data as *i8, gid as u64);
+};
+
 export fn run(start: usize, argc: usize) i32 = {
-    let count: usize = argc - start;
-    if (count > 4096usize) { return 1; };
-    let mut argv: [4096]*i8;
-    for (let i in 0usize..count) { argv[i] = args::argat(start + i).data as *i8; };
-    return backend::zov_groups_run(count as i32, (&argv[0usize]) as **i8);
+    let mut numeric: bool = false;
+    let mut user: str = "";
+    let mut user_set: bool = false;
+
+    let mut i: usize = start;
+    while (i < argc) {
+        let a: str = args::argat(i);
+        if (a == "--help") {
+            io::println("Usage: groups [OPTION]... [USERNAME]...\n" +
+                        "Print the groups a user is in.\n" +
+                        "  -n, --numeric     print numeric group IDs instead of names\n" +
+                        "      --help        display this help and exit\n" +
+                        "      --version     output version information and exit");
+            return 0i32;
+        };
+        if (a == "--version") {
+            io::println("groups (zovutils) 0.10.61");
+            return 0i32;
+        };
+        if (a.len > 0usize && a.data[0usize] == 45u8 && a != "-") {
+            c::fprintf(c::stderr, "groups: unrecognized option '%s'\nTry 'groups --help' for more information.\n\0".data as *i8, a.data as *i8);
+            return 1i32;
+        };
+        if (user_set) {
+            c::fprintf(c::stderr, "groups: extra operand '%s'\nTry 'groups --help' for more information.\n\0".data as *i8, a.data as *i8);
+            return 1i32;
+        };
+        user = a;
+        user_set = true;
+        i += 1usize;
+    };
+
+    let mut primary_gid: u32 = 0u32;
+    let mut canonical_name: [256]u8;
+    if (user_set) {
+        if (platform_identity::zov_get_user_primary_gid(user.data as *i8, &mut primary_gid, (&mut canonical_name[0usize]) as *i8, 256usize) == 0i32) {
+            c::fprintf(c::stderr, "groups: '%s': no such user\n\0".data as *i8, user.data as *i8);
+            return 1i32;
+        };
+    } else {
+        primary_gid = platform_identity::zov_getgid();
+    };
+
+    let mut gs: [512]u32;
+    let mut count: i32 = 0i32;
+    if (user_set) {
+        let n: i32 = platform_identity::zov_get_user_groups((&mut canonical_name[0usize]) as *i8, primary_gid, (&mut gs[0usize]) as *u32, 512i32);
+        if (n < 0i32) {
+            c::fprintf(c::stderr, "groups: cannot get groups: %s\n\0".data as *i8, strc::strerror(platform_errno::zov_errno_value()));
+            return 1i32;
+        };
+        count = n;
+    } else {
+        let n: i32 = platform_identity::zov_get_current_groups((&mut gs[0usize]) as *u32, 512i32);
+        if (n < 0i32) {
+            c::fprintf(c::stderr, "groups: cannot get groups: %s\n\0".data as *i8, strc::strerror(platform_errno::zov_errno_value()));
+            return 1i32;
+        };
+        count = n;
+    };
+
+    if (user_set) {
+        c::printf("%s : \0".data as *i8, user.data as *i8);
+    };
+
+    print_group(primary_gid, numeric);
+    for (let idx in 0usize..(count as usize)) {
+        let gid: u32 = gs[idx];
+        if (gid != primary_gid) {
+            c::putchar(32i32);
+            print_group(gid, numeric);
+        };
+    };
+    c::putchar(10i32);
+    return 0i32;
 };
