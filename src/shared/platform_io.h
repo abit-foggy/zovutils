@@ -154,4 +154,8 @@ static inline int zov_wc_newline_backend(void) {
     return 0;
 }
 
+static inline int zov_fseeko(FILE *fp, int64_t offset, int whence) {
+    return fseeko(fp, (off_t)offset, whence);
+}
+
 #endif
