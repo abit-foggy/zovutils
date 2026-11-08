@@ -3,7 +3,7 @@ use <platform_errno.h> as platform_errno;
 use <unistd.h> as posix;
 use <platform_stat.h> as platform_stat;
 use <platform_locale.h> as platform_locale;
-use <wc_backend.h> as wc_backend;
+use <platform_io.h> as platform_io;
 
 export type StreamError = !i32;
 
@@ -42,11 +42,11 @@ export fn regularbytesremaining(fp: *c::FILE) i64 = {
 };
 
 export fn wcnewlinebackend() i32 = {
-    return wc_backend::zov_wc_newline_backend();
+    return platform_io::zov_wc_newline_backend();
 };
 
 export fn wccountnewlines(buf: *u8, len: usize) usize = {
-    return wc_backend::zov_wc_count_newlines(buf, len);
+    return platform_io::zov_wc_count_newlines(buf, len);
 };
 
 // Use read(2) for commands that must forward a partial pipe read immediately.
