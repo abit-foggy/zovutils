@@ -25,6 +25,9 @@ extern time_t timegm(struct tm *);
 #ifndef AT_SYMLINK_NOFOLLOW
 #define AT_SYMLINK_NOFOLLOW 0x100
 #endif
+#ifndef AT_SYMLINK_FOLLOW
+#define AT_SYMLINK_FOLLOW 0x400
+#endif
 #ifndef UTIME_NOW
 #define UTIME_NOW ((1l << 30) - 1l)
 #endif
@@ -324,6 +327,51 @@ static inline void zov_format_time(int64_t t, char *buf, size_t buflen) {
     char b[64];
     strftime(b, sizeof(b), "%Y-%m-%d %H:%M:%S", &tmv);
     snprintf(buf, buflen, "%s.000000000 +0000", b);
+}
+
+static inline int zov_linkat(const char *source, const char *destination, int follow) {
+    if (linkat(AT_FDCWD, source, AT_FDCWD, destination, follow ? AT_SYMLINK_FOLLOW : 0) != 0) {
+        return errno;
+    }
+    return 0;
+}
+
+static inline int zov_symlink(const char *target, const char *linkpath) {
+    if (symlink(target, linkpath) != 0) {
+        return errno;
+    }
+    return 0;
+}
+
+static inline int zov_unlink(const char *pathname) {
+    if (unlink(pathname) != 0) {
+        return errno;
+    }
+    return 0;
+}
+
+static inline int zov_rename(const char *oldpath, const char *newpath) {
+    if (rename(oldpath, newpath) != 0) {
+        return errno;
+    }
+    return 0;
+}
+
+static inline int zov_path_lstat_exists(const char *path) {
+    struct stat st;
+    return lstat(path, &st) == 0;
+}
+
+static inline int zov_path_stat_exists(const char *path) {
+    struct stat st;
+    return stat(path, &st) == 0;
+}
+
+static inline int zov_path_is_dir(const char *path, int follow) {
+    struct stat st;
+    int rc = follow ? stat(path, &st) : lstat(path, &st);
+    if (rc != 0) return 0;
+    return S_ISDIR(st.st_mode);
 }
 
 #endif

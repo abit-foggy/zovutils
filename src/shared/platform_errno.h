@@ -86,6 +86,18 @@ static inline int zov_errno_is_eexist(int err) {
     return err == EEXIST;
 }
 
+static inline int zov_errno_enoent(void) {
+    return ENOENT;
+}
+
+static inline int zov_errno_enotdir(void) {
+    return ENOTDIR;
+}
+
+static inline int zov_errno_eexist(void) {
+    return EEXIST;
+}
+
 static inline int zov_errno_eio(void) {
     return EIO;
 }

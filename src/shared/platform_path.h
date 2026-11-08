@@ -113,4 +113,72 @@ static inline long zov_path_name_max(const char *path) {
     return pathconf(path, _PC_NAME_MAX);
 }
 
+static inline int zov_path_relative_target(const char *source, const char *destination, char *output, size_t cap) {
+    char source_path[PATH_MAX];
+    if (realpath(source, source_path) == NULL) {
+        if (!zov_path_normalize(source, source_path, sizeof(source_path))) return 0;
+    }
+    char parent[PATH_MAX];
+    if (strlen(destination) >= sizeof(parent)) { errno = ENAMETOOLONG; return 0; }
+    strcpy(parent, destination);
+    char *slash = strrchr(parent, '/');
+    if (slash == NULL) strcpy(parent, ".");
+    else if (slash == parent) slash[1] = '\0';
+    else *slash = '\0';
+
+    char dest_path[PATH_MAX];
+    if (realpath(parent, dest_path) == NULL) {
+        if (!zov_path_normalize(parent, dest_path, sizeof(dest_path))) return 0;
+    }
+
+    char source_copy[PATH_MAX], dest_copy[PATH_MAX];
+    strcpy(source_copy, source_path);
+    strcpy(dest_copy, dest_path);
+
+    char *source_parts[PATH_MAX / 2];
+    char *dest_parts[PATH_MAX / 2];
+    size_t source_count = 0, dest_count = 0;
+    char *save_source = NULL, *save_dest = NULL;
+
+    for (char *part = strtok_r(source_copy, "/", &save_source); part != NULL; part = strtok_r(NULL, "/", &save_source)) {
+        if (source_count < sizeof(source_parts) / sizeof(source_parts[0]))
+            source_parts[source_count++] = part;
+    }
+    for (char *part = strtok_r(dest_copy, "/", &save_dest); part != NULL; part = strtok_r(NULL, "/", &save_dest)) {
+        if (dest_count < sizeof(dest_parts) / sizeof(dest_parts[0]))
+            dest_parts[dest_count++] = part;
+    }
+
+    size_t common = 0;
+    while (common < source_count && common < dest_count && strcmp(source_parts[common], dest_parts[common]) == 0) {
+        ++common;
+    }
+
+    size_t out = 0;
+    for (size_t i = common; i < dest_count; ++i) {
+        if (out != 0) {
+            if (out + 1 >= cap) { errno = ENAMETOOLONG; return 0; }
+            output[out++] = '/';
+        }
+        if (out + 2 >= cap) { errno = ENAMETOOLONG; return 0; }
+        output[out++] = '.'; output[out++] = '.';
+    }
+    for (size_t i = common; i < source_count; ++i) {
+        if (out != 0) {
+            if (out + 1 >= cap) { errno = ENAMETOOLONG; return 0; }
+            output[out++] = '/';
+        }
+        size_t part_len = strlen(source_parts[i]);
+        if (out + part_len >= cap) { errno = ENAMETOOLONG; return 0; }
+        memcpy(output + out, source_parts[i], part_len);
+        out += part_len;
+    }
+    if (out == 0) {
+        if (cap < 2) { errno = ENAMETOOLONG; return 0; }
+        output[out++] = '.';
+    }
+    output[out] = '\0';
+    return 1;
+}
+
 #endif

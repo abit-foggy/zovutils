@@ -1,10 +1,575 @@
 use std::env as args;
-use <ln_backend.h> as backend;
+use std::io;
+use std::vec;
+use <stdio.h> as c;
+use <string.h> as strc;
+use <stdlib.h> as stdlib;
+use <platform_errno.h> as platform_errno;
+use <platform_stat.h> as platform_stat;
+use <platform_path.h> as platform_path;
+use <platform_quote.h> as platform_quote;
+
+fn print_help() void = {
+    io::print("Usage: ln [OPTION]... [-T] TARGET LINK_NAME\n" +
+          "  or:  ln [OPTION]... TARGET\n" +
+          "  or:  ln [OPTION]... TARGET... DIRECTORY\n" +
+          "  or:  ln [OPTION]... -t DIRECTORY TARGET...\n" +
+          "In the 1st form, create a link to TARGET with the name LINK_NAME.\n" +
+          "In the 2nd form, create a link to TARGET in the current directory.\n" +
+          "In the 3rd and 4th forms, create links to each TARGET in DIRECTORY.\n" +
+          "Create hard links by default, symbolic links with --symbolic.\n" +
+          "By default, each destination (name of new link) should not already exist.\n" +
+          "When creating hard links, each TARGET must exist.  Symbolic links\n" +
+          "can hold arbitrary text; if later resolved, a relative link is\n" +
+          "interpreted in relation to its parent directory.\n\n" +
+          "Mandatory arguments to long options are mandatory for short options too.\n" +
+          "      --backup[=CONTROL]\n" +
+          "         make a backup of each existing destination file\n" +
+          "  -b\n" +
+          "         like --backup but does not accept an argument\n" +
+          "  -d, -F, --directory\n" +
+          "         allow the superuser to attempt to hard link directories,\n" +
+          "         if supported by the system\n" +
+          "  -f, --force\n" +
+          "         remove existing destination files\n" +
+          "  -i, --interactive\n" +
+          "         prompt whether to remove destinations\n" +
+          "  -L, --logical\n" +
+          "         dereference TARGETs that are symbolic links\n" +
+          "  -n, --no-dereference\n" +
+          "         treat LINK_NAME as a normal file\n" +
+          "         if it is a symbolic link to a directory\n" +
+          "  -P, --physical\n" +
+          "         make hard links directly to symbolic links\n" +
+          "  -r, --relative\n" +
+          "         with -s, create links relative to link location\n" +
+          "  -s, --symbolic\n" +
+          "         make symbolic links instead of hard links\n" +
+          "  -S, --suffix=SUFFIX\n" +
+          "         override the usual backup suffix\n" +
+          "  -t, --target-directory=DIRECTORY\n" +
+          "         specify the DIRECTORY in which to create the links\n" +
+          "  -T, --no-target-directory\n" +
+          "         treat LINK_NAME as a normal file always\n" +
+          "  -v, --verbose\n" +
+          "         print name of each linked file\n" +
+          "      --help\n" +
+          "         display this help and exit\n" +
+          "      --version\n" +
+          "         output version information and exit\n\n" +
+          "The backup suffix is '~', unless set with --suffix or SIMPLE_BACKUP_SUFFIX.\n" +
+          "The version control method may be selected via the --backup option or through\n" +
+          "the VERSION_CONTROL environment variable.  Here are the values:\n\n" +
+          "  none, off       never make backups (even if --backup is given)\n" +
+          "  numbered, t     make numbered backups\n" +
+          "  existing, nil   numbered if numbered backups exist, simple otherwise\n" +
+          "  simple, never   always make simple backups\n\n" +
+          "Using -s ignores -L and -P.  Otherwise, the last option specified controls\n" +
+          "behavior when a TARGET is a symbolic link, defaulting to -P.\n\n" +
+          "Report bugs to: bug-coreutils@gnu.org\n" +
+          "GNU coreutils home page: <https://www.gnu.org/software/coreutils/>\n" +
+          "General help using GNU software: <https://www.gnu.org/gethelp/>\n" +
+          "Report any translation bugs to <https://translationproject.org/team/>\n" +
+          "Full documentation <https://www.gnu.org/software/coreutils/ln>\n" +
+          "or available locally via: info '(coreutils) ln invocation'\n");
+};
+
+fn is_long_opt(arg: str, keylen: usize, name: str) bool = {
+    if (keylen <= 2usize) { return false; };
+    if (keylen > name.len) { return false; };
+    let sub: str = arg[0usize..keylen];
+    let nsub: str = name[0usize..keylen];
+    return sub == nsub;
+};
+
+fn parse_backup_control(value: str) i32 = {
+    if (value == "none" || value == "off") { return 4i32; };
+    if (value == "simple" || value == "never") { return 1i32; };
+    if (value == "numbered" || value == "t") { return 2i32; };
+    if (value == "existing" || value == "nil") { return 3i32; };
+    return -1i32;
+};
+
+fn get_basename(path: str) str = {
+    let mut len: usize = path.len;
+    while (len > 1usize) {
+        if (path[len - 1usize] == 47u8) { // '/'
+            len -= 1usize;
+        } else {
+            break;
+        };
+    };
+    let mut slash: usize = len;
+    while (slash > 0usize) {
+        if (path[slash - 1usize] == 47u8) {
+            break;
+        };
+        slash -= 1usize;
+    };
+    if (len <= slash) {
+        return "/";
+    };
+    return path[slash..len];
+};
+
+fn join_path(dir: str, name: str) String = {
+    if (dir.len == 0usize) { return String::from(name); };
+    if (dir[dir.len - 1usize] == 47u8) {
+        return dir + name;
+    };
+    return dir + "/" + name;
+};
+
+fn make_backup(path: str, suffix: str, control: i32) i32 = {
+    let mut next_number: i32 = 1i32;
+    let mut act_ctrl: i32 = control;
+    if (act_ctrl == 2i32 || act_ctrl == 3i32) {
+        for (let num in 1i32..100000i32) {
+            let mut cand_buf: [4096]u8;
+            c::snprintf((&mut cand_buf[0usize]) as *i8, 4096usize, "%s.~%d~\0".data as *i8, path.data as *i8, num);
+            let exists: bool = platform_stat::zov_path_lstat_exists((&cand_buf[0usize]) as *i8) != 0i32;
+            if (!exists) {
+                next_number = num;
+                break;
+            };
+            next_number = num + 1i32;
+        };
+        if (act_ctrl == 3i32) {
+            if (next_number == 1i32) {
+                act_ctrl = 1i32;
+            } else {
+                act_ctrl = 2i32;
+            };
+        };
+    };
+    let mut backup_buf: [4096]u8;
+    if (act_ctrl == 2i32) {
+        c::snprintf((&mut backup_buf[0usize]) as *i8, 4096usize, "%s.~%d~\0".data as *i8, path.data as *i8, next_number);
+    } else {
+        c::snprintf((&mut backup_buf[0usize]) as *i8, 4096usize, "%s%s\0".data as *i8, path.data as *i8, suffix.data as *i8);
+    };
+    return platform_stat::zov_rename(path.data as *i8, (&backup_buf[0usize]) as *i8);
+};
+
+fn report_error(path: str, target: str, symbolic: bool, err: i32) void = {
+    if (symbolic) {
+        c::fputs("ln: failed to create symbolic link ", c::stderr);
+    } else {
+        c::fputs("ln: failed to create hard link ", c::stderr);
+    };
+    platform_quote::zov_quote_shell(c::stderr, path.data as *i8);
+    let is_eexist: bool = platform_errno::zov_errno_is_eexist(err) != 0i32;
+    if (target.len > 0usize && !is_eexist) {
+        if (symbolic) {
+            c::fputs(" -> ", c::stderr);
+        } else {
+            c::fputs(" => ", c::stderr);
+        };
+        platform_quote::zov_quote_shell(c::stderr, target.data as *i8);
+    };
+    c::fprintf(c::stderr, ": %s\n", strc::strerror(err));
+};
+
+fn create_one(source: str, destination: str, symbolic: bool, logical: bool, force: bool, _no_dereference: bool, relative: bool, verbose: bool, backup: bool, backup_control: i32, suffix: str) i32 = {
+    if (!symbolic) {
+        let mut source_exists: bool = false;
+        if (logical) {
+            source_exists = platform_stat::zov_path_stat_exists(source.data as *i8) != 0i32;
+        } else {
+            source_exists = platform_stat::zov_path_lstat_exists(source.data as *i8) != 0i32;
+        };
+        if (!source_exists) {
+            c::fputs("ln: failed to access ", c::stderr);
+            platform_quote::zov_quote_shell(c::stderr, source.data as *i8);
+            c::fprintf(c::stderr, ": %s\n", strc::strerror(platform_errno::zov_errno_enoent()));
+            return 1i32;
+        };
+    };
+
+    let dest_exists: bool = platform_stat::zov_path_lstat_exists(destination.data as *i8) != 0i32;
+    if (dest_exists) {
+        if (backup) {
+            let berr: i32 = make_backup(destination, suffix, backup_control);
+            if (berr != 0i32) {
+                report_error(destination, source, symbolic, berr);
+                return 1i32;
+            };
+        } else if (force) {
+            let uerr: i32 = platform_stat::zov_unlink(destination.data as *i8);
+            let is_enoent: bool = platform_errno::zov_errno_is_enoent(uerr) != 0i32;
+            if (uerr != 0i32 && !is_enoent) {
+                report_error(destination, source, symbolic, uerr);
+                return 1i32;
+            };
+        };
+    };
+
+    let mut actual_source_ptr: *i8 = source.data as *i8;
+    let mut rel_buf: [4096]u8;
+    if (symbolic && relative) {
+        if (platform_path::zov_path_relative_target(source.data as *i8, destination.data as *i8, (&mut rel_buf[0usize]) as *i8, 4096usize) == 0i32) {
+            report_error(destination, source, symbolic, platform_errno::zov_errno_value());
+            return 1i32;
+        };
+        actual_source_ptr = (&mut rel_buf[0usize]) as *i8;
+    };
+
+    let mut err: i32 = 0i32;
+    if (symbolic) {
+        err = platform_stat::zov_symlink(actual_source_ptr, destination.data as *i8);
+    } else {
+        let mut follow_flag: i32 = 0i32;
+        if (logical) { follow_flag = 1i32; };
+        err = platform_stat::zov_linkat(source.data as *i8, destination.data as *i8, follow_flag);
+    };
+
+    if (err != 0i32) {
+        report_error(destination, source, symbolic, err);
+        return 1i32;
+    };
+
+    if (verbose) {
+        platform_quote::zov_quote_shell(c::stdout, destination.data as *i8);
+        if (symbolic) {
+            c::fputs(" -> ", c::stdout);
+        } else {
+            c::fputs(" => ", c::stdout);
+        };
+        platform_quote::zov_quote_shell(c::stdout, actual_source_ptr);
+        c::fputc(10i32, c::stdout);
+    };
+
+    return 0i32;
+};
 
 export fn run(start: usize, argc: usize) i32 = {
-    let count: usize = argc - start;
-    if (count > 4096usize) { return 1; };
-    let mut argv: [4096]*i8;
-    for (let i in 0usize..count) { argv[i] = args::argat(start + i).data as *i8; };
-    return backend::zov_ln_run(count as i32, (&argv[0usize]) as **i8);
+    let mut symbolic: bool = false;
+    let mut logical: bool = false;
+    let mut no_dereference: bool = false;
+    let mut force: bool = false;
+    let mut interactive: bool = false;
+    let mut verbose: bool = false;
+    let mut no_target_dir: bool = false;
+    let mut options_done: bool = false;
+    let mut backup: bool = false;
+    let mut backup_control: i32 = 0i32;
+    let mut relative: bool = false;
+    let mut target_dir: str = "";
+    let mut suffix: str = "~";
+
+    let env_suffix_res = args::get("SIMPLE_BACKUP_SUFFIX");
+    match (env_suffix_res) {
+        case let val: str => {
+            suffix = val;
+        },
+        case args::EnvNotFound => {},
+    };
+
+    let mut operands = vec::new[str]();
+
+    let mut i: usize = start;
+    while (i < argc) {
+        let arg: str = args::argat(i);
+        if (!options_done && arg == "--") {
+            options_done = true;
+            i += 1usize;
+            continue;
+        };
+
+        if (!options_done) {
+            let mut is_long: bool = false;
+            if (arg.len >= 2usize) {
+                let pfx: str = arg[0usize..2usize];
+                if (pfx == "--") {
+                    is_long = true;
+                };
+            };
+
+            if (is_long) {
+                let mut equal_pos: usize = arg.len;
+                for (let j in 2usize..arg.len) {
+                    if (arg[j] == 61u8) { // '='
+                        equal_pos = j;
+                        break;
+                    };
+                };
+                let keylen: usize = equal_pos;
+                let mut has_value: bool = false;
+                let mut value: str = "";
+                if (equal_pos < arg.len) {
+                    has_value = true;
+                    value = arg[(equal_pos + 1usize)..arg.len];
+                };
+
+                let is_help: bool = is_long_opt(arg, keylen, "--help");
+                let is_ver: bool = is_long_opt(arg, keylen, "--version");
+                if (is_help || is_ver) {
+                    if (has_value) {
+                        let mut optname: str = "--version";
+                        if (is_help) { optname = "--help"; };
+                        c::fprintf(c::stderr, "ln: option '%s' doesn't allow an argument\nTry 'ln --help' for more information.\n", optname.data as *i8);
+                        return 1i32;
+                    };
+                    if (is_help) {
+                        print_help();
+                        return 0i32;
+                    };
+                    io::println("ln (zovutils) 0.10.61");
+                    return 0i32;
+                };
+
+                if (is_long_opt(arg, keylen, "--backup")) {
+                    backup = true;
+                    if (has_value) {
+                        backup_control = parse_backup_control(value);
+                        if (backup_control < 0i32) {
+                            c::fprintf(c::stderr, "ln: invalid argument '%s' for 'backup type'\nValid arguments are:\n  - 'none', 'off'\n  - 'simple', 'never'\n  - 'existing', 'nil'\n  - 'numbered', 't'\nTry 'ln --help' for more information.\n", value.data as *i8);
+                            return 1i32;
+                        };
+                        if (backup_control == 4i32) {
+                            backup = false;
+                        };
+                    };
+                    i += 1usize;
+                    continue;
+                };
+
+                if (is_long_opt(arg, keylen, "--force")) { force = true; i += 1usize; continue; };
+                if (is_long_opt(arg, keylen, "--interactive")) { interactive = true; i += 1usize; continue; };
+                if (is_long_opt(arg, keylen, "--logical")) { logical = true; i += 1usize; continue; };
+                if (is_long_opt(arg, keylen, "--no-dereference")) { no_dereference = true; i += 1usize; continue; };
+                if (is_long_opt(arg, keylen, "--physical")) { logical = false; i += 1usize; continue; };
+                if (is_long_opt(arg, keylen, "--relative")) { relative = true; i += 1usize; continue; };
+                if (is_long_opt(arg, keylen, "--symbolic")) { symbolic = true; i += 1usize; continue; };
+                if (is_long_opt(arg, keylen, "--directory")) { i += 1usize; continue; };
+                if (is_long_opt(arg, keylen, "--no-target-directory")) { no_target_dir = true; i += 1usize; continue; };
+                if (is_long_opt(arg, keylen, "--verbose")) { verbose = true; i += 1usize; continue; };
+
+                let is_tgt: bool = is_long_opt(arg, keylen, "--target-directory");
+                let is_sfx: bool = is_long_opt(arg, keylen, "--suffix");
+                if (is_tgt || is_sfx) {
+                    let mut opt_name: str = "--suffix";
+                    if (is_tgt) { opt_name = "--target-directory"; };
+                    if (!has_value) {
+                        if (i + 1usize < argc) {
+                            i += 1usize;
+                            value = args::argat(i);
+                        } else {
+                            c::fprintf(c::stderr, "ln: option '%s' requires an argument\nTry 'ln --help' for more information.\n", opt_name.data as *i8);
+                            return 1i32;
+                        };
+                    };
+                    if (is_tgt) {
+                        target_dir = value;
+                    } else {
+                        suffix = value;
+                    };
+                    i += 1usize;
+                    continue;
+                };
+
+                c::fprintf(c::stderr, "ln: unrecognized option '%s'\nTry 'ln --help' for more information.\n", arg.data as *i8);
+                return 1i32;
+            };
+
+            let mut is_short: bool = false;
+            if (arg.len > 1usize) {
+                if (arg[0usize] == 45u8) {
+                    is_short = true;
+                };
+            };
+
+            if (is_short) {
+                let mut j: usize = 1usize;
+                while (j < arg.len) {
+                    let opt: u8 = arg[j];
+                    if (opt == 115u8) { // 's'
+                        symbolic = true;
+                    } else if (opt == 102u8) { // 'f'
+                        force = true;
+                    } else if (opt == 105u8) { // 'i'
+                        interactive = true;
+                    } else if (opt == 76u8) { // 'L'
+                        logical = true;
+                    } else if (opt == 80u8) { // 'P'
+                        logical = false;
+                    } else if (opt == 110u8) { // 'n'
+                        no_dereference = true;
+                    } else if (opt == 84u8) { // 'T'
+                        no_target_dir = true;
+                    } else if (opt == 118u8) { // 'v'
+                        verbose = true;
+                    } else if (opt == 98u8) { // 'b'
+                        backup = true;
+                    } else if (opt == 100u8 || opt == 70u8) { // 'd' or 'F'
+                        // no-op
+                    } else if (opt == 114u8) { // 'r'
+                        relative = true;
+                    } else if (opt == 116u8 || opt == 83u8) { // 't' or 'S'
+                        let mut val: str = "";
+                        if (j + 1usize < arg.len) {
+                            val = arg[(j + 1usize)..arg.len];
+                        } else if (i + 1usize < argc) {
+                            i += 1usize;
+                            val = args::argat(i);
+                        } else {
+                            c::fprintf(c::stderr, "ln: option requires an argument -- '%c'\nTry 'ln --help' for more information.\n", opt as i32);
+                            return 1i32;
+                        };
+                        if (opt == 116u8) {
+                            target_dir = val;
+                        } else {
+                            suffix = val;
+                        };
+                        break;
+                    } else {
+                        c::fprintf(c::stderr, "ln: invalid option -- '%c'\nTry 'ln --help' for more information.\n", opt as i32);
+                        return 1i32;
+                    };
+                    j += 1usize;
+                };
+                i += 1usize;
+                continue;
+            };
+        };
+
+        operands.push(arg);
+        let pc_res = args::get("POSIXLY_CORRECT");
+        match (pc_res) {
+            case let val: str => {
+                if (val.len > 0usize) {
+                    options_done = true;
+                };
+            },
+            case args::EnvNotFound => {},
+        };
+        i += 1usize;
+    };
+
+    if (backup && backup_control == 0i32) {
+        let vc_res = args::get("VERSION_CONTROL");
+        match (vc_res) {
+            case let val: str => {
+                backup_control = parse_backup_control(val);
+                if (backup_control < 0i32) {
+                    c::fprintf(c::stderr, "ln: invalid argument '%s' for 'backup type'\nValid arguments are:\n  - 'none', 'off'\n  - 'simple', 'never'\n  - 'existing', 'nil'\n  - 'numbered', 't'\nTry 'ln --help' for more information.\n", val.data as *i8);
+                    return 1i32;
+                };
+                if (backup_control == 4i32) {
+                    backup = false;
+                };
+            },
+            case args::EnvNotFound => {
+                backup_control = 3i32;
+            },
+        };
+    };
+    if (backup_control == 0i32) {
+        backup_control = 1i32;
+    };
+
+    if (operands.len() == 0usize) {
+        c::fputs("ln: missing file operand\nTry 'ln --help' for more information.\n", c::stderr);
+        return 1i32;
+    };
+
+    if (relative && !symbolic) {
+        c::fputs("ln: cannot do --relative without --symbolic\n", c::stderr);
+        return 1i32;
+    };
+
+    if (symbolic && logical) {
+        logical = false;
+    };
+
+    let mut source_count: usize = operands.len();
+    let mut destination: str = target_dir;
+    let mut destination_is_dir: bool = target_dir.len > 0usize;
+
+    if (target_dir.len > 0usize) {
+        if (platform_stat::zov_path_stat_exists(target_dir.data as *i8) == 0i32) {
+            c::fputs("ln: failed to access ", c::stderr);
+            platform_quote::zov_quote_shell(c::stderr, target_dir.data as *i8);
+            c::fprintf(c::stderr, ": %s\n", strc::strerror(platform_errno::zov_errno_enoent()));
+            return 1i32;
+        };
+        if (platform_stat::zov_path_is_dir(target_dir.data as *i8, 1i32) == 0i32) {
+            c::fputs("ln: failed to access ", c::stderr);
+            platform_quote::zov_quote_shell(c::stderr, target_dir.data as *i8);
+            c::fprintf(c::stderr, ": %s\n", strc::strerror(platform_errno::zov_errno_enotdir()));
+            return 1i32;
+        };
+    } else if (operands.len() == 1usize) {
+        destination = ".";
+        destination_is_dir = true;
+    } else {
+        destination = operands.get(operands.len() - 1usize);
+        let mut follow_dest: i32 = 1i32;
+        if (no_dereference) { follow_dest = 0i32; };
+        let exists_as_dir: bool = platform_stat::zov_path_is_dir(destination.data as *i8, follow_dest) != 0i32;
+        if (operands.len() == 2usize) {
+            destination_is_dir = !no_target_dir && exists_as_dir;
+            source_count = 1usize;
+        } else {
+            if (no_target_dir) {
+                c::fputs("ln: extra operand ", c::stderr);
+                platform_quote::zov_quote_shell(c::stderr, destination.data as *i8);
+                c::fputs("\nTry 'ln --help' for more information.\n", c::stderr);
+                return 1i32;
+            };
+            if (!exists_as_dir) {
+                c::fputs("ln: target ", c::stderr);
+                platform_quote::zov_quote_shell(c::stderr, destination.data as *i8);
+                let exists_any: bool = platform_stat::zov_path_stat_exists(destination.data as *i8) != 0i32;
+                let mut err: i32 = platform_errno::zov_errno_enotdir();
+                if (!exists_any) { err = platform_errno::zov_errno_enoent(); };
+                c::fprintf(c::stderr, ": %s\n", strc::strerror(err));
+                return 1i32;
+            };
+            destination_is_dir = true;
+            source_count = operands.len() - 1usize;
+        };
+    };
+
+    let mut status: i32 = 0i32;
+    for (let k in 0usize..source_count) {
+        let src: str = operands.get(k);
+        let mut link_name: String = String::new();
+        if (destination_is_dir) {
+            let base: str = get_basename(src);
+            link_name = join_path(destination, base);
+        } else {
+            link_name = String::from(destination);
+        };
+        let link_str: str = link_name.view();
+
+        let exists: bool = platform_stat::zov_path_lstat_exists(link_str.data as *i8) != 0i32;
+        let mut op_force: bool = force;
+        if (interactive && exists) {
+            c::fprintf(c::stderr, "ln: replace ");
+            platform_quote::zov_quote_shell(c::stderr, link_str.data as *i8);
+            c::fputs("? ", c::stderr);
+            c::fflush(c::stderr);
+            let mut answer: [16]u8;
+            if (c::fgets((&mut answer[0usize]) as *i8, 16i32, c::stdin) == null) {
+                status = 1i32;
+                continue;
+            };
+            if (answer[0usize] != 121u8 && answer[0usize] != 89u8) { // 'y' or 'Y'
+                status = 1i32;
+                continue;
+            };
+            op_force = true;
+        };
+
+        let rc: i32 = create_one(src, link_str, symbolic, logical, op_force, no_dereference, relative, verbose, backup, backup_control, suffix);
+        if (rc != 0i32) {
+            status = 1i32;
+        };
+    };
+
+    if (c::fflush(c::stdout) != 0i32) {
+        status = 1i32;
+    };
+    return status;
 };
