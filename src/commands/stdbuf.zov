@@ -1,9 +1,157 @@
 use std::env as args;
-use <stdbuf_backend.h> as backend;
+use std::io;
+use <stdio.h> as c;
+use <string.h> as strc;
+use <platform_errno.h> as platform_errno;
+use <platform_process.h> as platform_process;
+
 export fn run(start: usize, argc: usize) i32 = {
-    let count: usize = argc - start;
-    if (count > 4096usize) { return 1; };
-    let mut argv: [4096]*i8;
-    for (let i in 0usize..count) { argv[i] = args::argat(start + i).data as *i8; };
-    return backend::zov_stdbuf_run(count as i32, (&argv[0usize]) as **i8);
+    let mut mode_i: str = "";
+    let mut mode_o: str = "";
+    let mut mode_e: str = "";
+
+    let mut i: usize = start;
+    while (i < argc) {
+        let a: str = args::argat(i);
+        if (a == "--help") {
+            io::println("Usage: stdbuf OPTION... COMMAND\n" +
+                        "Run COMMAND, with modified buffering operations for its standard streams.\n" +
+                        "  -i, --input=MODE   adjust standard input stream buffering\n" +
+                        "  -o, --output=MODE  adjust standard output stream buffering\n" +
+                        "  -e, --error=MODE   adjust standard error stream buffering\n" +
+                        "      --help         display this help and exit\n" +
+                        "      --version      output version information and exit\n" +
+                        "If MODE is 'L' the stream is line buffered, '0' unbuffered, or a number optionally followed by a size suffix.");
+            return 0i32;
+        };
+        if (a == "--version") {
+            io::println("stdbuf (zovutils) 0.10.61");
+            return 0i32;
+        };
+        if (a == "--") {
+            i += 1usize;
+            break;
+        };
+        if (a.len < 2usize || a.data[0usize] != 45u8) {
+            break;
+        };
+
+        let mut which: i32 = -1i32;
+        let mut val: str = "";
+
+        if (a == "-i" || a == "-o" || a == "-e") {
+            let ch: u8 = a.data[1usize];
+            which = 2i32;
+            if (ch == 105u8) {
+                which = 0i32;
+            } else if (ch == 111u8) {
+                which = 1i32;
+            };
+            if (i + 1usize >= argc) {
+                c::fprintf(c::stderr, "stdbuf: option requires an argument -- '%c'\nTry 'stdbuf --help' for more information.\n\0".data as *i8, ch as i32);
+                return 125i32;
+            };
+            i += 1usize;
+            val = args::argat(i);
+        } else if (a.data[0usize] == 45u8 && (a.data[1usize] == 105u8 || a.data[1usize] == 111u8 || a.data[1usize] == 101u8) && a.len > 2usize) {
+            let ch: u8 = a.data[1usize];
+            which = 2i32;
+            if (ch == 105u8) {
+                which = 0i32;
+            } else if (ch == 111u8) {
+                which = 1i32;
+            };
+            val = a[2usize..a.len];
+        } else if (a.len >= 8usize && a[0usize..8usize] == "--input=") {
+            which = 0i32;
+            val = a[8usize..a.len];
+        } else if (a.len >= 9usize && a[0usize..9usize] == "--output=") {
+            which = 1i32;
+            val = a[9usize..a.len];
+        } else if (a.len >= 8usize && a[0usize..8usize] == "--error=") {
+            which = 2i32;
+            val = a[8usize..a.len];
+        } else if (a == "--input" || a == "--output" || a == "--error") {
+            which = 2i32;
+            if (a == "--input") {
+                which = 0i32;
+            } else if (a == "--output") {
+                which = 1i32;
+            };
+            if (i + 1usize >= argc) {
+                c::fprintf(c::stderr, "stdbuf: option '%s' requires an argument\nTry 'stdbuf --help' for more information.\n\0".data as *i8, a.data as *i8);
+                return 125i32;
+            };
+            i += 1usize;
+            val = args::argat(i);
+        } else {
+            if ((a.len >= 7usize && a[0usize..7usize] == "--help=") || (a.len >= 10usize && a[0usize..10usize] == "--version=")) {
+                let mut opt_str: str = "--help";
+                if (a.data[2usize] != 104u8) {
+                    opt_str = "--version";
+                };
+                c::fprintf(c::stderr, "stdbuf: option '%s' doesn't allow an argument\nTry 'stdbuf --help' for more information.\n\0".data as *i8, opt_str.data as *i8);
+            } else if (a.data[1usize] == 45u8) {
+                c::fprintf(c::stderr, "stdbuf: unrecognized option '%s'\nTry 'stdbuf --help' for more information.\n\0".data as *i8, a.data as *i8);
+            } else {
+                c::fprintf(c::stderr, "stdbuf: invalid option -- '%c'\nTry 'stdbuf --help' for more information.\n\0".data as *i8, a.data[1usize] as i32);
+            };
+            return 125i32;
+        };
+
+        if (platform_process::zov_stdbuf_size(val.data as *i8) == 0i32) {
+            c::fprintf(c::stderr, "stdbuf: invalid mode '%s'\n\0".data as *i8, val.data as *i8);
+            return 125i32;
+        };
+
+        if (which == 0i32 && val == "L") {
+            c::fputs("stdbuf: line buffering standard input is meaningless\nTry 'stdbuf --help' for more information.\n\0".data as *i8, c::stderr);
+            return 125i32;
+        };
+
+        if (which == 0i32) {
+            mode_i = val;
+        } else if (which == 1i32) {
+            mode_o = val;
+        } else if (which == 2i32) {
+            mode_e = val;
+        };
+
+        i += 1usize;
+    };
+
+    if (i >= argc) {
+        c::fputs("stdbuf: missing operand\nTry 'stdbuf --help' for more information.\n\0".data as *i8, c::stderr);
+        return 125i32;
+    };
+
+    let rc: i32 = platform_process::zov_stdbuf_setup_preload_slice(
+        mode_i.data as *i8, mode_i.len,
+        mode_o.data as *i8, mode_o.len,
+        mode_e.data as *i8, mode_e.len
+    );
+    if (rc != 0i32) {
+        if (rc < 0i32) {
+            c::fputs("stdbuf: cannot locate preload library\n\0".data as *i8, c::stderr);
+        } else {
+            c::fprintf(c::stderr, "stdbuf: %s\n\0".data as *i8, strc::strerror(rc));
+        };
+        return 125i32;
+    };
+
+    let cmd_count: usize = argc - i;
+    if (cmd_count > 4096usize) { return 125i32; };
+    let mut argv: [4097]*i8;
+    for (let j in 0usize..cmd_count) {
+        argv[j] = args::argat(i + j).data as *i8;
+    };
+    argv[cmd_count] = 0 as *i8;
+    let prog: str = args::argat(i);
+    platform_process::zov_exec_command(prog.data as *i8, (&mut argv[0usize]) as *void);
+    let err: i32 = platform_errno::zov_errno_value();
+    c::fprintf(c::stderr, "stdbuf: failed to run command '%s': %s\n\0".data as *i8, prog.data as *i8, strc::strerror(err));
+    if (platform_errno::zov_errno_is_enoent(err) != 0i32) {
+        return 127i32;
+    };
+    return 126i32;
 };

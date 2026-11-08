@@ -13,6 +13,9 @@
 #include <sys/resource.h>
 #include <sys/wait.h>
 #include <fcntl.h>
+#if defined(__APPLE__)
+#include <mach-o/dyld.h>
+#endif
 
 #ifndef NSIG
 #define NSIG 32
@@ -486,6 +489,77 @@ static inline int zov_sigkill_val(void) { return SIGKILL; }
 
 static inline void zov_exit_process(int status) {
     _exit(status);
+}
+
+static inline int zov_stdbuf_size(const char *mode) {
+    if (!mode || !*mode) return 0;
+    if (!strcmp(mode, "0") || !strcmp(mode, "L")) return 1;
+    if (*mode == '-') return 0;
+    errno = 0;
+    char *end = NULL;
+    unsigned long long n = strtoull(mode, &end, 10);
+    if (errno || end == mode) return 0;
+    unsigned long long multiplier = 1;
+    if (!*end) multiplier = 1;
+    else if (!strcmp(end, "k") || !strcmp(end, "K") || !strcmp(end, "KiB")) multiplier = 1024ULL;
+    else if (!strcmp(end, "KB")) multiplier = 1000ULL;
+    else if (!strcmp(end, "M") || !strcmp(end, "MiB")) multiplier = 1024ULL * 1024ULL;
+    else if (!strcmp(end, "MB")) multiplier = 1000ULL * 1000ULL;
+    else if (!strcmp(end, "G") || !strcmp(end, "GiB")) multiplier = 1024ULL * 1024ULL * 1024ULL;
+    else if (!strcmp(end, "GB")) multiplier = 1000ULL * 1000ULL * 1000ULL;
+    else if (!strcmp(end, "T") || !strcmp(end, "TiB")) multiplier = 1024ULL * 1024ULL * 1024ULL * 1024ULL;
+    else if (!strcmp(end, "TB")) multiplier = 1000ULL * 1000ULL * 1000ULL * 1000ULL;
+    else return 0;
+    return n <= (unsigned long long)SIZE_MAX / multiplier;
+}
+
+static inline int zov_stdbuf_setup_preload_slice(
+    const char *mode_i, size_t i_len,
+    const char *mode_o, size_t o_len,
+    const char *mode_e, size_t e_len
+) {
+    if (i_len > 0) {
+        char buf[128];
+        if (i_len >= sizeof buf) return -1;
+        memcpy(buf, mode_i, i_len); buf[i_len] = '\0';
+        if (setenv("_STDBUF_I", buf, 1) != 0) return errno;
+    }
+    if (o_len > 0) {
+        char buf[128];
+        if (o_len >= sizeof buf) return -1;
+        memcpy(buf, mode_o, o_len); buf[o_len] = '\0';
+        if (setenv("_STDBUF_O", buf, 1) != 0) return errno;
+    }
+    if (e_len > 0) {
+        char buf[128];
+        if (e_len >= sizeof buf) return -1;
+        memcpy(buf, mode_e, e_len); buf[e_len] = '\0';
+        if (setenv("_STDBUF_E", buf, 1) != 0) return errno;
+    }
+    char exe[PATH_MAX];
+#if defined(__APPLE__)
+    uint32_t size = (uint32_t)sizeof exe;
+    char unresolved[PATH_MAX];
+    if (_NSGetExecutablePath(unresolved, &size) != 0 || realpath(unresolved, exe) == NULL) return -1;
+#else
+    ssize_t n = readlink("/proc/self/exe", exe, sizeof exe - 1);
+    if (n < 0) return errno;
+    exe[n] = 0;
+#endif
+    char *slash = strrchr(exe, '/');
+    if (!slash) return -1;
+    strcpy(slash + 1, "libzovstdbuf.dylib");
+#if defined(__APPLE__)
+    if (setenv("DYLD_INSERT_LIBRARIES", exe, 1) != 0) return errno;
+    setenv("DYLD_FORCE_FLAT_NAMESPACE", "1", 1);
+#else
+    const char *old = getenv("LD_PRELOAD");
+    char preload[PATH_MAX * 2];
+    if (old && *old) snprintf(preload, sizeof preload, "%s:%s", exe, old);
+    else snprintf(preload, sizeof preload, "%s", exe);
+    if (setenv("LD_PRELOAD", preload, 1) != 0) return errno;
+#endif
+    return 0;
 }
 
 #endif
