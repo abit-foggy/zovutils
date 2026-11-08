@@ -1,8 +1,39 @@
 use std::env as args;
 use std::io;
+use std::mem as mem;
 use <stdio.h> as c;
-use <sleep_backend.h> as backend;
+use <stdlib.h> as libc;
+use <platform_process.h> as platform_process;
 use shared::io as stream;
+
+fn sleep_interval(text: str) i32 = {
+    if (text.len == 0usize) { return 1i32; };
+    let buf: *u8 = mem::alloc[u8](text.len + 1usize);
+    for (let i in 0usize..text.len) { buf[i] = text.data[i]; };
+    buf[text.len] = 0u8;
+
+    let mut end: *i8 = buf as *i8;
+    let amount: f64 = libc::strtod(buf as *i8, &end);
+    let end_ptr: *i8 = end;
+    if (end_ptr == buf as *i8) { mem::freeptr[u8](buf); return 1i32; };
+    if (amount != amount || amount < 0.0) { mem::freeptr[u8](buf); return 1i32; };
+
+    let mut multiplier: f64 = 1.0;
+    let suffix_char: i8 = end_ptr[0];
+    if (suffix_char != 0i8) {
+        if (end_ptr[1] != 0i8) { mem::freeptr[u8](buf); return 1i32; };
+        if (suffix_char == 115i8) { multiplier = 1.0; }
+        else if (suffix_char == 109i8) { multiplier = 60.0; }
+        else if (suffix_char == 104i8) { multiplier = 3600.0; }
+        else if (suffix_char == 100i8) { multiplier = 86400.0; }
+        else { mem::freeptr[u8](buf); return 1i32; };
+    };
+    mem::freeptr[u8](buf);
+
+    let seconds: f64 = amount * multiplier;
+    if (seconds != seconds || seconds > 9.0e15) { return 2i32; };
+    return platform_process::zov_nanosleep_seconds(seconds);
+};
 
 fn help() void = {
     io::print("Usage: sleep NUMBER[SUFFIX]...\n");
@@ -69,7 +100,7 @@ export fn run(start: usize, argc: usize) i32 = {
             return 1;
         };
         saw_operand = true;
-        let result: i32 = backend::zov_sleep_interval(arg.data as *i8);
+        let result: i32 = sleep_interval(arg);
         if (result == 1i32) { invalid_interval(arg); return 1; };
         if (result != 0i32) {
             io::eprintln("sleep: time interval '" + arg + "' is too large");

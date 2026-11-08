@@ -9,6 +9,7 @@
 #include <ctype.h>
 #include <limits.h>
 #include <unistd.h>
+#include <time.h>
 
 #ifndef NSIG
 #define NSIG 32
@@ -282,6 +283,23 @@ static inline int zov_signal_list(void) {
                 is_ignored ? "IGNORE" : "BLOCK");
     }
     return ferror(stderr) ? -1 : 0;
+}
+
+static inline int zov_nanosleep_seconds(double seconds) {
+    if (seconds <= 0.0) return 0;
+    time_t whole = (time_t)seconds;
+    double fraction = seconds - (double)whole;
+    struct timespec request;
+    request.tv_sec = whole;
+    request.tv_nsec = (long)(fraction * 1000000000.0);
+    if (request.tv_nsec >= 1000000000L) {
+        request.tv_sec += 1;
+        request.tv_nsec -= 1000000000L;
+    }
+    while (nanosleep(&request, &request) != 0) {
+        if (errno != EINTR) return 2;
+    }
+    return 0;
 }
 
 #endif
