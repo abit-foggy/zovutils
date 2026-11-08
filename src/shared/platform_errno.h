@@ -62,6 +62,10 @@ static inline int zov_errno_is_pipe(int err) {
     return err == EPIPE;
 }
 
+static inline int zov_errno_is_enoent(int err) {
+    return err == ENOENT;
+}
+
 static inline int zov_errno_eio(void) {
     return EIO;
 }
