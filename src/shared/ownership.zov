@@ -1,0 +1,687 @@
+use std::env as args;
+use std::io;
+use std::vec;
+use <stdio.h> as c;
+use <string.h> as strc;
+use <platform_errno.h> as platform_errno;
+use <platform_stat.h> as platform_stat;
+use <platform_quote.h> as platform_quote;
+
+export type OwnerOptions = struct {
+    recursive: bool,
+    force: bool,
+    verbose: bool,
+    changes_only: bool,
+    no_dereference: bool,
+    traverse_mode: i32,
+    traverse_mode_set: bool,
+    dereference_set: bool,
+    preserve_root: bool,
+    from_uid_set: bool,
+    from_gid_set: bool,
+    from_uid: u32,
+    from_gid: u32,
+};
+
+export type OwnerSpec = struct {
+    uid: u32,
+    gid: u32,
+    set_uid: bool,
+    set_gid: bool,
+};
+
+fn print_chown_help() void = {
+    io::print("Usage: chown [OPTION]... [OWNER][:[GROUP]] FILE...\n" +
+          "  or:  chown [OPTION]... --reference=RFILE FILE...\n" +
+          "Change the owner and/or group of each FILE to OWNER and/or GROUP.\n" +
+          "With --reference, change the owner and group of each FILE to those of RFILE.\n\n" +
+          "  -c, --changes\n" +
+          "         like verbose but report only when a change is made\n" +
+          "  -f, --silent, --quiet\n" +
+          "         suppress most error messages\n" +
+          "  -v, --verbose\n" +
+          "         output a diagnostic for every file processed\n" +
+          "      --dereference\n" +
+          "         affect the referent of each symbolic link (this is\n" +
+          "         the default), rather than the symbolic link itself\n" +
+          "  -h, --no-dereference\n" +
+          "         affect symbolic links instead of any referenced file;\n" +
+          "         useful only on systems that can change the ownership of a symlink\n" +
+          "      --from=CURRENT_OWNER:CURRENT_GROUP\n" +
+          "         change the ownership of each file only if its\n" +
+          "         current owner and/or group match those specified here.\n" +
+          "         Either may be omitted, in which case a match\n" +
+          "         is not required for the omitted attribute\n" +
+          "      --no-preserve-root\n" +
+          "         do not treat '/' specially (the default)\n" +
+          "      --preserve-root\n" +
+          "         fail to operate recursively on '/'\n" +
+          "      --reference=RFILE\n" +
+          "         use RFILE's ownership rather than specifying values.\n" +
+          "         RFILE is always dereferenced if a symbolic link.\n" +
+          "  -R, --recursive\n" +
+          "         operate on files and directories recursively\n\n" +
+          "The following options modify how a hierarchy is traversed when the -R\n" +
+          "option is also specified.  If more than one is specified, only the final\n" +
+          "one takes effect. -P is the default.\n\n" +
+          "  -H\n" +
+          "         if a command line argument is a symlink to a directory, traverse it\n" +
+          "  -L\n" +
+          "         traverse every symbolic link to a directory encountered\n" +
+          "  -P\n" +
+          "         do not traverse any symbolic links\n\n" +
+          "      --help\n" +
+          "         display this help and exit\n" +
+          "      --version\n" +
+          "         output version information and exit\n\n" +
+          "Owner is unchanged if missing.  Group is unchanged if missing, but changed\n" +
+          "to login group if implied by a ':' following a symbolic OWNER.\n" +
+          "OWNER and GROUP may be numeric as well as symbolic.\n\n" +
+          "Examples:\n" +
+          "  chown root /u        Change the owner of /u to \"root\".\n" +
+          "  chown root:staff /u  Likewise, but also change its group to \"staff\".\n" +
+          "  chown -hR root /u    Change the owner of /u and subfiles to \"root\".\n\n" +
+          "Report bugs to: bug-coreutils@gnu.org\n" +
+          "GNU coreutils home page: <https://www.gnu.org/software/coreutils/>\n" +
+          "General help using GNU software: <https://www.gnu.org/gethelp/>\n" +
+          "Report any translation bugs to <https://translationproject.org/team/>\n" +
+          "Full documentation <https://www.gnu.org/software/coreutils/chown>\n" +
+          "or available locally via: info '(coreutils) chown invocation'\n");
+};
+
+fn print_chgrp_help() void = {
+    io::print("Usage: chgrp [OPTION]... GROUP FILE...\n" +
+          "  or:  chgrp [OPTION]... --reference=RFILE FILE...\n" +
+          "Change the group of each FILE to GROUP.\n" +
+          "With --reference, change the group of each FILE to that of RFILE.\n\n" +
+          "  -c, --changes\n" +
+          "         like verbose but report only when a change is made\n" +
+          "  -f, --silent, --quiet\n" +
+          "         suppress most error messages\n" +
+          "  -v, --verbose\n" +
+          "         output a diagnostic for every file processed\n" +
+          "      --dereference\n" +
+          "         affect the referent of each symbolic link (this is\n" +
+          "         the default), rather than the symbolic link itself\n" +
+          "  -h, --no-dereference\n" +
+          "         affect symbolic links instead of any referenced file;\n" +
+          "         useful only on systems that can change the ownership of a symlink\n" +
+          "      --from=CURRENT_OWNER:CURRENT_GROUP\n" +
+          "         change the ownership of each file only if its\n" +
+          "         current owner and/or group match those specified here.\n" +
+          "         Either may be omitted, in which case a match\n" +
+          "         is not required for the omitted attribute\n" +
+          "      --no-preserve-root\n" +
+          "         do not treat '/' specially (the default)\n" +
+          "      --preserve-root\n" +
+          "         fail to operate recursively on '/'\n" +
+          "      --reference=RFILE\n" +
+          "         use RFILE's ownership rather than specifying values.\n" +
+          "         RFILE is always dereferenced if a symbolic link.\n" +
+          "  -R, --recursive\n" +
+          "         operate on files and directories recursively\n\n" +
+          "The following options modify how a hierarchy is traversed when the -R\n" +
+          "option is also specified.  If more than one is specified, only the final\n" +
+          "one takes effect. -P is the default.\n\n" +
+          "  -H\n" +
+          "         if a command line argument is a symlink to a directory, traverse it\n" +
+          "  -L\n" +
+          "         traverse every symbolic link to a directory encountered\n" +
+          "  -P\n" +
+          "         do not traverse any symbolic links\n\n" +
+          "      --help\n" +
+          "         display this help and exit\n" +
+          "      --version\n" +
+          "         output version information and exit\n\n" +
+          "Examples:\n" +
+          "  chgrp staff /u      Change the group of /u to \"staff\".\n" +
+          "  chgrp -hR staff /u  Change the group of /u and subfiles to \"staff\".\n\n" +
+          "Report bugs to: bug-coreutils@gnu.org\n" +
+          "GNU coreutils home page: <https://www.gnu.org/software/coreutils/>\n" +
+          "General help using GNU software: <https://www.gnu.org/gethelp/>\n" +
+          "Report any translation bugs to <https://translationproject.org/team/>\n" +
+          "Full documentation <https://www.gnu.org/software/coreutils/chgrp>\n" +
+          "or available locally via: info '(coreutils) chgrp invocation'\n");
+};
+
+fn is_long_opt(arg: str, keylen: usize, name: str) bool = {
+    if (keylen <= 2usize) { return false; };
+    if (keylen > name.len) { return false; };
+    let sub: str = arg[0usize..keylen];
+    let nsub: str = name[0usize..keylen];
+    return sub == nsub;
+};
+
+fn join_path(dir: str, name: str) String = {
+    if (dir.len == 0usize) { return String::from(name); };
+    if (dir[dir.len - 1usize] == 47u8) {
+        return dir + name;
+    };
+    return dir + "/" + name;
+};
+
+fn parse_spec(name: str, text: str, group_only: bool, spec: &mut OwnerSpec, diagnose: bool) bool = {
+    spec.uid = 0xffffffffu32;
+    spec.gid = 0xffffffffu32;
+    spec.set_uid = false;
+    spec.set_gid = false;
+
+    let mut colon_pos: usize = text.len;
+    let mut colon_count: usize = 0usize;
+    for (let i in 0usize..text.len) {
+        if (text[i] == 58u8) { // ':'
+            if (colon_count == 0usize) { colon_pos = i; };
+            colon_count += 1usize;
+        };
+    };
+    if (colon_count > 1usize) { return false; };
+
+    if (group_only) {
+        let mut group_text: str = text;
+        if (colon_count == 1usize) {
+            group_text = text[(colon_pos + 1usize)..text.len];
+        };
+        if (group_text.len == 0usize) {
+            if (diagnose) {
+                c::fprintf(c::stderr, "%s: invalid group: ", name.data as *i8);
+                platform_quote::zov_quote_shell(c::stderr, text.data as *i8);
+                c::fputc(10i32, c::stderr);
+            };
+            return false;
+        };
+        let mut gval: u32 = 0u32;
+        if (platform_stat::zov_parse_group_slice(group_text.data as *i8, group_text.len, &mut gval) == 0i32) {
+            if (diagnose) {
+                c::fprintf(c::stderr, "%s: invalid group: ", name.data as *i8);
+                platform_quote::zov_quote_shell(c::stderr, text.data as *i8);
+                c::fputc(10i32, c::stderr);
+            };
+            return false;
+        };
+        spec.gid = gval;
+        spec.set_gid = true;
+        return true;
+    };
+
+    let user_part: str = text[0usize..colon_pos];
+    if (user_part.len > 0usize) {
+        let mut uval: u32 = 0u32;
+        if (platform_stat::zov_parse_user_slice(user_part.data as *i8, user_part.len, &mut uval) == 0i32) {
+            if (diagnose) {
+                c::fprintf(c::stderr, "%s: invalid user: ", name.data as *i8);
+                platform_quote::zov_quote_shell(c::stderr, text.data as *i8);
+                c::fputc(10i32, c::stderr);
+            };
+            return false;
+        };
+        spec.uid = uval;
+        spec.set_uid = true;
+    };
+
+    if (colon_count == 1usize && colon_pos + 1usize < text.len) {
+        let grp_part: str = text[(colon_pos + 1usize)..text.len];
+        let mut gval: u32 = 0u32;
+        if (platform_stat::zov_parse_group_slice(grp_part.data as *i8, grp_part.len, &mut gval) == 0i32) {
+            if (diagnose) {
+                c::fprintf(c::stderr, "%s: invalid group: ", name.data as *i8);
+                platform_quote::zov_quote_shell(c::stderr, text.data as *i8);
+                c::fputc(10i32, c::stderr);
+            };
+            return false;
+        };
+        spec.gid = gval;
+        spec.set_gid = true;
+    };
+
+    if (!spec.set_uid && !spec.set_gid) {
+        if (diagnose) {
+            c::fprintf(c::stderr, "%s: invalid spec: ", name.data as *i8);
+            platform_quote::zov_quote_shell(c::stderr, text.data as *i8);
+            c::fputc(10i32, c::stderr);
+        };
+        return false;
+    };
+
+    return true;
+};
+
+fn print_id(uid: u32, is_user: bool) void = {
+    if (is_user) {
+        let uname: nullable *i8 = platform_stat::zov_get_username(uid);
+        if (uname != null) {
+            c::fputs(uname!, c::stdout);
+            return;
+        };
+    } else {
+        let gname: nullable *i8 = platform_stat::zov_get_groupname(uid);
+        if (gname != null) {
+            c::fputs(gname!, c::stdout);
+            return;
+        };
+    };
+    c::fprintf(c::stdout, "%u", uid);
+};
+
+fn owner_verbose(_name: str, path: str, old_uid: u32, old_gid: u32, target: &OwnerSpec, group_only: bool, changed: bool) void = {
+    let mut desired_uid: u32 = old_uid;
+    let mut desired_gid: u32 = old_gid;
+    if (target.set_uid) { desired_uid = target.uid; };
+    if (target.set_gid) { desired_gid = target.gid; };
+
+    if (group_only) {
+        c::fputs("group of ", c::stdout);
+    } else {
+        c::fputs("ownership of ", c::stdout);
+    };
+    platform_quote::zov_quote_shell(c::stdout, path.data as *i8);
+    if (changed) {
+        c::fputs(" changed from ", c::stdout);
+    } else {
+        c::fputs(" retained as ", c::stdout);
+    };
+
+    if (!group_only && (target.set_uid || target.set_gid)) {
+        print_id(old_uid, true);
+        if (target.set_gid) {
+            c::fputc(58i32, c::stdout); // ':'
+            print_id(old_gid, false);
+        };
+        if (changed) {
+            c::fputs(" to ", c::stdout);
+            print_id(desired_uid, true);
+            if (target.set_gid) {
+                c::fputc(58i32, c::stdout); // ':'
+                print_id(desired_gid, false);
+            };
+        };
+    } else if (group_only) {
+        print_id(old_gid, false);
+        if (changed) {
+            c::fputs(" to ", c::stdout);
+            print_id(desired_gid, false);
+        };
+    };
+    c::fputc(10i32, c::stdout);
+};
+
+fn owner_apply(name: str, path: str, target: &OwnerSpec, opt: &OwnerOptions, follow: bool) i32 = {
+    let mut old_uid: u32 = 0u32;
+    let mut old_gid: u32 = 0u32;
+    let mut old_mode: u32 = 0u32;
+    let mut follow_flag: i32 = 0i32;
+    if (follow) { follow_flag = 1i32; };
+    let stat_rc: i32 = platform_stat::zov_stat_owner(path.data as *i8, follow_flag, &mut old_uid, &mut old_gid, &mut old_mode);
+    if (stat_rc != 0i32) {
+        if (!opt.force) {
+            c::fprintf(c::stderr, "%s: cannot access ", name.data as *i8);
+            platform_quote::zov_quote_shell(c::stderr, path.data as *i8);
+            c::fprintf(c::stderr, ": %s\n", strc::strerror(stat_rc));
+        };
+        return 1i32;
+    };
+
+    if (opt.from_uid_set && old_uid != opt.from_uid) { return 0i32; };
+    if (opt.from_gid_set && old_gid != opt.from_gid) { return 0i32; };
+
+    let mut target_uid: u32 = 0xffffffffu32;
+    let mut target_gid: u32 = 0xffffffffu32;
+    if (target.set_uid) { target_uid = target.uid; };
+    if (target.set_gid) { target_gid = target.gid; };
+
+    let changed: bool = (target.set_uid && old_uid != target.uid) || (target.set_gid && old_gid != target.gid);
+    if (!changed) {
+        if (opt.verbose && !opt.changes_only) {
+            owner_verbose(name, path, old_uid, old_gid, target, name == "chgrp", false);
+        };
+        return 0i32;
+    };
+
+    let mut chown_rc: i32 = 0i32;
+    if (follow) {
+        chown_rc = platform_stat::zov_chown(path.data as *i8, target_uid, target_gid);
+    } else {
+        chown_rc = platform_stat::zov_lchown(path.data as *i8, target_uid, target_gid);
+    };
+
+    if (chown_rc != 0i32) {
+        if (!opt.force) {
+            c::fprintf(c::stderr, "%s: changing ownership of ", name.data as *i8);
+            platform_quote::zov_quote_shell(c::stderr, path.data as *i8);
+            c::fprintf(c::stderr, ": %s\n", strc::strerror(chown_rc));
+        };
+        return 1i32;
+    };
+
+    if (opt.verbose && (!opt.changes_only || changed)) {
+        owner_verbose(name, path, old_uid, old_gid, target, name == "chgrp", changed);
+    };
+    return 0i32;
+};
+
+fn owner_path(name: str, path: str, target: &OwnerSpec, opt: &OwnerOptions, command_line: bool) i32 = {
+    let mut link_uid: u32 = 0u32;
+    let mut link_gid: u32 = 0u32;
+    let mut link_mode: u32 = 0u32;
+    let lrc: i32 = platform_stat::zov_stat_owner(path.data as *i8, 0i32, &mut link_uid, &mut link_gid, &mut link_mode);
+    if (lrc != 0i32) {
+        if (!opt.force) {
+            c::fprintf(c::stderr, "%s: cannot access ", name.data as *i8);
+            platform_quote::zov_quote_shell(c::stderr, path.data as *i8);
+            c::fprintf(c::stderr, ": %s\n", strc::strerror(lrc));
+        };
+        return 1i32;
+    };
+
+    let is_symlink: bool = (link_mode & 0o170000u32) == 0o120000u32;
+    if (is_symlink) {
+        if (opt.no_dereference || (opt.recursive && !command_line && opt.traverse_mode != 1i32) || (opt.recursive && command_line && opt.traverse_mode == 2i32)) {
+            return owner_apply(name, path, target, opt, false);
+        };
+    };
+
+    let mut info_uid: u32 = 0u32;
+    let mut info_gid: u32 = 0u32;
+    let mut info_mode: u32 = 0u32;
+    let src: i32 = platform_stat::zov_stat_owner(path.data as *i8, 1i32, &mut info_uid, &mut info_gid, &mut info_mode);
+    if (src != 0i32) {
+        return owner_apply(name, path, target, opt, true);
+    };
+
+    let is_dir: bool = (info_mode & 0o170000u32) == 0o40000u32;
+    if (opt.recursive && opt.preserve_root) {
+        if (platform_stat::zov_realpath_is_root(path.data as *i8) != 0i32) {
+            c::fprintf(c::stderr, "%s: it is dangerous to operate recursively on ", name.data as *i8);
+            platform_quote::zov_quote_shell(c::stderr, path.data as *i8);
+            c::fprintf(c::stderr, "\n%s: use --no-preserve-root to override this failsafe\n", name.data as *i8);
+            return 1i32;
+        };
+    };
+
+    if (!opt.recursive || !is_dir) {
+        return owner_apply(name, path, target, opt, true);
+    };
+
+    let mut status: i32 = 0i32;
+    let dir: nullable *void = platform_stat::zov_opendir(path.data as *i8);
+    if (dir == null) {
+        if (!opt.force) {
+            c::fprintf(c::stderr, "%s: cannot access ", name.data as *i8);
+            platform_quote::zov_quote_shell(c::stderr, path.data as *i8);
+            c::fprintf(c::stderr, ": %s\n", strc::strerror(platform_errno::zov_errno_value()));
+        };
+        return 1i32;
+    };
+
+    while (true) {
+        let ent: nullable *i8 = platform_stat::zov_readdir(dir!);
+        if (ent == null) { break; };
+        let ename: str = zov_str_from_raw(ent! as *u8, strc::strlen(ent!));
+        if (ename == "." || ename == "..") { continue; };
+        let child_str: String = join_path(path, ename);
+        let child: str = child_str.view();
+
+        if (owner_path(name, child, target, opt, false) != 0i32) {
+            status = 1i32;
+        };
+    };
+
+    if (platform_stat::zov_closedir(dir!) != 0i32) {
+        status = 1i32;
+    };
+    if (owner_apply(name, path, target, opt, true) != 0i32) {
+        status = 1i32;
+    };
+    return status;
+};
+
+export fn run_ownership(start: usize, argc: usize, group_only: bool) i32 = {
+    let mut name: str = "chown";
+    if (group_only) { name = "chgrp"; };
+
+    let mut opt: OwnerOptions = OwnerOptions {
+        recursive = false,
+        force = false,
+        verbose = false,
+        changes_only = false,
+        no_dereference = false,
+        traverse_mode = 2i32, // -P default
+        traverse_mode_set = false,
+        dereference_set = false,
+        preserve_root = false,
+        from_uid_set = false,
+        from_gid_set = false,
+        from_uid = 0u32,
+        from_gid = 0u32,
+    };
+
+    let mut target: OwnerSpec = OwnerSpec {
+        uid = 0xffffffffu32,
+        gid = 0xffffffffu32,
+        set_uid = false,
+        set_gid = false,
+    };
+
+    let mut from: OwnerSpec = OwnerSpec {
+        uid = 0xffffffffu32,
+        gid = 0xffffffffu32,
+        set_uid = false,
+        set_gid = false,
+    };
+    let mut from_given: bool = false;
+
+    let mut reference: str = "";
+    let mut operands = vec::new[str]();
+    let mut options_done: bool = false;
+
+    let mut i: usize = start;
+    while (i < argc) {
+        let arg: str = args::argat(i);
+        if (!options_done && arg == "--") {
+            options_done = true;
+            i += 1usize;
+            continue;
+        };
+
+        if (!options_done) {
+            let mut is_long: bool = false;
+            if (arg.len >= 2usize) {
+                let pfx: str = arg[0usize..2usize];
+                if (pfx == "--") {
+                    is_long = true;
+                };
+            };
+
+            if (is_long) {
+                let mut equal_pos: usize = arg.len;
+                for (let j in 2usize..arg.len) {
+                    if (arg[j] == 61u8) { // '='
+                        equal_pos = j;
+                        break;
+                    };
+                };
+                let keylen: usize = equal_pos;
+                let mut has_value: bool = false;
+                let mut value: str = "";
+                if (equal_pos < arg.len) {
+                    has_value = true;
+                    value = arg[(equal_pos + 1usize)..arg.len];
+                };
+
+                let is_help: bool = is_long_opt(arg, keylen, "--help");
+                let is_ver: bool = is_long_opt(arg, keylen, "--version");
+                if (is_help || is_ver) {
+                    if (has_value) {
+                        c::fprintf(c::stderr, "%s: option '--help' doesn't allow an argument\nTry '%s --help' for more information.\n", name.data as *i8, name.data as *i8);
+                        return 1i32;
+                    };
+                    if (is_help) {
+                        if (group_only) {
+                            print_chgrp_help();
+                        } else {
+                            print_chown_help();
+                        };
+                        return 0i32;
+                    };
+                    c::printf("%s (zovutils) 0.10.61\n", name.data as *i8);
+                    return 0i32;
+                };
+
+                if (is_long_opt(arg, keylen, "--recursive")) { opt.recursive = true; i += 1usize; continue; };
+                if (is_long_opt(arg, keylen, "--verbose")) { opt.verbose = true; i += 1usize; continue; };
+                if (is_long_opt(arg, keylen, "--changes")) { opt.verbose = true; opt.changes_only = true; i += 1usize; continue; };
+                if (is_long_opt(arg, keylen, "--silent") || is_long_opt(arg, keylen, "--quiet")) { opt.force = true; i += 1usize; continue; };
+                if (is_long_opt(arg, keylen, "--no-dereference")) { opt.no_dereference = true; i += 1usize; continue; };
+                if (is_long_opt(arg, keylen, "--preserve-root")) { opt.preserve_root = true; i += 1usize; continue; };
+                if (is_long_opt(arg, keylen, "--no-preserve-root")) { opt.preserve_root = false; i += 1usize; continue; };
+                if (is_long_opt(arg, keylen, "--dereference")) { opt.no_dereference = false; opt.dereference_set = true; i += 1usize; continue; };
+
+                if (is_long_opt(arg, keylen, "--reference")) {
+                    if (!has_value) {
+                        if (i + 1usize < argc) {
+                            i += 1usize;
+                            value = args::argat(i);
+                        } else {
+                            c::fprintf(c::stderr, "%s: option '--reference' requires an argument\nTry '%s --help' for more information.\n", name.data as *i8, name.data as *i8);
+                            return 1i32;
+                        };
+                    };
+                    reference = value;
+                    i += 1usize;
+                    continue;
+                };
+
+                if (!group_only && is_long_opt(arg, keylen, "--from")) {
+                    if (!has_value) {
+                        if (i + 1usize < argc) {
+                            i += 1usize;
+                            value = args::argat(i);
+                        } else {
+                            c::fputs("chown: option '--from' requires an argument\nTry 'chown --help' for more information.\n", c::stderr);
+                            return 1i32;
+                        };
+                    };
+                    if (value.len > 0usize) {
+                        if (!parse_spec(name, value, false, &mut from, false)) {
+                            c::fputs("chown: invalid spec: ", c::stderr);
+                            platform_quote::zov_quote_shell(c::stderr, value.data as *i8);
+                            c::fputc(10i32, c::stderr);
+                            return 1i32;
+                        };
+                        from_given = true;
+                    };
+                    i += 1usize;
+                    continue;
+                };
+
+                c::fprintf(c::stderr, "%s: unrecognized option '%s'\nTry '%s --help' for more information.\n", name.data as *i8, arg.data as *i8, name.data as *i8);
+                return 1i32;
+            };
+
+            let mut is_short: bool = false;
+            if (arg.len > 1usize) {
+                if (arg[0usize] == 45u8) {
+                    is_short = true;
+                };
+            };
+
+            if (is_short) {
+                let mut j: usize = 1usize;
+                while (j < arg.len) {
+                    let opt_ch: u8 = arg[j];
+                    if (opt_ch == 82u8) { // 'R'
+                        opt.recursive = true;
+                    } else if (opt_ch == 102u8) { // 'f'
+                        opt.force = true;
+                    } else if (opt_ch == 118u8) { // 'v'
+                        opt.verbose = true;
+                    } else if (opt_ch == 99u8) { // 'c'
+                        opt.verbose = true;
+                        opt.changes_only = true;
+                    } else if (opt_ch == 104u8) { // 'h'
+                        opt.no_dereference = true;
+                    } else if (opt_ch == 72u8) { // 'H'
+                        opt.traverse_mode = 0i32;
+                        opt.traverse_mode_set = true;
+                    } else if (opt_ch == 76u8) { // 'L'
+                        opt.traverse_mode = 1i32;
+                        opt.traverse_mode_set = true;
+                    } else if (opt_ch == 80u8) { // 'P'
+                        opt.traverse_mode = 2i32;
+                        opt.traverse_mode_set = true;
+                    } else {
+                        c::fprintf(c::stderr, "%s: invalid option -- '%c'\nTry '%s --help' for more information.\n", name.data as *i8, opt_ch as i32, name.data as *i8);
+                        return 1i32;
+                    };
+                    j += 1usize;
+                };
+                i += 1usize;
+                continue;
+            };
+        };
+
+        operands.push(arg);
+        i += 1usize;
+    };
+
+    let mut first_file: usize = 1usize;
+    let has_reference: bool = reference.len > 0usize;
+    if (has_reference) {
+        let mut r_uid: u32 = 0u32;
+        let mut r_gid: u32 = 0u32;
+        let mut r_mode: u32 = 0u32;
+        let rrc: i32 = platform_stat::zov_stat_owner(reference.data as *i8, 1i32, &mut r_uid, &mut r_gid, &mut r_mode);
+        if (rrc != 0i32) {
+            c::fprintf(c::stderr, "%s: failed to get attributes of ", name.data as *i8);
+            platform_quote::zov_quote_shell(c::stderr, reference.data as *i8);
+            c::fprintf(c::stderr, ": %s\n", strc::strerror(rrc));
+            return 1i32;
+        };
+        target.uid = r_uid;
+        target.gid = r_gid;
+        target.set_uid = !group_only;
+        target.set_gid = true;
+        first_file = 0usize;
+    } else {
+        if (operands.len() == 0usize) {
+            c::fprintf(c::stderr, "%s: missing operand\nTry '%s --help' for more information.\n", name.data as *i8, name.data as *i8);
+            return 1i32;
+        };
+        if (!parse_spec(name, operands.get(0usize), group_only, &mut target, true)) {
+            return 1i32;
+        };
+    };
+
+    if (operands.len() <= first_file) {
+        if (!has_reference && operands.len() == 1usize) {
+            c::fprintf(c::stderr, "%s: missing operand after ", name.data as *i8);
+            platform_quote::zov_quote_shell(c::stderr, operands.get(0usize).data as *i8);
+            c::fputc(10i32, c::stderr);
+        } else {
+            c::fprintf(c::stderr, "%s: missing operand\n", name.data as *i8);
+        };
+        c::fprintf(c::stderr, "Try '%s --help' for more information.\n", name.data as *i8);
+        return 1i32;
+    };
+
+    if (opt.recursive && opt.dereference_set && !opt.traverse_mode_set) {
+        c::fprintf(c::stderr, "%s: -R --dereference requires either -H or -L\n", name.data as *i8);
+        return 1i32;
+    };
+
+    if (from_given) {
+        opt.from_uid_set = from.set_uid;
+        opt.from_gid_set = from.set_gid;
+        opt.from_uid = from.uid;
+        opt.from_gid = from.gid;
+    };
+
+    let mut status: i32 = 0i32;
+    for (let k in first_file..operands.len()) {
+        let fpath: str = operands.get(k);
+        if (owner_path(name, fpath, &target, &opt, true) != 0i32) {
+            status = 1i32;
+        };
+    };
+
+    return status;
+};

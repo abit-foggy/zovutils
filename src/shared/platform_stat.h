@@ -413,4 +413,66 @@ static inline int zov_stat_mode(const char *path, int follow, uint32_t *mode_out
     return 0;
 }
 
+static inline int zov_chown(const char *path, uint32_t uid, uint32_t gid) {
+    return chown(path, (uid_t)uid, (gid_t)gid) == 0 ? 0 : errno;
+}
+
+static inline int zov_lchown(const char *path, uint32_t uid, uint32_t gid) {
+    return lchown(path, (uid_t)uid, (gid_t)gid) == 0 ? 0 : errno;
+}
+
+static inline int zov_parse_user(const char *text, uint32_t *uid) {
+    if (!text || !*text) return 0;
+    char *end = NULL;
+    unsigned long val = strtoul(text, &end, 10);
+    if (end && !*end) {
+        *uid = (uint32_t)val;
+        return 1;
+    }
+    struct passwd *pw = getpwnam(text);
+    if (!pw) return 0;
+    *uid = (uint32_t)pw->pw_uid;
+    return 1;
+}
+
+static inline int zov_parse_group(const char *text, uint32_t *gid) {
+    if (!text || !*text) return 0;
+    char *end = NULL;
+    unsigned long val = strtoul(text, &end, 10);
+    if (end && !*end) {
+        *gid = (uint32_t)val;
+        return 1;
+    }
+    struct group *gr = getgrnam(text);
+    if (!gr) return 0;
+    *gid = (uint32_t)gr->gr_gid;
+    return 1;
+}
+
+static inline int zov_parse_user_slice(const char *text, size_t len, uint32_t *uid) {
+    char buf[128];
+    if (len >= sizeof(buf)) return 0;
+    memcpy(buf, text, len);
+    buf[len] = '\0';
+    return zov_parse_user(buf, uid);
+}
+
+static inline int zov_parse_group_slice(const char *text, size_t len, uint32_t *gid) {
+    char buf[128];
+    if (len >= sizeof(buf)) return 0;
+    memcpy(buf, text, len);
+    buf[len] = '\0';
+    return zov_parse_group(buf, gid);
+}
+
+static inline int zov_stat_owner(const char *path, int follow, uint32_t *uid_out, uint32_t *gid_out, uint32_t *mode_out) {
+    struct stat st;
+    int rc = follow ? stat(path, &st) : lstat(path, &st);
+    if (rc != 0) return errno;
+    if (uid_out) *uid_out = (uint32_t)st.st_uid;
+    if (gid_out) *gid_out = (uint32_t)st.st_gid;
+    if (mode_out) *mode_out = (uint32_t)st.st_mode;
+    return 0;
+}
+
 #endif
