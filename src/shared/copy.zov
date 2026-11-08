@@ -1,0 +1,1428 @@
+use std::env as args;
+use std::io;
+use std::vec as vec;
+use <stdio.h> as c;
+use <string.h> as strc;
+use <stdlib.h> as stdlib;
+use <platform_copy.h> as platform_copy;
+use <platform_stat.h> as platform_stat;
+use <platform_quote.h> as platform_quote;
+use <platform_errno.h> as platform_errno;
+use io as stream;
+
+export type ZovCpStat = struct {
+    dev: u64,
+    ino: u64,
+    mode: u32,
+    is_dir: i32,
+    size: i64,
+    mtime: i64,
+    is_link: i32,
+    is_reg: i32,
+};
+
+export type CpOptions = struct {
+    recursive: bool,
+    force: bool,
+    interactive: bool,
+    no_clobber: bool,
+    verbose: bool,
+    preserve: bool,
+    remove_destination: bool,
+    dereference: i32,
+    symlink: bool,
+    hardlink: bool,
+    update: bool,
+    parents: bool,
+    no_target_dir: bool,
+    backup: bool,
+    backup_control: i32,
+    suffix: str,
+    target_dir: str,
+};
+
+export type MvOptions = struct {
+    force: bool,
+    interactive: bool,
+    no_clobber: bool,
+    verbose: bool,
+    update: bool,
+    no_target_dir: bool,
+    backup: bool,
+    backup_control: i32,
+    suffix: str,
+    target_dir: str,
+};
+
+fn quote_stderr(s: str) void = {
+    let mut null_s: String = String::from(s);
+    platform_quote::zov_quote_shell(c::stderr, null_s.view().data as *i8);
+};
+
+fn quote_stdout(s: str) void = {
+    let mut null_s: String = String::from(s);
+    platform_quote::zov_quote_shell(c::stdout, null_s.view().data as *i8);
+};
+
+fn print_verbose(source: str, dest: str, op: str) i32 = {
+    quote_stdout(source);
+    c::fputs(op.data as *i8, c::stdout);
+    quote_stdout(dest);
+    if (c::fputc(10i32, c::stdout) == -1i32) {
+        return 1i32;
+    };
+    return 0i32;
+};
+
+export fn path_base(path: str) String = {
+    let mut n: usize = path.len;
+    while (n > 1usize && path.data[n - 1usize] == 47u8) {
+        n -= 1usize;
+    };
+    let mut start: usize = n;
+    while (start > 0usize && path.data[start - 1usize] != 47u8) {
+        start -= 1usize;
+    };
+    if (start == n && n == 0usize) {
+        return String::from(".");
+    };
+    return String::from(path[start..n]);
+};
+
+export fn path_join(dir: str, name: str) String = {
+    if (dir.len == 0usize) {
+        return String::from(name);
+    };
+    if (dir.data[dir.len - 1usize] == 47u8) {
+        return String::from(dir + name);
+    };
+    return String::from(dir + "/" + name);
+};
+
+export fn make_parents(path: str) bool = {
+    let n: usize = path.len;
+    for (let i in 1usize..n) {
+        if (path.data[i] == 47u8) {
+            let sub: str = path[0usize..i];
+            if (sub.len > 0usize && sub != "." && sub != "..") {
+                let mut dummy_str: String = String::from(sub);
+                let err: i32 = platform_stat::zov_mkdir(dummy_str.view().data as *i8, 511u32);
+                if (err != 0i32) {
+                    let errno_val: i32 = platform_errno::zov_errno_value();
+                    if (platform_copy::zov_cp_is_eexist(errno_val) == 0i32 ||
+                        platform_stat::zov_path_is_dir(dummy_str.view().data as *i8, 1i32) == 0i32) {
+                        return false;
+                    };
+                };
+            };
+        };
+    };
+    return true;
+};
+
+export fn destination_path(source: str, directory: str, parents: bool) String = {
+    if (!parents) {
+        let base: String = path_base(source);
+        return path_join(directory, base.view());
+    };
+    let mut s: usize = 0usize;
+    while (s < source.len && source.data[s] == 47u8) {
+        s += 1usize;
+    };
+    let rel_source: str = source[s..source.len];
+    let res: String = path_join(directory, rel_source);
+    if (!make_parents(res.view())) {
+        return String::from("");
+    };
+    return res;
+};
+
+fn get_env_var(name: str) str = {
+    let ptr: nullable *i8 = stdlib::getenv(name.data as *i8);
+    if (ptr == null) {
+        return "";
+    };
+    return zov_str_from_raw((ptr!) as *u8, strc::strlen(ptr!));
+};
+
+fn format_usize(val: usize) String = {
+    let mut n: usize = val;
+    if (n == 0usize) {
+        return String::from("0");
+    };
+    let mut buf: [32]u8;
+    let mut i: usize = 32usize;
+    while (n > 0usize) {
+        i -= 1usize;
+        buf[i] = ((n % 10usize) as u8) + 48u8;
+        n /= 10usize;
+    };
+    let s: str = zov_str_from_raw((&buf[i]) as *u8, 32usize - i);
+    return String::from(s);
+};
+
+export fn backup_existing(dest: str, backup_control: i32, suffix: str) bool = {
+    let mut null_dest: String = String::from(dest);
+    let mut info: ZovCpStat;
+    if (platform_copy::zov_cp_stat(null_dest.view().data as *i8, 0i32, (&mut info) as *void) != 0i32) {
+        return true;
+    };
+    let mut numbered: bool = backup_control == 1i32;
+    if (backup_control == 0i32) {
+        let control: str = get_env_var("VERSION_CONTROL");
+        numbered = control == "numbered" || control == "t";
+        if (control == "off" || control == "none") {
+            return true;
+        };
+        if (!numbered) {
+            let mut candidate1: String = String::from(dest + ".~1~");
+            let mut info1: ZovCpStat;
+            numbered = platform_copy::zov_cp_stat(candidate1.view().data as *i8, 0i32, (&mut info1) as *void) == 0i32;
+        };
+    };
+    let mut suf: str = suffix;
+    if (suf.len == 0usize) {
+        suf = get_env_var("SIMPLE_BACKUP_SUFFIX");
+    };
+    if (suf.len == 0usize) {
+        suf = "~";
+    };
+
+    if (numbered) {
+        for (let i in 1usize..1000000usize) {
+            let formatted_i: String = format_usize(i);
+            let mut num_str: String = String::from(dest) + ".~" + formatted_i.view() + "~";
+            let mut cand_info: ZovCpStat;
+            let st_res: i32 = platform_copy::zov_cp_stat(num_str.view().data as *i8, 0i32, (&mut cand_info) as *void);
+            if (st_res != 0i32 && platform_copy::zov_cp_is_enoent(st_res) != 0i32) {
+                return platform_stat::zov_rename(null_dest.view().data as *i8, num_str.view().data as *i8) == 0i32;
+            };
+        };
+        return false;
+    };
+
+    let mut cand_simple: String = String::from(dest + suf);
+    return platform_stat::zov_rename(null_dest.view().data as *i8, cand_simple.view().data as *i8) == 0i32;
+};
+
+fn copy_link(source: str, dest: str, opt: &CpOptions) i32 = {
+    let mut null_src: String = String::from(source);
+    let mut target_buf: [4096]u8;
+    let r_err: i32 = platform_copy::zov_cp_readlink(null_src.view().data as *i8, (&mut target_buf[0usize]) as *i8, 4096usize);
+    if (r_err != 0i32) {
+        c::fputs("cp: cannot read symbolic link ".data as *i8, c::stderr);
+        quote_stderr(source);
+        c::fprintf(c::stderr, ": %s\n".data as *i8, strc::strerror(r_err));
+        return 1i32;
+    };
+    let mut null_dest: String = String::from(dest);
+    if (platform_stat::zov_symlink((&target_buf[0usize]) as *i8, null_dest.view().data as *i8) != 0i32) {
+        let err: i32 = platform_errno::zov_errno_value();
+        c::fputs("cp: cannot create symbolic link ".data as *i8, c::stderr);
+        quote_stderr(dest);
+        c::fprintf(c::stderr, ": %s\n".data as *i8, strc::strerror(err));
+        return 1i32;
+    };
+    if (opt.verbose) {
+        return print_verbose(source, dest, " -> ");
+    };
+    return 0i32;
+};
+
+fn copy_regular(source: str, dest: str, src_info: &ZovCpStat, opt: &CpOptions) i32 = {
+    let mut null_src: String = String::from(source);
+    let mut null_dest: String = String::from(dest);
+
+    let mut dest_link_info: ZovCpStat;
+    let mut dest_info: ZovCpStat;
+    let dest_exists: bool = platform_copy::zov_cp_stat(null_dest.view().data as *i8, 0i32, (&mut dest_link_info) as *void) == 0i32;
+    let dest_target_exists: bool = platform_copy::zov_cp_stat(null_dest.view().data as *i8, 1i32, (&mut dest_info) as *void) == 0i32;
+
+    if (dest_target_exists && platform_copy::zov_cp_is_same(src_info.dev, src_info.ino, dest_info.dev, dest_info.ino) != 0i32) {
+        c::fputs("cp: ".data as *i8, c::stderr);
+        quote_stderr(source);
+        c::fputs(" and ".data as *i8, c::stderr);
+        quote_stderr(dest);
+        c::fputs(" are the same file\n".data as *i8, c::stderr);
+        return 1i32;
+    };
+
+    if (dest_target_exists && opt.update && src_info.mtime <= dest_info.mtime) {
+        return 0i32;
+    };
+
+    if (dest_exists && opt.no_clobber) {
+        return 0i32;
+    };
+
+    if (dest_exists && opt.interactive) {
+        c::fputs("cp: overwrite ".data as *i8, c::stderr);
+        quote_stderr(dest);
+        c::fputs("? ".data as *i8, c::stderr);
+        c::fflush(c::stderr);
+        let mut answer: [32]u8;
+        if (c::fgets((&mut answer[0usize]) as *i8, 32i32, c::stdin) == null || (answer[0usize] != 121u8 && answer[0usize] != 89u8)) {
+            return 1i32;
+        };
+    };
+
+    if (dest_exists && opt.remove_destination) {
+        if (platform_stat::zov_unlink(null_dest.view().data as *i8) != 0i32) {
+            let err: i32 = platform_errno::zov_errno_value();
+            c::fputs("cp: cannot remove ".data as *i8, c::stderr);
+            quote_stderr(dest);
+            c::fprintf(c::stderr, ": %s\n".data as *i8, strc::strerror(err));
+            return 1i32;
+        };
+    };
+
+    if (dest_exists && opt.backup) {
+        if (!backup_existing(dest, opt.backup_control, opt.suffix)) {
+            let err: i32 = platform_errno::zov_errno_value();
+            c::fputs("cp: cannot create backup ".data as *i8, c::stderr);
+            quote_stderr(dest);
+            c::fprintf(c::stderr, ": %s\n".data as *i8, strc::strerror(err));
+            return 1i32;
+        };
+    };
+
+    let in_fd: i32 = platform_copy::zov_cp_open_read(null_src.view().data as *i8);
+    if (in_fd < 0i32) {
+        let err: i32 = platform_errno::zov_errno_value();
+        c::fputs("cp: cannot open ".data as *i8, c::stderr);
+        quote_stderr(source);
+        c::fprintf(c::stderr, ": %s\n".data as *i8, strc::strerror(err));
+        return 1i32;
+    };
+
+    let mut opened: ZovCpStat;
+    if (platform_copy::zov_cp_fstat(in_fd, (&mut opened) as *void) != 0i32) {
+        let err: i32 = platform_errno::zov_errno_value();
+        let _ = platform_copy::zov_cp_close(in_fd);
+        c::fputs("cp: cannot stat ".data as *i8, c::stderr);
+        quote_stderr(source);
+        c::fprintf(c::stderr, ": %s\n".data as *i8, strc::strerror(err));
+        return 1i32;
+    };
+
+    if (platform_copy::zov_cp_stat(null_dest.view().data as *i8, 1i32, (&mut dest_info) as *void) == 0i32 &&
+        platform_copy::zov_cp_is_same(opened.dev, opened.ino, dest_info.dev, dest_info.ino) != 0i32) {
+        let _ = platform_copy::zov_cp_close(in_fd);
+        c::fputs("cp: ".data as *i8, c::stderr);
+        quote_stderr(source);
+        c::fputs(" and ".data as *i8, c::stderr);
+        quote_stderr(dest);
+        c::fputs(" are the same file\n".data as *i8, c::stderr);
+        return 1i32;
+    };
+
+    let create_mode: u32 = platform_copy::zov_cp_create_mode(src_info.mode);
+    let mut out_fd: i32 = platform_copy::zov_cp_open_write(null_dest.view().data as *i8, create_mode);
+    if (out_fd < 0i32 && opt.force && !opt.no_clobber && platform_stat::zov_unlink(null_dest.view().data as *i8) == 0i32) {
+        out_fd = platform_copy::zov_cp_open_write(null_dest.view().data as *i8, create_mode);
+    };
+    if (out_fd < 0i32) {
+        let err: i32 = platform_errno::zov_errno_value();
+        let _ = platform_copy::zov_cp_close(in_fd);
+        c::fputs("cp: cannot create regular file ".data as *i8, c::stderr);
+        quote_stderr(dest);
+        c::fprintf(c::stderr, ": %s\n".data as *i8, strc::strerror(err));
+        return 1i32;
+    };
+
+    let copy_err: i32 = platform_copy::zov_cp_copy_data(in_fd, out_fd);
+    let mut status: i32 = 0i32;
+    if (copy_err != 0i32) {
+        c::fputs("cp: error reading ".data as *i8, c::stderr);
+        quote_stderr(source);
+        c::fprintf(c::stderr, ": %s\n".data as *i8, strc::strerror(copy_err));
+        status = 1i32;
+    };
+
+    if (opt.preserve) {
+        let mut atime_sec: i64 = 0i64;
+        let mut atime_nsec: i64 = 0i64;
+        let mut mtime_sec: i64 = 0i64;
+        let mut mtime_nsec: i64 = 0i64;
+        platform_stat::zov_stat_get_times(null_src.view().data as *i8, &mut atime_sec, &mut atime_nsec, &mut mtime_sec, &mut mtime_nsec);
+        let p_err: i32 = platform_copy::zov_cp_preserve_fd(out_fd, src_info.mode, atime_sec, atime_nsec, mtime_sec, mtime_nsec);
+        if (p_err != 0i32) {
+            c::fputs("cp: preserving permissions for ".data as *i8, c::stderr);
+            quote_stderr(dest);
+            c::fprintf(c::stderr, ": %s\n".data as *i8, strc::strerror(p_err));
+            status = 1i32;
+        };
+    };
+
+    let c_in: i32 = platform_copy::zov_cp_close(in_fd);
+    if (c_in != 0i32 && status == 0i32) {
+        c::fputs("cp: closing ".data as *i8, c::stderr);
+        quote_stderr(source);
+        c::fprintf(c::stderr, ": %s\n".data as *i8, strc::strerror(c_in));
+        status = 1i32;
+    };
+
+    let c_out: i32 = platform_copy::zov_cp_close(out_fd);
+    if (c_out != 0i32 && status == 0i32) {
+        c::fputs("cp: closing ".data as *i8, c::stderr);
+        quote_stderr(dest);
+        c::fprintf(c::stderr, ": %s\n".data as *i8, strc::strerror(c_out));
+        status = 1i32;
+    };
+
+    if (status != 0i32) {
+        return status;
+    };
+    if (opt.verbose) {
+        return print_verbose(source, dest, " -> ");
+    };
+    return 0i32;
+};
+
+fn copy_directory(source: str, dest: str, src_info: &ZovCpStat, opt: &CpOptions) i32 = {
+    if (!opt.recursive) {
+        c::fputs("cp: -r not specified; omitting directory ".data as *i8, c::stderr);
+        quote_stderr(source);
+        c::fputc(10i32, c::stderr);
+        return 1i32;
+    };
+
+    let mut null_src: String = String::from(source);
+    let mut null_dest: String = String::from(dest);
+
+    let mut dst_info: ZovCpStat;
+
+    if (platform_copy::zov_cp_destination_inside(null_src.view().data as *i8, null_dest.view().data as *i8) != 0i32) {
+        if (platform_copy::zov_cp_stat(null_dest.view().data as *i8, 1i32, (&mut dst_info) as *void) != 0i32 &&
+            platform_stat::zov_mkdir(null_dest.view().data as *i8, src_info.mode & 511u32) != 0i32) {
+            let err: i32 = platform_errno::zov_errno_value();
+            c::fputs("cp: cannot create directory ".data as *i8, c::stderr);
+            quote_stderr(dest);
+            c::fprintf(c::stderr, ": %s\n".data as *i8, strc::strerror(err));
+            return 1i32;
+        };
+        let dir_ptr: nullable *void = platform_stat::zov_opendir(null_src.view().data as *i8);
+        if (dir_ptr == null) {
+            let err: i32 = platform_errno::zov_errno_value();
+            c::fputs("cp: cannot open directory ".data as *i8, c::stderr);
+            quote_stderr(source);
+            c::fprintf(c::stderr, ": %s\n".data as *i8, strc::strerror(err));
+            return 1i32;
+        };
+        while (true) {
+            let ent_name: nullable *i8 = platform_stat::zov_readdir(dir_ptr!);
+            if (ent_name == null) {
+                break;
+            };
+            let name_str: str = zov_str_from_raw((ent_name!) as *u8, strc::strlen(ent_name!));
+            if (name_str == "." || name_str == "..") {
+                continue;
+            };
+            let mut src_child: String = path_join(source, name_str);
+            let mut dst_child: String = path_join(dest, name_str);
+            if (platform_copy::zov_cp_path_contains(src_child.view().data as *i8, null_dest.view().data as *i8) == 0i32) {
+                let _ = copy_one(src_child.view(), dst_child.view(), opt, false);
+            };
+        };
+        let _ = platform_stat::zov_closedir(dir_ptr!);
+        c::fputs("cp: cannot copy a directory, ".data as *i8, c::stderr);
+        quote_stderr(source);
+        c::fputs(", into itself, ".data as *i8, c::stderr);
+        quote_stderr(dest);
+        c::fputc(10i32, c::stderr);
+        return 1i32;
+    };
+
+    if (platform_copy::zov_cp_stat(null_dest.view().data as *i8, 1i32, (&mut dst_info) as *void) == 0i32) {
+        if (dst_info.is_dir == 0i32) {
+            let err: i32 = 20i32;
+            c::fputs("cp: cannot overwrite non-directory ".data as *i8, c::stderr);
+            quote_stderr(dest);
+            c::fprintf(c::stderr, ": %s\n".data as *i8, strc::strerror(err));
+            return 1i32;
+        };
+        if (platform_copy::zov_cp_is_same(src_info.dev, src_info.ino, dst_info.dev, dst_info.ino) != 0i32) {
+            c::fputs("cp: cannot copy a directory, ".data as *i8, c::stderr);
+            quote_stderr(source);
+            c::fputs(", into itself, ".data as *i8, c::stderr);
+            quote_stderr(dest);
+            c::fputc(10i32, c::stderr);
+            return 1i32;
+        };
+    } else {
+        if (platform_stat::zov_mkdir(null_dest.view().data as *i8, src_info.mode & 511u32) != 0i32) {
+            let err: i32 = platform_errno::zov_errno_value();
+            c::fputs("cp: cannot create directory ".data as *i8, c::stderr);
+            quote_stderr(dest);
+            c::fprintf(c::stderr, ": %s\n".data as *i8, strc::strerror(err));
+            return 1i32;
+        };
+    };
+
+    let dir_ptr: nullable *void = platform_stat::zov_opendir(null_src.view().data as *i8);
+    if (dir_ptr == null) {
+        let err: i32 = platform_errno::zov_errno_value();
+        c::fputs("cp: cannot open directory ".data as *i8, c::stderr);
+        quote_stderr(source);
+        c::fprintf(c::stderr, ": %s\n".data as *i8, strc::strerror(err));
+        return 1i32;
+    };
+    let mut status: i32 = 0i32;
+    while (true) {
+        let ent_name: nullable *i8 = platform_stat::zov_readdir(dir_ptr!);
+        if (ent_name == null) {
+            break;
+        };
+        let name_str: str = zov_str_from_raw((ent_name!) as *u8, strc::strlen(ent_name!));
+        if (name_str == "." || name_str == "..") {
+            continue;
+        };
+        let mut src_child: String = path_join(source, name_str);
+        let mut dst_child: String = path_join(dest, name_str);
+        if (copy_one(src_child.view(), dst_child.view(), opt, false) != 0i32) {
+            status = 1i32;
+        };
+    };
+    if (platform_stat::zov_closedir(dir_ptr!) != 0i32) {
+        status = 1i32;
+    };
+
+    if (opt.preserve) {
+        let mut atime_sec: i64 = 0i64;
+        let mut atime_nsec: i64 = 0i64;
+        let mut mtime_sec: i64 = 0i64;
+        let mut mtime_nsec: i64 = 0i64;
+        platform_stat::zov_stat_get_times(null_src.view().data as *i8, &mut atime_sec, &mut atime_nsec, &mut mtime_sec, &mut mtime_nsec);
+        let p_err: i32 = platform_copy::zov_cp_preserve_path(null_dest.view().data as *i8, src_info.mode, atime_sec, atime_nsec, mtime_sec, mtime_nsec);
+        if (p_err != 0i32) {
+            status = 1i32;
+        };
+    };
+    if (opt.verbose && status == 0i32) {
+        return print_verbose(source, dest, " -> ");
+    };
+    return status;
+};
+
+export fn copy_one(source: str, dest: str, opt: &CpOptions, command_line: bool) i32 = {
+    let mut null_src: String = String::from(source);
+    let mut null_dest: String = String::from(dest);
+
+    let mut follow: i32 = 0i32;
+    if (opt.dereference == 1i32 || (command_line && opt.dereference == 2i32)) {
+        follow = 1i32;
+    };
+    let mut info: ZovCpStat;
+    if (platform_copy::zov_cp_stat(null_src.view().data as *i8, follow, (&mut info) as *void) != 0i32) {
+        let err: i32 = platform_errno::zov_errno_value();
+        c::fputs("cp: cannot stat ".data as *i8, c::stderr);
+        quote_stderr(source);
+        c::fprintf(c::stderr, ": %s\n".data as *i8, strc::strerror(err));
+        return 1i32;
+    };
+
+    if (info.is_link != 0i32 && (opt.dereference == 0i32 || (!command_line && opt.dereference == 2i32))) {
+        return copy_link(source, dest, opt);
+    };
+
+    if (info.is_dir != 0i32) {
+        return copy_directory(source, dest, &info, opt);
+    };
+
+    if (opt.symlink) {
+        if (platform_stat::zov_symlink(null_src.view().data as *i8, null_dest.view().data as *i8) != 0i32) {
+            let err: i32 = platform_errno::zov_errno_value();
+            c::fputs("cp: cannot create symbolic link ".data as *i8, c::stderr);
+            quote_stderr(dest);
+            c::fprintf(c::stderr, ": %s\n".data as *i8, strc::strerror(err));
+            return 1i32;
+        };
+        if (opt.verbose) {
+            return print_verbose(source, dest, " -> ");
+        };
+        return 0i32;
+    };
+
+    if (opt.hardlink) {
+        if (platform_stat::zov_linkat(null_src.view().data as *i8, null_dest.view().data as *i8, 0i32) != 0i32) {
+            let err: i32 = platform_errno::zov_errno_value();
+            c::fputs("cp: cannot create hard link ".data as *i8, c::stderr);
+            quote_stderr(dest);
+            c::fprintf(c::stderr, ": %s\n".data as *i8, strc::strerror(err));
+            return 1i32;
+        };
+        if (opt.verbose) {
+            return print_verbose(source, dest, " => ");
+        };
+        return 0i32;
+    };
+
+    return copy_regular(source, dest, &info, opt);
+};
+
+export fn remove_tree(path: str) i32 = {
+    let mut null_path: String = String::from(path);
+    let mut info: ZovCpStat;
+    if (platform_copy::zov_cp_stat(null_path.view().data as *i8, 0i32, (&mut info) as *void) != 0i32) {
+        return -1i32;
+    };
+    if (info.is_dir == 0i32 || info.is_link != 0i32) {
+        return platform_stat::zov_unlink(null_path.view().data as *i8);
+    };
+    let dir_ptr: nullable *void = platform_stat::zov_opendir(null_path.view().data as *i8);
+    if (dir_ptr == null) {
+        return -1i32;
+    };
+    let mut status: i32 = 0i32;
+    while (true) {
+        let ent_name: nullable *i8 = platform_stat::zov_readdir(dir_ptr!);
+        if (ent_name == null) {
+            break;
+        };
+        let name_str: str = zov_str_from_raw((ent_name!) as *u8, strc::strlen(ent_name!));
+        if (name_str == "." || name_str == "..") {
+            continue;
+        };
+        let mut child: String = path_join(path, name_str);
+        if (remove_tree(child.view()) != 0i32) {
+            status = -1i32;
+        };
+    };
+    if (platform_stat::zov_closedir(dir_ptr!) != 0i32) {
+        status = -1i32;
+    };
+    if (status == 0i32) {
+        status = platform_stat::zov_rmdir(null_path.view().data as *i8);
+    };
+    return status;
+};
+
+export fn move_one(source: str, dest: str, opt: &MvOptions) i32 = {
+    let mut null_src: String = String::from(source);
+    let mut null_dest: String = String::from(dest);
+
+    let mut src_info: ZovCpStat;
+    if (platform_copy::zov_cp_stat(null_src.view().data as *i8, 0i32, (&mut src_info) as *void) != 0i32) {
+        let err: i32 = platform_errno::zov_errno_value();
+        c::fputs("mv: cannot stat ".data as *i8, c::stderr);
+        quote_stderr(source);
+        c::fprintf(c::stderr, ": %s\n".data as *i8, strc::strerror(err));
+        return 1i32;
+    };
+
+    let mut dest_link_info: ZovCpStat;
+    let mut dest_info: ZovCpStat;
+    let dest_exists: bool = platform_copy::zov_cp_stat(null_dest.view().data as *i8, 0i32, (&mut dest_link_info) as *void) == 0i32;
+    let dest_stat: bool = platform_copy::zov_cp_stat(null_dest.view().data as *i8, 1i32, (&mut dest_info) as *void) == 0i32;
+
+    if (dest_exists && dest_link_info.is_dir != 0i32 && src_info.is_dir == 0i32) {
+        c::fputs("mv: cannot overwrite directory ".data as *i8, c::stderr);
+        quote_stderr(dest);
+        c::fputs(" with non-directory ".data as *i8, c::stderr);
+        quote_stderr(source);
+        c::fputc(10i32, c::stderr);
+        return 1i32;
+    };
+
+    if (dest_exists && dest_link_info.is_dir == 0i32 && src_info.is_dir != 0i32) {
+        c::fputs("mv: cannot overwrite non-directory ".data as *i8, c::stderr);
+        quote_stderr(dest);
+        c::fputs(" with directory ".data as *i8, c::stderr);
+        quote_stderr(source);
+        c::fputc(10i32, c::stderr);
+        return 1i32;
+    };
+
+    if (dest_stat && platform_copy::zov_cp_is_same(src_info.dev, src_info.ino, dest_info.dev, dest_info.ino) != 0i32) {
+        c::fputs("mv: ".data as *i8, c::stderr);
+        quote_stderr(source);
+        c::fputs(" and ".data as *i8, c::stderr);
+        quote_stderr(dest);
+        c::fputs(" are the same file\n".data as *i8, c::stderr);
+        return 1i32;
+    };
+
+    if (dest_exists && opt.update && dest_stat && src_info.mtime <= dest_info.mtime) {
+        return 0i32;
+    };
+
+    if (dest_exists && opt.no_clobber) {
+        return 0i32;
+    };
+
+    if (dest_exists && opt.interactive) {
+        c::fputs("mv: overwrite ".data as *i8, c::stderr);
+        quote_stderr(dest);
+        c::fputs("? ".data as *i8, c::stderr);
+        c::fflush(c::stderr);
+        let mut answer: [32]u8;
+        if (c::fgets((&mut answer[0usize]) as *i8, 32i32, c::stdin) == null || (answer[0usize] != 121u8 && answer[0usize] != 89u8)) {
+            return 1i32;
+        };
+    };
+
+    if (dest_exists && opt.backup) {
+        if (!backup_existing(dest, opt.backup_control, opt.suffix)) {
+            let err: i32 = platform_errno::zov_errno_value();
+            c::fputs("mv: cannot create backup ".data as *i8, c::stderr);
+            quote_stderr(dest);
+            c::fprintf(c::stderr, ": %s\n".data as *i8, strc::strerror(err));
+            return 1i32;
+        };
+    };
+
+    if (platform_stat::zov_rename(null_src.view().data as *i8, null_dest.view().data as *i8) == 0i32) {
+        if (opt.verbose) {
+            c::fputs("renamed ".data as *i8, c::stdout);
+            quote_stdout(source);
+            c::fputs(" -> ".data as *i8, c::stdout);
+            quote_stdout(dest);
+            c::fputc(10i32, c::stdout);
+        };
+        return 0i32;
+    };
+
+    let mut error: i32 = platform_errno::zov_errno_value();
+    if (platform_copy::zov_cp_is_exdev(error) != 0i32) {
+        let cp_opt: CpOptions = CpOptions {
+            recursive = true,
+            force = false,
+            interactive = false,
+            no_clobber = false,
+            verbose = false,
+            preserve = true,
+            remove_destination = false,
+            dereference = 0i32,
+            symlink = false,
+            hardlink = false,
+            update = false,
+            parents = false,
+            no_target_dir = false,
+            backup = false,
+            backup_control = 0i32,
+            suffix = "",
+            target_dir = "",
+        };
+        if (copy_one(source, dest, &cp_opt, true) == 0i32 && remove_tree(source) == 0i32) {
+            if (opt.verbose) {
+                c::fputs("copied ".data as *i8, c::stdout);
+                quote_stdout(source);
+                c::fputs(" -> ".data as *i8, c::stdout);
+                quote_stdout(dest);
+                c::fputc(10i32, c::stdout);
+            };
+            return 0i32;
+        };
+        error = platform_errno::zov_errno_value();
+    };
+
+    c::fputs("mv: cannot move ".data as *i8, c::stderr);
+    quote_stderr(source);
+    c::fputs(" to ".data as *i8, c::stderr);
+    quote_stderr(dest);
+    c::fprintf(c::stderr, ": %s\n".data as *i8, strc::strerror(error));
+    return 1i32;
+};
+
+export fn backup_mode(value: str) i32 = {
+    if (value.len == 0usize || value == "existing" || value == "nil") { return 0i32; };
+    if (value == "numbered" || value == "t") { return 1i32; };
+    if (value == "simple" || value == "never") { return 2i32; };
+    if (value == "none" || value == "off") { return 3i32; };
+    return -1i32;
+};
+
+fn longkey(arg: str) str = {
+    for (let i in 0usize..arg.len) { if (arg.data[i] == 61u8) { return arg[0usize..i]; }; };
+    return arg;
+};
+
+fn is_prefix(value: str, full: str) bool = {
+    return value.len > 2usize && value.len <= full.len && value == full[0usize..value.len];
+};
+
+fn help_cp() void = {
+    let open_brace: str = zov_str_from_raw((&[123u8][0usize]) as *u8, 1usize);
+    let close_brace: str = zov_str_from_raw((&[125u8][0usize]) as *u8, 1usize);
+    let help_text: String = String::from(
+          "Usage: cp [OPTION]... [-T] SOURCE DEST\n" +
+          "  or:  cp [OPTION]... SOURCE... DIRECTORY\n" +
+          "  or:  cp [OPTION]... -t DIRECTORY SOURCE...\n" +
+          "Copy SOURCE to DEST, or multiple SOURCE(s) to DIRECTORY.\n" +
+          "\n" +
+          "Mandatory arguments to long options are mandatory for short options too.\n" +
+          "  -a, --archive\n" +
+          "         same as -dR --preserve=all\n" +
+          "      --attributes-only\n" +
+          "         don't copy the file data, just the attributes\n" +
+          "      --backup[=CONTROL]\n" +
+          "         make a backup of each existing destination file\n" +
+          "  -b\n" +
+          "         like --backup but does not accept an argument\n" +
+          "      --copy-contents\n" +
+          "         copy contents of special files when recursive\n" +
+          "  -d\n" +
+          "         same as --no-dereference --preserve=links\n" +
+          "      --debug\n" +
+          "         explain how a file is copied.  Implies -v\n" +
+          "  -f, --force\n" +
+          "         if an existing destination file cannot be opened, remove it and try\n" +
+          "         again (this option is ignored when the -n option is also used)\n" +
+          "  -i, --interactive\n" +
+          "         prompt before overwrite (overrides a previous -n option)\n" +
+          "  -H\n" +
+          "         follow command-line symbolic links in SOURCE\n" +
+          "  -L, --dereference\n" +
+          "         always follow symbolic links in SOURCE\n" +
+          "  -P, --no-dereference\n" +
+          "         never follow symbolic links in SOURCE\n" +
+          "      --keep-directory-symlink\n" +
+          "         follow existing symlinks to directories\n" +
+          "  -l, --link\n" +
+          "         hard link files instead of copying\n" +
+          "  -n, --no-clobber\n" +
+          "         (deprecated) silently skip existing files.  See also --update\n" +
+          "  -p\n" +
+          "         same as --preserve=mode,ownership,timestamps\n" +
+          "      --preserve[=ATTR_LIST]\n" +
+          "         preserve the specified attributes\n" +
+          "      --no-preserve=ATTR_LIST\n" +
+          "         don't preserve the specified attributes\n" +
+          "      --parents\n" +
+          "         use full source file name under DIRECTORY\n" +
+          "  -R, -r, --recursive\n" +
+          "         copy directories recursively\n" +
+          "      --reflink[=WHEN]\n" +
+          "         control clone/CoW copies. See below\n" +
+          "      --remove-destination\n" +
+          "         remove each existing destination file before attempting to open it\n" +
+          "         (contrast with --force)\n" +
+          "      --sparse=WHEN\n" +
+          "         control creation of sparse files. See below\n" +
+          "      --strip-trailing-slashes\n" +
+          "         remove any trailing slashes from each SOURCE argument\n" +
+          "  -s, --symbolic-link\n" +
+          "         make symbolic links instead of copying\n" +
+          "  -S, --suffix=SUFFIX\n" +
+          "         override the usual backup suffix\n" +
+          "  -t, --target-directory=DIRECTORY\n" +
+          "         copy all SOURCE arguments into DIRECTORY\n" +
+          "  -T, --no-target-directory\n" +
+          "         treat DEST as a normal file\n" +
+          "      --update[=UPDATE]\n" +
+          "         control which existing files are updated;\n" +
+          "         UPDATE=" + open_brace + "all,none,none-fail,older(default)" + close_brace + "\n" +
+          "  -u\n" +
+          "         equivalent to --update[=older].  See below\n" +
+          "  -v, --verbose\n" +
+          "         explain what is being done\n" +
+          "  -x, --one-file-system\n" +
+          "         stay on this file system\n" +
+          "  -Z\n" +
+          "         set SELinux security context of destination file to default type\n" +
+          "      --context[=CTX]\n" +
+          "         like -Z, or if CTX is specified then set the\n" +
+          "         SELinux or SMACK security context to CTX\n" +
+          "      --help\n" +
+          "         display this help and exit\n" +
+          "      --version\n" +
+          "         output version information and exit\n\n" +
+          "ATTR_LIST is a comma-separated list of attributes. Attributes are 'mode' for\n" +
+          "permissions (including any ACL and xattr permissions), 'ownership' for user\n" +
+          "and group, 'timestamps' for file timestamps, 'links' for hard links, 'context'\n" +
+          "for security context, 'xattr' for extended attributes, and 'all' for all\n" +
+          "attributes.\n\n" +
+          "By default, sparse SOURCE files are detected by a crude heuristic and the\n" +
+          "corresponding DEST file is made sparse as well.  That is the behavior\n" +
+          "selected by --sparse=auto.  Specify --sparse=always to create a sparse DEST\n" +
+          "file whenever the SOURCE file contains a long enough sequence of zero bytes.\n" +
+          "Use --sparse=never to inhibit creation of sparse files.\n\n" +
+          "UPDATE controls which existing files in the destination are replaced.\n" +
+          "'all' is the default operation when an --update option is not specified,\n" +
+          "and results in all existing files in the destination being replaced.\n" +
+          "'none' is like the --no-clobber option, in that no files in the\n" +
+          "destination are replaced, and skipped files do not induce a failure.\n" +
+          "'none-fail' also ensures no files are replaced in the destination,\n" +
+          "but any skipped files are diagnosed and induce a failure.\n" +
+          "'older' is the default operation when --update is specified, and results\n" +
+          "in files being replaced if they're older than the corresponding source file.\n\n" +
+          "By default or with --reflink=auto, cp will try a lightweight copy, where the\n" +
+          "data blocks are copied only when modified, falling back to a standard copy\n" +
+          "if this is not possible.  With --reflink[=always] cp will fail if CoW is not\n" +
+          "supported, while --reflink=never ensures a standard copy is performed.\n\n" +
+          "The backup suffix is '~', unless set with --suffix or SIMPLE_BACKUP_SUFFIX.\n" +
+          "The version control method may be selected via the --backup option or through\n" +
+          "the VERSION_CONTROL environment variable.  Here are the values:\n\n" +
+          "  none, off       never make backups (even if --backup is given)\n" +
+          "  numbered, t     make numbered backups\n" +
+          "  existing, nil   numbered if numbered backups exist, simple otherwise\n" +
+          "  simple, never   always make simple backups\n\n" +
+          "As a special case, cp makes a backup of SOURCE when the force and backup\n" +
+          "options are given and SOURCE and DEST are the same name for an existing,\n" +
+          "regular file.\n\n" +
+          "Report bugs to: bug-coreutils@gnu.org\n" +
+          "GNU coreutils home page: <https://www.gnu.org/software/coreutils/>\n" +
+          "General help using GNU software: <https://www.gnu.org/gethelp/>\n" +
+          "Report any translation bugs to <https://translationproject.org/team/>\n" +
+          "Full documentation <https://www.gnu.org/software/coreutils/cp>\n" +
+          "or available locally via: info '(coreutils) cp invocation'\n");
+    c::fputs(help_text.view().data as *i8, c::stdout);
+};
+
+fn help_mv() void = {
+    let open_brace: str = zov_str_from_raw((&[123u8][0usize]) as *u8, 1usize);
+    let close_brace: str = zov_str_from_raw((&[125u8][0usize]) as *u8, 1usize);
+    let help_text: String = String::from(
+          "Usage: mv [OPTION]... [-T] SOURCE DEST\n" +
+          "  or:  mv [OPTION]... SOURCE... DIRECTORY\n" +
+          "  or:  mv [OPTION]... -t DIRECTORY SOURCE...\n" +
+          "Rename SOURCE to DEST, or move SOURCE(s) to DIRECTORY.\n" +
+          "\n" +
+          "Mandatory arguments to long options are mandatory for short options too.\n" +
+          "      --backup[=CONTROL]\n" +
+          "         make a backup of each existing destination file\n" +
+          "  -b\n" +
+          "         like --backup but does not accept an argument\n" +
+          "      --debug\n" +
+          "         explain how a file is copied.  Implies -v\n" +
+          "      --exchange\n" +
+          "         exchange source and destination\n" +
+          "  -f, --force\n" +
+          "         do not prompt before overwriting\n" +
+          "  -i, --interactive\n" +
+          "         prompt before overwrite\n" +
+          "  -n, --no-clobber\n" +
+          "         do not overwrite an existing file\n" +
+          "If you specify more than one of -i, -f, -n, only the final one takes effect.\n" +
+          "      --no-copy\n" +
+          "         do not copy if renaming fails\n" +
+          "      --strip-trailing-slashes\n" +
+          "         remove any trailing slashes from each SOURCE argument\n" +
+          "  -S, --suffix=SUFFIX\n" +
+          "         override the usual backup suffix\n" +
+          "  -t, --target-directory=DIRECTORY\n" +
+          "         move all SOURCE arguments into DIRECTORY\n" +
+          "  -T, --no-target-directory\n" +
+          "         treat DEST as a normal file\n" +
+          "      --update[=UPDATE]\n" +
+          "         control which existing files are updated;\n" +
+          "         UPDATE=" + open_brace + "all,none,none-fail,older(default)" + close_brace + "\n" +
+          "  -u\n" +
+          "         equivalent to --update[=older].  See below\n" +
+          "  -v, --verbose\n" +
+          "         explain what is being done\n" +
+          "  -Z, --context\n" +
+          "         set SELinux security context of destination file to default type\n" +
+          "      --help\n" +
+          "         display this help and exit\n" +
+          "      --version\n" +
+          "         output version information and exit\n" +
+          "\n" +
+          "UPDATE controls which existing files in the destination are replaced.\n" +
+          "'all' is the default operation when an --update option is not specified,\n" +
+          "and results in all existing files in the destination being replaced.\n" +
+          "'none' is like the --no-clobber option, in that no files in the\n" +
+          "destination are replaced, and skipped files do not induce a failure.\n" +
+          "'none-fail' also ensures no files are replaced in the destination,\n" +
+          "but any skipped files are diagnosed and induce a failure.\n" +
+          "'older' is the default operation when --update is specified, and results\n" +
+          "in files being replaced if they're older than the corresponding source file.\n" +
+          "\n" +
+          "The backup suffix is '~', unless set with --suffix or SIMPLE_BACKUP_SUFFIX.\n" +
+          "The version control method may be selected via the --backup option or through\n" +
+          "the VERSION_CONTROL environment variable.  Here are the values:\n" +
+          "\n" +
+          "  none, off       never make backups (even if --backup is given)\n" +
+          "  numbered, t     make numbered backups\n" +
+          "  existing, nil   numbered if numbered backups exist, simple otherwise\n" +
+          "  simple, never   always make simple backups\n" +
+          "\n" +
+          "Report bugs to: bug-coreutils@gnu.org\n" +
+          "GNU coreutils home page: <https://www.gnu.org/software/coreutils/>\n" +
+          "General help using GNU software: <https://www.gnu.org/gethelp/>\n" +
+          "Report any translation bugs to <https://translationproject.org/team/>\n" +
+          "Full documentation <https://www.gnu.org/software/coreutils/mv>\n" +
+          "or available locally via: info '(coreutils) mv invocation'\n");
+    c::fputs(help_text.view().data as *i8, c::stdout);
+};
+
+export fn run_cp(start: usize, argc: usize) i32 = {
+    let mut opt: CpOptions = CpOptions {
+        recursive = false,
+        force = false,
+        interactive = false,
+        no_clobber = false,
+        verbose = false,
+        preserve = false,
+        remove_destination = false,
+        dereference = 2i32,
+        symlink = false,
+        hardlink = false,
+        update = false,
+        parents = false,
+        no_target_dir = false,
+        backup = false,
+        backup_control = 0i32,
+        suffix = "",
+        target_dir = "",
+    };
+
+    let mut target_dir: str = "";
+    let mut operands: vec::Vec[str] = vec::new[str]();
+    let mut done: bool = false;
+    let mut i: usize = start;
+
+    while (i < argc) {
+        let arg: str = args::argat(i);
+        if (!done && arg == "--") {
+            done = true;
+            i += 1usize;
+            continue;
+        };
+        if (!done && arg.len > 2usize && arg[0usize..2usize] == "--") {
+            let key: str = longkey(arg);
+            let mut value: str = "";
+            let mut has_value: bool = false;
+            if (arg.len > key.len) {
+                value = arg[key.len + 1usize..arg.len];
+                has_value = true;
+            };
+
+            if (key == "--help" || is_prefix(key, "--help")) {
+                if (has_value) {
+                    c::fputs("cp: option '--help' doesn't allow an argument\nTry 'cp --help' for more information.\n".data as *i8, c::stderr);
+                    return 1;
+                };
+                help_cp();
+                stream::finishoutput("cp");
+                return 0;
+            };
+            if (key == "--version" || is_prefix(key, "--version")) {
+                c::fputs("cp (zovutils) 0.10.61\n".data as *i8, c::stdout);
+                stream::finishoutput("cp");
+                return 0;
+            };
+            if (key == "--recursive" || is_prefix(key, "--recursive")) { opt.recursive = true; i += 1usize; continue; };
+            if (key == "--archive" || is_prefix(key, "--archive")) { opt.recursive = true; opt.preserve = true; opt.dereference = 0i32; i += 1usize; continue; };
+            if (key == "--preserve" || is_prefix(key, "--preserve")) { opt.preserve = true; i += 1usize; continue; };
+            if (key == "--no-preserve" || is_prefix(key, "--no-preserve")) { opt.preserve = false; i += 1usize; continue; };
+            if (key == "--force" || is_prefix(key, "--force")) { opt.force = true; i += 1usize; continue; };
+            if (key == "--interactive" || is_prefix(key, "--interactive")) { opt.interactive = true; opt.no_clobber = false; i += 1usize; continue; };
+            if (key == "--no-clobber" || is_prefix(key, "--no-clobber")) { opt.no_clobber = true; opt.interactive = false; i += 1usize; continue; };
+            if (key == "--verbose" || is_prefix(key, "--verbose")) { opt.verbose = true; i += 1usize; continue; };
+            if (key == "--dereference" || is_prefix(key, "--dereference")) { opt.dereference = 1i32; i += 1usize; continue; };
+            if (key == "--no-dereference" || is_prefix(key, "--no-dereference")) { opt.dereference = 0i32; i += 1usize; continue; };
+            if (key == "--parents" || is_prefix(key, "--parents")) { opt.parents = true; i += 1usize; continue; };
+            if (key == "--no-target-directory" || is_prefix(key, "--no-target-directory")) { opt.no_target_dir = true; i += 1usize; continue; };
+            if (key == "--update" || is_prefix(key, "--update")) { opt.update = true; i += 1usize; continue; };
+            if (key == "--remove-destination" || is_prefix(key, "--remove-destination")) { opt.remove_destination = true; i += 1usize; continue; };
+            if (key == "--symbolic-link" || is_prefix(key, "--symbolic-link")) { opt.symlink = true; i += 1usize; continue; };
+            if (key == "--link" || is_prefix(key, "--link")) { opt.hardlink = true; i += 1usize; continue; };
+            if (key == "--target-directory" || is_prefix(key, "--target-directory")) {
+                let mut v: str = "";
+                if (has_value) {
+                    v = value;
+                    i += 1usize;
+                } else if (i + 1usize < argc) {
+                    i += 1usize;
+                    v = args::argat(i);
+                    i += 1usize;
+                } else {
+                    c::fputs("cp: option '--target-directory' requires an argument\nTry 'cp --help' for more information.\n".data as *i8, c::stderr);
+                    return 1;
+                };
+                target_dir = v;
+                continue;
+            };
+            if (key == "--backup" || is_prefix(key, "--backup")) {
+                opt.backup = true;
+                if (has_value) {
+                    opt.backup_control = backup_mode(value);
+                    if (opt.backup_control < 0i32) {
+                        c::fprintf(c::stderr, "cp: invalid argument '%s' for 'backup type'\nTry 'cp --help' for more information.\n".data as *i8, value.data as *i8);
+                        return 1;
+                    };
+                    if (opt.backup_control == 3i32) {
+                        opt.backup = false;
+                    };
+                };
+                i += 1usize;
+                continue;
+            };
+            if (key == "--suffix" || is_prefix(key, "--suffix")) {
+                let mut v: str = "";
+                if (has_value) {
+                    v = value;
+                    i += 1usize;
+                } else if (i + 1usize < argc) {
+                    i += 1usize;
+                    v = args::argat(i);
+                    i += 1usize;
+                } else {
+                    c::fputs("cp: option '--suffix' requires an argument\nTry 'cp --help' for more information.\n".data as *i8, c::stderr);
+                    return 1;
+                };
+                opt.suffix = v;
+                continue;
+            };
+
+            c::fprintf(c::stderr, "cp: unrecognized option '%s'\nTry 'cp --help' for more information.\n".data as *i8, arg.data as *i8);
+            return 1;
+        };
+        if (!done && arg.len > 1usize && arg.data[0usize] == 45u8) {
+            let mut j: usize = 1usize;
+            while (j < arg.len) {
+                let ch: u8 = arg.data[j];
+                if (ch == 97u8) { // a
+                    opt.recursive = true; opt.preserve = true; opt.dereference = 0i32;
+                } else if (ch == 82u8 || ch == 114u8) { // R or r
+                    opt.recursive = true;
+                } else if (ch == 102u8) { // f
+                    opt.force = true;
+                } else if (ch == 105u8) { // i
+                    opt.interactive = true; opt.no_clobber = false;
+                } else if (ch == 110u8) { // n
+                    opt.no_clobber = true; opt.interactive = false;
+                } else if (ch == 118u8) { // v
+                    opt.verbose = true;
+                } else if (ch == 112u8) { // p
+                    opt.preserve = true;
+                } else if (ch == 80u8) { // P
+                    opt.dereference = 0i32;
+                } else if (ch == 76u8) { // L
+                    opt.dereference = 1i32;
+                } else if (ch == 72u8) { // H
+                    opt.dereference = 2i32;
+                } else if (ch == 117u8) { // u
+                    opt.update = true;
+                } else if (ch == 108u8) { // l
+                    opt.hardlink = true;
+                } else if (ch == 115u8) { // s
+                    opt.symlink = true;
+                } else if (ch == 98u8) { // b
+                    opt.backup = true;
+                } else if (ch == 84u8) { // T
+                    opt.no_target_dir = true;
+                } else if (ch == 100u8) { // d
+                    opt.dereference = 0i32; opt.preserve = true;
+                } else if (ch == 83u8) { // S
+                    let mut v: str = "";
+                    if (j + 1usize < arg.len) {
+                        v = arg[j + 1usize..arg.len];
+                    } else if (i + 1usize < argc) {
+                        i += 1usize;
+                        v = args::argat(i);
+                    } else {
+                        c::fputs("cp: option requires an argument -- 'S'\nTry 'cp --help' for more information.\n".data as *i8, c::stderr);
+                        return 1;
+                    };
+                    opt.suffix = v;
+                    j = arg.len;
+                    continue;
+                } else if (ch == 116u8) { // t
+                    let mut v: str = "";
+                    if (j + 1usize < arg.len) {
+                        v = arg[j + 1usize..arg.len];
+                    } else if (i + 1usize < argc) {
+                        i += 1usize;
+                        v = args::argat(i);
+                    } else {
+                        c::fputs("cp: option requires an argument -- 't'\nTry 'cp --help' for more information.\n".data as *i8, c::stderr);
+                        return 1;
+                    };
+                    target_dir = v;
+                    j = arg.len;
+                    continue;
+                } else {
+                    c::fprintf(c::stderr, "cp: invalid option -- '%c'\nTry 'cp --help' for more information.\n".data as *i8, ch as i32);
+                    return 1;
+                };
+                j += 1usize;
+            };
+            i += 1usize;
+            continue;
+        };
+
+        operands.push(arg);
+        i += 1usize;
+    };
+
+    let count: usize = operands.len();
+    if (count == 0usize) {
+        c::fputs("cp: missing file operand\nTry 'cp --help' for more information.\n".data as *i8, c::stderr);
+        return 1;
+    };
+
+    if (target_dir.len > 0usize) {
+        let mut null_tgt: String = String::from(target_dir);
+        let mut info: ZovCpStat;
+        let target_stat: i32 = platform_copy::zov_cp_stat(null_tgt.view().data as *i8, 1i32, (&mut info) as *void);
+        if (target_stat != 0i32 || info.is_dir == 0i32) {
+            c::fputs("cp: target directory ".data as *i8, c::stderr);
+            quote_stderr(target_dir);
+            if (target_stat != 0i32) {
+                c::fprintf(c::stderr, ": %s\n".data as *i8, strc::strerror(target_stat));
+            } else {
+                c::fputs(": Not a directory\n".data as *i8, c::stderr);
+            };
+            return 1;
+        };
+        let mut status: i32 = 0i32;
+        for (let idx in 0usize..count) {
+            let dest: String = destination_path(operands.get(idx), target_dir, opt.parents);
+            if (dest.view().len == 0usize) {
+                status = 1i32;
+                continue;
+            };
+            opt.target_dir = target_dir;
+            if (copy_one(operands.get(idx), dest.view(), &opt, true) != 0i32) {
+                status = 1i32;
+            };
+        };
+        return status;
+    };
+
+    if (count < 2usize) {
+        c::fputs("cp: missing destination file operand after ".data as *i8, c::stderr);
+        quote_stderr(operands.get(0usize));
+        c::fputs("\nTry 'cp --help' for more information.\n".data as *i8, c::stderr);
+        return 1;
+    };
+
+    let dest: str = operands.get(count - 1usize);
+    let mut null_dest: String = String::from(dest);
+    let mut dst_info: ZovCpStat;
+    let dest_exists: bool = platform_copy::zov_cp_stat(null_dest.view().data as *i8, 1i32, (&mut dst_info) as *void) == 0i32;
+    let is_dir: bool = !opt.no_target_dir && dest_exists && dst_info.is_dir != 0i32;
+
+    if (count > 2usize && !is_dir) {
+        c::fputs("cp: target ".data as *i8, c::stderr);
+        quote_stderr(dest);
+        if (dest_exists) {
+            c::fputs(": Not a directory\n".data as *i8, c::stderr);
+        } else {
+            let err: i32 = platform_errno::zov_errno_value();
+            c::fprintf(c::stderr, ": %s\n".data as *i8, strc::strerror(err));
+        };
+        return 1;
+    };
+
+    if (count == 2usize && opt.no_target_dir && is_dir) {
+        let mut src_info: ZovCpStat;
+        let mut null_src: String = String::from(operands.get(0usize));
+        if (platform_copy::zov_cp_stat(null_src.view().data as *i8, 1i32, (&mut src_info) as *void) == 0i32 && src_info.is_dir == 0i32) {
+            c::fputs("cp: cannot overwrite directory ".data as *i8, c::stderr);
+            quote_stderr(dest);
+            c::fputs(" with non-directory ".data as *i8, c::stderr);
+            quote_stderr(operands.get(0usize));
+            c::fputc(10i32, c::stderr);
+            return 1;
+        };
+    };
+
+    let mut status: i32 = 0i32;
+    for (let idx in 0usize..(count - 1usize)) {
+        let mut out: String = String::from("");
+        if (is_dir) {
+            out = destination_path(operands.get(idx), dest, opt.parents);
+        } else {
+            out = String::from(dest);
+        };
+        if (out.view().len == 0usize) {
+            status = 1i32;
+            continue;
+        };
+        if (copy_one(operands.get(idx), out.view(), &opt, true) != 0i32) {
+            status = 1i32;
+        };
+    };
+    return status;
+};
+
+export fn run_mv(start: usize, argc: usize) i32 = {
+    let mut opt: MvOptions = MvOptions {
+        force = false,
+        interactive = false,
+        no_clobber = false,
+        verbose = false,
+        update = false,
+        no_target_dir = false,
+        backup = false,
+        backup_control = 0i32,
+        suffix = "",
+        target_dir = "",
+    };
+
+    let mut target_dir: str = "";
+    let mut operands: vec::Vec[str] = vec::new[str]();
+    let mut done: bool = false;
+    let mut i: usize = start;
+
+    while (i < argc) {
+        let arg: str = args::argat(i);
+        if (!done && arg == "--") {
+            done = true;
+            i += 1usize;
+            continue;
+        };
+        if (!done && arg.len > 2usize && arg[0usize..2usize] == "--") {
+            let key: str = longkey(arg);
+            let mut value: str = "";
+            let mut has_value: bool = false;
+            if (arg.len > key.len) {
+                value = arg[key.len + 1usize..arg.len];
+                has_value = true;
+            };
+
+            if (key == "--help" || is_prefix(key, "--help")) {
+                if (has_value) {
+                    c::fputs("mv: option '--help' doesn't allow an argument\nTry 'mv --help' for more information.\n".data as *i8, c::stderr);
+                    return 1;
+                };
+                help_mv();
+                stream::finishoutput("mv");
+                return 0;
+            };
+            if (key == "--version" || is_prefix(key, "--version")) {
+                c::fputs("mv (zovutils) 0.10.61\n".data as *i8, c::stdout);
+                stream::finishoutput("mv");
+                return 0;
+            };
+            if (key == "--force" || is_prefix(key, "--force")) { opt.force = true; opt.interactive = false; i += 1usize; continue; };
+            if (key == "--interactive" || is_prefix(key, "--interactive")) { opt.interactive = true; opt.force = false; opt.no_clobber = false; i += 1usize; continue; };
+            if (key == "--no-clobber" || is_prefix(key, "--no-clobber")) { opt.no_clobber = true; opt.interactive = false; i += 1usize; continue; };
+            if (key == "--verbose" || is_prefix(key, "--verbose")) { opt.verbose = true; i += 1usize; continue; };
+            if (key == "--update" || is_prefix(key, "--update")) { opt.update = true; i += 1usize; continue; };
+            if (key == "--no-target-directory" || is_prefix(key, "--no-target-directory")) { opt.no_target_dir = true; i += 1usize; continue; };
+            if (key == "--target-directory" || is_prefix(key, "--target-directory")) {
+                let mut v: str = "";
+                if (has_value) {
+                    v = value;
+                    i += 1usize;
+                } else if (i + 1usize < argc) {
+                    i += 1usize;
+                    v = args::argat(i);
+                    i += 1usize;
+                } else {
+                    c::fputs("mv: option '--target-directory' requires an argument\nTry 'mv --help' for more information.\n".data as *i8, c::stderr);
+                    return 1;
+                };
+                target_dir = v;
+                continue;
+            };
+
+            c::fprintf(c::stderr, "mv: unrecognized option '%s'\nTry 'mv --help' for more information.\n".data as *i8, arg.data as *i8);
+            return 1;
+        };
+        if (!done && arg.len > 1usize && arg.data[0usize] == 45u8) {
+            let mut j: usize = 1usize;
+            while (j < arg.len) {
+                let ch: u8 = arg.data[j];
+                if (ch == 102u8) { // f
+                    opt.force = true; opt.interactive = false;
+                } else if (ch == 105u8) { // i
+                    opt.interactive = true; opt.force = false; opt.no_clobber = false;
+                } else if (ch == 110u8) { // n
+                    opt.no_clobber = true; opt.interactive = false;
+                } else if (ch == 118u8) { // v
+                    opt.verbose = true;
+                } else if (ch == 117u8) { // u
+                    opt.update = true;
+                } else if (ch == 84u8) { // T
+                    opt.no_target_dir = true;
+                } else if (ch == 116u8) { // t
+                    let mut v: str = "";
+                    if (j + 1usize < arg.len) {
+                        v = arg[j + 1usize..arg.len];
+                    } else if (i + 1usize < argc) {
+                        i += 1usize;
+                        v = args::argat(i);
+                    } else {
+                        c::fputs("mv: option requires an argument -- 't'\nTry 'mv --help' for more information.\n".data as *i8, c::stderr);
+                        return 1;
+                    };
+                    target_dir = v;
+                    j = arg.len;
+                    continue;
+                } else {
+                    c::fprintf(c::stderr, "mv: invalid option -- '%c'\nTry 'mv --help' for more information.\n".data as *i8, ch as i32);
+                    return 1;
+                };
+                j += 1usize;
+            };
+            i += 1usize;
+            continue;
+        };
+
+        operands.push(arg);
+        i += 1usize;
+    };
+
+    let count: usize = operands.len();
+    if (count == 0usize) {
+        c::fputs("mv: missing file operand\nTry 'mv --help' for more information.\n".data as *i8, c::stderr);
+        return 1;
+    };
+
+    if (target_dir.len > 0usize) {
+        let mut null_tgt: String = String::from(target_dir);
+        let mut info: ZovCpStat;
+        let target_stat: i32 = platform_copy::zov_cp_stat(null_tgt.view().data as *i8, 1i32, (&mut info) as *void);
+        if (target_stat != 0i32 || info.is_dir == 0i32) {
+            c::fputs("mv: target ".data as *i8, c::stderr);
+            quote_stderr(target_dir);
+            c::fputs(" is not a directory\n".data as *i8, c::stderr);
+            return 1;
+        };
+        let mut status: i32 = 0i32;
+        for (let idx in 0usize..count) {
+            let base: String = path_base(operands.get(idx));
+            let dest: String = path_join(target_dir, base.view());
+            if (move_one(operands.get(idx), dest.view(), &opt) != 0i32) {
+                status = 1i32;
+            };
+        };
+        return status;
+    };
+
+    if (count == 1usize) {
+        c::fputs("mv: missing destination file operand after ".data as *i8, c::stderr);
+        quote_stderr(operands.get(0usize));
+        c::fputs("\nTry 'mv --help' for more information.\n".data as *i8, c::stderr);
+        return 1;
+    };
+
+    let target: str = operands.get(count - 1usize);
+    let mut null_target: String = String::from(target);
+    let mut info: ZovCpStat;
+    let target_stat: i32 = platform_copy::zov_cp_stat(null_target.view().data as *i8, 1i32, (&mut info) as *void);
+    let is_dir: bool = !opt.no_target_dir && target_stat == 0i32 && info.is_dir != 0i32;
+
+    if (count > 2usize && !is_dir) {
+        c::fputs("mv: target ".data as *i8, c::stderr);
+        quote_stderr(target);
+        if (target_stat == 0i32) {
+            c::fputs(": Not a directory\n".data as *i8, c::stderr);
+        } else {
+            let err: i32 = platform_errno::zov_errno_value();
+            c::fprintf(c::stderr, ": %s\n".data as *i8, strc::strerror(err));
+        };
+        return 1;
+    };
+
+    let mut status: i32 = 0i32;
+    for (let idx in 0usize..(count - 1usize)) {
+        let mut dest: String = String::from("");
+        if (is_dir) {
+            let base: String = path_base(operands.get(idx));
+            dest = path_join(target, base.view());
+        } else {
+            dest = String::from(target);
+        };
+        if (move_one(operands.get(idx), dest.view(), &opt) != 0i32) {
+            status = 1i32;
+        };
+    };
+    return status;
+};
+
