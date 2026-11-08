@@ -1,7 +1,11 @@
 use std::env as args;
 use std::io;
+use std::vec as vec;
 use <stdio.h> as c;
-use <sort_backend.h> as backend;
+use <string.h> as strc;
+use <platform_errno.h> as platform_errno;
+use <platform_locale.h> as platform_locale;
+use <platform_sort.h> as platform_sort;
 use shared::io as stream;
 
 fn usage_error() void = {
@@ -15,23 +19,6 @@ fn longkey(arg: str) str = {
 
 fn is_prefix(value: str, full: str) bool = {
     return value.len > 2usize && value.len <= full.len && value == full[0usize..value.len];
-};
-
-fn apply_key_options(key: str, reverse: &mut bool, ignore_blanks: &mut bool,
-                     dictionary: &mut bool, fold: &mut bool,
-                     numeric: &mut bool, general_numeric: &mut bool,
-                     month: &mut bool, ignore_nonprinting: &mut bool) void = {
-    for (let i in 0usize..key.len) {
-        let ch: u8 = key.data[i];
-        if (ch == 114u8) { *reverse = true; }
-        else if (ch == 98u8) { *ignore_blanks = true; }
-        else if (ch == 100u8) { *dictionary = true; }
-        else if (ch == 102u8) { *fold = true; }
-        else if (ch == 110u8) { *numeric = true; }
-        else if (ch == 103u8) { *general_numeric = true; }
-        else if (ch == 77u8) { *month = true; }
-        else if (ch == 105u8) { *ignore_nonprinting = true; };
-    };
 };
 
 fn help() void = {
@@ -84,7 +71,630 @@ fn help() void = {
     io::print("or available locally via: info '(coreutils) sort invocation'\n");
 };
 
+type KeySpec = struct {
+    has_key: bool,
+    start_field: usize,
+    start_char: usize,
+    has_end: bool,
+    end_field: usize,
+    end_char: usize,
+    has_opts: bool,
+    reverse: bool,
+    ignore_blanks: bool,
+    dictionary: bool,
+    fold: bool,
+    numeric: bool,
+    general_numeric: bool,
+    month: bool,
+    ignore_nonprinting: bool,
+};
+
+type KeyRange = struct {
+    start: usize,
+    end: usize,
+};
+
+type SortLine = struct {
+    offset: usize,
+    length: usize,
+    ordinal: usize,
+};
+
+fn parse_number(s: str, p: &mut usize, fallback: usize) usize = {
+    let mut pos: usize = *p;
+    if (pos >= s.len || s.data[pos] < 48u8 || s.data[pos] > 57u8) {
+        return fallback;
+    };
+    let mut val: usize = 0usize;
+    while (pos < s.len && s.data[pos] >= 48u8 && s.data[pos] <= 57u8) {
+        let digit: usize = (s.data[pos] - 48u8) as usize;
+        if (val > (18446744073709551615usize - digit) / 10usize) {
+            *p = pos;
+            return fallback;
+        };
+        val = val * 10usize + digit;
+        pos += 1usize;
+    };
+    *p = pos;
+    return val;
+};
+
+fn parse_key_opts(s: str, p: &mut usize, spec: &mut KeySpec) void = {
+    let mut pos: usize = *p;
+    while (pos < s.len) {
+        let ch: u8 = s.data[pos];
+        if (ch == 114u8) { spec.reverse = true; spec.has_opts = true; }
+        else if (ch == 98u8) { spec.ignore_blanks = true; spec.has_opts = true; }
+        else if (ch == 100u8) { spec.dictionary = true; spec.has_opts = true; }
+        else if (ch == 102u8) { spec.fold = true; spec.has_opts = true; }
+        else if (ch == 110u8) { spec.numeric = true; spec.has_opts = true; }
+        else if (ch == 103u8) { spec.general_numeric = true; spec.has_opts = true; }
+        else if (ch == 77u8) { spec.month = true; spec.has_opts = true; }
+        else if (ch == 105u8) { spec.ignore_nonprinting = true; spec.has_opts = true; }
+        else { break; };
+        pos += 1usize;
+    };
+    *p = pos;
+};
+
+fn parse_keydef(keydef: str) KeySpec = {
+    let mut spec: KeySpec = KeySpec {
+        has_key = false,
+        start_field = 1usize,
+        start_char = 1usize,
+        has_end = false,
+        end_field = 1usize,
+        end_char = 0usize,
+        has_opts = false,
+        reverse = false,
+        ignore_blanks = false,
+        dictionary = false,
+        fold = false,
+        numeric = false,
+        general_numeric = false,
+        month = false,
+        ignore_nonprinting = false,
+    };
+    if (keydef.len == 0usize) {
+        return spec;
+    };
+    let mut p: usize = 0usize;
+    spec.has_key = true;
+    spec.start_field = parse_number(keydef, &mut p, 1usize);
+    if (p < keydef.len && keydef.data[p] == 46u8) { // '.'
+        p += 1usize;
+        spec.start_char = parse_number(keydef, &mut p, 1usize);
+    };
+    parse_key_opts(keydef, &mut p, &mut spec);
+    if (p < keydef.len && keydef.data[p] == 44u8) { // ','
+        p += 1usize;
+        spec.has_end = true;
+        spec.end_field = parse_number(keydef, &mut p, spec.start_field);
+        if (p < keydef.len && keydef.data[p] == 46u8) { // '.'
+            p += 1usize;
+            spec.end_char = parse_number(keydef, &mut p, 0usize);
+        };
+        parse_key_opts(keydef, &mut p, &mut spec);
+    };
+    return spec;
+};
+
+fn is_blank(c: u8) bool = {
+    return c == 32u8 || c == 9u8;
+};
+
+fn field_start(buf: *u8, len: usize, field: usize, separator: i32) usize = {
+    let mut i: usize = 0usize;
+    let mut current: usize = 1usize;
+    if (separator == 0i32) {
+        while (i < len && is_blank(buf[i])) {
+            i += 1usize;
+        };
+    };
+    while (current < field && i < len) {
+        if (separator == 0i32) {
+            while (i < len && !is_blank(buf[i])) {
+                i += 1usize;
+            };
+            while (i < len && is_blank(buf[i])) {
+                i += 1usize;
+            };
+        } else {
+            let sep: u8 = separator as u8;
+            while (i < len && buf[i] != sep) {
+                i += 1usize;
+            };
+            if (i < len) {
+                i += 1usize;
+            };
+        };
+        current += 1usize;
+    };
+    return i;
+};
+
+fn field_end(buf: *u8, len: usize, field: usize, separator: i32) usize = {
+    let mut i: usize = field_start(buf, len, field, separator);
+    if (separator == 0i32) {
+        while (i < len && !is_blank(buf[i])) {
+            i += 1usize;
+        };
+    } else {
+        let sep: u8 = separator as u8;
+        while (i < len && buf[i] != sep) {
+            i += 1usize;
+        };
+    };
+    return i;
+};
+
+fn extract_key_range(buf: *u8, len: usize, spec: &KeySpec, separator: i32) KeyRange = {
+    if (!spec.has_key) {
+        return KeyRange { start = 0usize, end = len };
+    };
+    let mut start: usize = field_start(buf, len, spec.start_field, separator);
+    let f_end: usize = field_end(buf, len, spec.start_field, separator);
+    if (spec.start_char > 1usize && start <= f_end) {
+        let offset: usize = spec.start_char - 1usize;
+        if (offset > f_end - start) {
+            start = f_end;
+        } else {
+            start = start + offset;
+        };
+    };
+    let mut end: usize = len;
+    if (spec.has_end) {
+        end = field_end(buf, len, spec.end_field, separator);
+        if (spec.end_char > 0usize) {
+            let end_start: usize = field_start(buf, len, spec.end_field, separator);
+            let offset: usize = spec.end_char;
+            if (offset > end - end_start) {
+                end = end;
+            } else {
+                end = end_start + offset;
+            };
+        };
+    };
+    if (end < start) {
+        end = start;
+    };
+    return KeyRange { start = start, end = end };
+};
+
+fn to_lower(c: u8) u8 = {
+    if (c >= 65u8 && c <= 90u8) {
+        return c + 32u8;
+    };
+    return c;
+};
+
+fn is_alnum(c: u8) bool = {
+    return (c >= 48u8 && c <= 57u8) || (c >= 65u8 && c <= 90u8) || (c >= 97u8 && c <= 122u8);
+};
+
+fn is_print(c: u8) bool = {
+    return c >= 32u8 && c <= 126u8;
+};
+
+fn month_value(buf: *u8, len: usize) i32 = {
+    let mut i: usize = 0usize;
+    while (i < len && is_blank(buf[i])) {
+        i += 1usize;
+    };
+    if (len - i < 3usize) {
+        return 0i32;
+    };
+    let c0: u8 = to_lower(buf[i]);
+    let c1: u8 = to_lower(buf[i + 1usize]);
+    let c2: u8 = to_lower(buf[i + 2usize]);
+    if (c0 == 106u8 && c1 == 97u8 && c2 == 110u8) { return 1i32; }; // jan
+    if (c0 == 102u8 && c1 == 101u8 && c2 == 98u8) { return 2i32; }; // feb
+    if (c0 == 109u8 && c1 == 97u8 && c2 == 114u8) { return 3i32; }; // mar
+    if (c0 == 97u8 && c1 == 112u8 && c2 == 114u8) { return 4i32; }; // apr
+    if (c0 == 109u8 && c1 == 97u8 && c2 == 121u8) { return 5i32; }; // may
+    if (c0 == 106u8 && c1 == 117u8 && c2 == 110u8) { return 6i32; }; // jun
+    if (c0 == 106u8 && c1 == 117u8 && c2 == 108u8) { return 7i32; }; // jul
+    if (c0 == 97u8 && c1 == 117u8 && c2 == 103u8) { return 8i32; }; // aug
+    if (c0 == 115u8 && c1 == 101u8 && c2 == 112u8) { return 9i32; }; // sep
+    if (c0 == 111u8 && c1 == 99u8 && c2 == 116u8) { return 10i32; }; // oct
+    if (c0 == 110u8 && c1 == 111u8 && c2 == 118u8) { return 11i32; }; // nov
+    if (c0 == 100u8 && c1 == 101u8 && c2 == 99u8) { return 12i32; }; // dec
+    return 0i32;
+};
+
+fn is_valid_char(c: u8, dictionary: bool, ignore_nonprinting: bool) bool = {
+    if (dictionary && !is_alnum(c) && c != 32u8 && c != 9u8) {
+        return false;
+    };
+    if (ignore_nonprinting && !is_print(c)) {
+        return false;
+    };
+    return true;
+};
+
+fn compare_text(
+    a: *u8, len_a: usize,
+    b: *u8, len_b: usize,
+    ignore_blanks: bool,
+    dictionary: bool,
+    fold: bool,
+    ignore_nonprinting: bool
+) i32 = {
+    let mut ai: usize = 0usize;
+    let mut bi: usize = 0usize;
+    if (ignore_blanks) {
+        while (ai < len_a && is_blank(a[ai])) { ai += 1usize; };
+        while (bi < len_b && is_blank(b[bi])) { bi += 1usize; };
+    };
+    while (true) {
+        while (ai < len_a && !is_valid_char(a[ai], dictionary, ignore_nonprinting)) {
+            ai += 1usize;
+        };
+        while (bi < len_b && !is_valid_char(b[bi], dictionary, ignore_nonprinting)) {
+            bi += 1usize;
+        };
+        if (ai == len_a || bi == len_b) {
+            break;
+        };
+        let mut ac: u8 = a[ai];
+        let mut bc: u8 = b[bi];
+        ai += 1usize;
+        bi += 1usize;
+        if (fold) {
+            ac = to_lower(ac);
+            bc = to_lower(bc);
+        };
+        if (ac != bc) {
+            if (ac < bc) { return -1i32; };
+            return 1i32;
+        };
+    };
+    if (ai == len_a && bi == len_b) {
+        return 0i32;
+    };
+    if (ai == len_a) {
+        return -1i32;
+    };
+    return 1i32;
+};
+
+type NumInfo = struct {
+    negative: bool,
+    is_zero: bool,
+    digits_start: usize,
+    digits_len: usize,
+    frac_start: usize,
+    frac_len: usize,
+};
+
+fn parse_num_info(buf: *u8, len: usize) NumInfo = {
+    let mut i: usize = 0usize;
+    while (i < len && (buf[i] == 32u8 || buf[i] == 9u8)) {
+        i += 1usize;
+    };
+    let mut neg: bool = false;
+    if (i < len) {
+        if (buf[i] == 45u8) { // '-'
+            neg = true;
+            i += 1usize;
+        } else if (buf[i] == 43u8) { // '+'
+            i += 1usize;
+        };
+    };
+    while (i < len && buf[i] == 48u8) {
+        i += 1usize;
+    };
+    let int_start: usize = i;
+    while (i < len && buf[i] >= 48u8 && buf[i] <= 57u8) {
+        i += 1usize;
+    };
+    let int_len: usize = i - int_start;
+    let mut frac_start: usize = 0usize;
+    let mut frac_len: usize = 0usize;
+    if (i < len && buf[i] == 46u8) { // '.'
+        i += 1usize;
+        frac_start = i;
+        while (i < len && buf[i] >= 48u8 && buf[i] <= 57u8) {
+            i += 1usize;
+        };
+        frac_len = i - frac_start;
+        while (frac_len > 0usize && buf[frac_start + frac_len - 1usize] == 48u8) {
+            frac_len -= 1usize;
+        };
+    };
+    let is_zero: bool = int_len == 0usize && frac_len == 0usize;
+    if (is_zero) {
+        neg = false;
+    };
+    return NumInfo {
+        negative = neg,
+        is_zero = is_zero,
+        digits_start = int_start,
+        digits_len = int_len,
+        frac_start = frac_start,
+        frac_len = frac_len,
+    };
+};
+
+fn compare_numeric_strings(buf_a: *u8, len_a: usize, buf_b: *u8, len_b: usize) i32 = {
+    let a: NumInfo = parse_num_info(buf_a, len_a);
+    let b: NumInfo = parse_num_info(buf_b, len_b);
+
+    if (a.is_zero && b.is_zero) {
+        return 0i32;
+    };
+    if (a.negative && !b.negative) {
+        return -1i32;
+    };
+    if (!a.negative && b.negative) {
+        return 1i32;
+    };
+
+    let mut res: i32 = 0i32;
+    if (a.digits_len != b.digits_len) {
+        if (a.digits_len < b.digits_len) {
+            res = -1i32;
+        } else {
+            res = 1i32;
+        };
+    } else {
+        for (let i in 0usize..a.digits_len) {
+            let ca: u8 = buf_a[a.digits_start + i];
+            let cb: u8 = buf_b[b.digits_start + i];
+            if (ca != cb) {
+                if (ca < cb) { res = -1i32; break; };
+                res = 1i32;
+                break;
+            };
+        };
+        if (res == 0i32) {
+            let mut min_frac: usize = a.frac_len;
+            if (b.frac_len < min_frac) { min_frac = b.frac_len; };
+            for (let i in 0usize..min_frac) {
+                let ca: u8 = buf_a[a.frac_start + i];
+                let cb: u8 = buf_b[b.frac_start + i];
+                if (ca != cb) {
+                    if (ca < cb) { res = -1i32; break; };
+                    res = 1i32;
+                    break;
+                };
+            };
+            if (res == 0i32) {
+                if (a.frac_len < b.frac_len) {
+                    res = -1i32;
+                } else if (a.frac_len > b.frac_len) {
+                    res = 1i32;
+                };
+            };
+        };
+    };
+
+    if (a.negative) {
+        res = -res;
+    };
+    return res;
+};
+
+fn compare_primary(
+    buf_a: *u8, len_a: usize,
+    buf_b: *u8, len_b: usize,
+    spec: &KeySpec, separator: i32,
+    numeric: bool, general_numeric: bool, month: bool,
+    ignore_blanks: bool, dictionary: bool, fold: bool, ignore_nonprinting: bool
+) i32 = {
+    let ka: KeyRange = extract_key_range(buf_a, len_a, spec, separator);
+    let kb: KeyRange = extract_key_range(buf_b, len_b, spec, separator);
+    let sub_a: *u8 = (&buf_a[ka.start]) as *u8;
+    let klen_a: usize = ka.end - ka.start;
+    let sub_b: *u8 = (&buf_b[kb.start]) as *u8;
+    let klen_b: usize = kb.end - kb.start;
+
+    if (general_numeric) {
+        return platform_sort::zov_sort_compare_general_numeric(sub_a, klen_a, sub_b, klen_b);
+    };
+    if (numeric) {
+        return compare_numeric_strings(sub_a, klen_a, sub_b, klen_b);
+    };
+    if (month) {
+        let ma: i32 = month_value(sub_a, klen_a);
+        let mb: i32 = month_value(sub_b, klen_b);
+        if (ma < mb) { return -1i32; };
+        if (ma > mb) { return 1i32; };
+        return 0i32;
+    };
+    return compare_text(sub_a, klen_a, sub_b, klen_b, ignore_blanks, dictionary, fold, ignore_nonprinting);
+};
+
+fn compare_lines(
+    a: SortLine, b: SortLine,
+    main_buf: *u8,
+    spec: &KeySpec, separator: i32,
+    global_reverse: bool, unique: bool, stable: bool,
+    global_numeric: bool, global_general_numeric: bool, global_month: bool,
+    global_ignore_blanks: bool, global_dictionary: bool, global_fold: bool, global_ignore_nonprinting: bool
+) i32 = {
+    let mut eff_numeric: bool = global_numeric;
+    let mut eff_general_numeric: bool = global_general_numeric;
+    let mut eff_month: bool = global_month;
+    let mut eff_ignore_blanks: bool = global_ignore_blanks;
+    let mut eff_dictionary: bool = global_dictionary;
+    let mut eff_fold: bool = global_fold;
+    let mut eff_ignore_nonprinting: bool = global_ignore_nonprinting;
+    let mut eff_reverse: bool = global_reverse;
+
+    if (spec.has_opts) {
+        eff_numeric = spec.numeric;
+        eff_general_numeric = spec.general_numeric;
+        eff_month = spec.month;
+        eff_ignore_blanks = spec.ignore_blanks;
+        eff_dictionary = spec.dictionary;
+        eff_fold = spec.fold;
+        eff_ignore_nonprinting = spec.ignore_nonprinting;
+        eff_reverse = spec.reverse;
+    };
+
+    let buf_a: *u8 = (&main_buf[a.offset]) as *u8;
+    let buf_b: *u8 = (&main_buf[b.offset]) as *u8;
+    let mut res: i32 = compare_primary(
+        buf_a, a.length,
+        buf_b, b.length,
+        spec, separator,
+        eff_numeric, eff_general_numeric, eff_month,
+        eff_ignore_blanks, eff_dictionary, eff_fold, eff_ignore_nonprinting
+    );
+
+    if (eff_reverse) {
+        res = -res;
+    };
+
+    if (res == 0i32 && !stable && !unique) {
+        let mut min_len: usize = a.length;
+        if (b.length < min_len) { min_len = b.length; };
+        for (let i in 0usize..min_len) {
+            let ca: u8 = buf_a[i];
+            let cb: u8 = buf_b[i];
+            if (ca != cb) {
+                if (ca < cb) { res = -1i32; break; };
+                res = 1i32;
+                break;
+            };
+        };
+        if (res == 0i32) {
+            if (a.length < b.length) { res = -1i32; }
+            else if (a.length > b.length) { res = 1i32; };
+        };
+        if (global_reverse) {
+            res = -res;
+        };
+    };
+
+    if (res == 0i32 && (stable || unique)) {
+        if (a.ordinal < b.ordinal) { return -1i32; };
+        if (a.ordinal > b.ordinal) { return 1i32; };
+        return 0i32;
+    };
+
+    return res;
+};
+
+fn merge_sort(
+    lines: *SortLine,
+    aux: *SortLine,
+    low: usize,
+    high: usize,
+    main_buf: *u8,
+    spec: &KeySpec, separator: i32,
+    global_reverse: bool, unique: bool, stable: bool,
+    global_numeric: bool, global_general_numeric: bool, global_month: bool,
+    global_ignore_blanks: bool, global_dictionary: bool, global_fold: bool, global_ignore_nonprinting: bool
+) void = {
+    if (low >= high) {
+        return;
+    };
+    let mid: usize = low + (high - low) / 2usize;
+    merge_sort(lines, aux, low, mid, main_buf, spec, separator, global_reverse, unique, stable, global_numeric, global_general_numeric, global_month, global_ignore_blanks, global_dictionary, global_fold, global_ignore_nonprinting);
+    merge_sort(lines, aux, mid + 1usize, high, main_buf, spec, separator, global_reverse, unique, stable, global_numeric, global_general_numeric, global_month, global_ignore_blanks, global_dictionary, global_fold, global_ignore_nonprinting);
+
+    let mut i: usize = low;
+    let mut j: usize = mid + 1usize;
+    let mut k: usize = low;
+
+    while (i <= mid && j <= high) {
+        let cmp: i32 = compare_lines(
+            lines[i], lines[j], main_buf, spec, separator,
+            global_reverse, unique, stable, global_numeric, global_general_numeric, global_month,
+            global_ignore_blanks, global_dictionary, global_fold, global_ignore_nonprinting
+        );
+        if (cmp <= 0i32) {
+            aux[k] = lines[i];
+            i += 1usize;
+        } else {
+            aux[k] = lines[j];
+            j += 1usize;
+        };
+        k += 1usize;
+    };
+    while (i <= mid) {
+        aux[k] = lines[i];
+        i += 1usize;
+        k += 1usize;
+    };
+    while (j <= high) {
+        aux[k] = lines[j];
+        j += 1usize;
+        k += 1usize;
+    };
+    for (let idx in low..(high + 1usize)) {
+        lines[idx] = aux[idx];
+    };
+};
+
+fn read_file(
+    path: str,
+    terminator: u8,
+    buf: &mut vec::Vec[u8],
+    lines: &mut vec::Vec[SortLine],
+    ordinal: &mut usize
+) bool = {
+    let mut fp: nullable *c::FILE = null;
+    if (path == "-") {
+        fp = c::stdin;
+    } else {
+        fp = c::fopen(path.data as *i8, "rb".data as *i8);
+    };
+    if (fp == null) {
+        let err: i32 = platform_errno::zov_errno_value();
+        c::fprintf(c::stderr, "sort: %s: %s\n", path.data as *i8, strc::strerror(err));
+        return false;
+    };
+    let f: *c::FILE = fp!;
+    let mut chunk: [65536]u8;
+    let mut line_start: usize = buf.len();
+    let mut cur_len: usize = 0usize;
+
+    while (true) {
+        let n: usize = c::fread((&mut chunk[0usize]) as *void, 1usize, 65536usize, f);
+        if (n == 0usize) {
+            break;
+        };
+        for (let j in 0usize..n) {
+            let ch: u8 = chunk[j];
+            if (ch == terminator) {
+                lines.push(SortLine {
+                    offset = line_start,
+                    length = cur_len,
+                    ordinal = *ordinal,
+                });
+                *ordinal += 1usize;
+                line_start = buf.len();
+                cur_len = 0usize;
+            } else {
+                buf.push(ch);
+                cur_len += 1usize;
+            };
+        };
+    };
+    let err: i32 = c::ferror(f);
+    if (path != "-") {
+        c::fclose(f);
+    };
+    if (err != 0i32) {
+        c::fprintf(c::stderr, "sort: read failed: %s\n", path.data as *i8);
+        return false;
+    };
+    if (cur_len != 0usize) {
+        lines.push(SortLine {
+            offset = line_start,
+            length = cur_len,
+            ordinal = *ordinal,
+        });
+        *ordinal += 1usize;
+    };
+    return true;
+};
+
 export fn run(start: usize, argc: usize) i32 = {
+    platform_locale::zov_init_ctype_locale();
     let mut reverse: bool = false;
     let mut unique: bool = false;
     let mut ignore_blanks: bool = false;
@@ -98,10 +708,10 @@ export fn run(start: usize, argc: usize) i32 = {
     let mut ignore_nonprinting: bool = false;
     let mut keydef: str = "";
     let mut field_separator: i32 = 0i32;
-    let mut files: [256]str;
-    let mut file_count: usize = 0usize;
+    let mut files: vec::Vec[str] = vec::new[str]();
     let mut i: usize = start;
     let mut options_done: bool = false;
+
     while (i < argc) {
         let arg: str = args::argat(i);
         if (!options_done && arg == "--") { options_done = true; i += 1usize; continue; };
@@ -122,8 +732,6 @@ export fn run(start: usize, argc: usize) i32 = {
                 if (arg.len == key.len && i + 1usize >= argc) { io::eprintln("sort: option '--key' requires an argument"); usage_error(); return 2; };
                 if (arg.len > key.len) { keydef = arg[key.len + 1usize..arg.len]; i += 1usize; }
                 else { keydef = args::argat(i + 1usize); i += 2usize; };
-                apply_key_options(key, &mut reverse, &mut ignore_blanks, &mut dictionary,
-                    &mut fold, &mut numeric, &mut general_numeric, &mut month, &mut ignore_nonprinting);
                 continue;
             };
             if (key == "--field-separator" || is_prefix(key, "--field-separator")) {
@@ -171,8 +779,6 @@ export fn run(start: usize, argc: usize) i32 = {
                     else { c::fprintf(c::stderr, "sort: option requires an argument -- '%c'\n", option as i32); usage_error(); return 2; };
                     if (option == 107u8) {
                         keydef = value;
-                        apply_key_options(value, &mut reverse, &mut ignore_blanks, &mut dictionary,
-                            &mut fold, &mut numeric, &mut general_numeric, &mut month, &mut ignore_nonprinting);
                     }
                     else {
                         if (value.len != 1usize) { io::eprintln("sort: field separator must be a single character"); usage_error(); return 2; };
@@ -185,14 +791,101 @@ export fn run(start: usize, argc: usize) i32 = {
             };
             i += 1usize; continue;
         };
-        if (file_count >= 256usize) { io::eprintln("sort: too many input files"); return 2; };
-        files[file_count] = arg; file_count += 1usize; i += 1usize;
+        files.push(arg);
+        i += 1usize;
     };
-    if (file_count == 0usize) { files[0usize] = "-"; file_count = 1usize; };
-    let mut paths: [256]*i8;
-    for (let fi in 0usize..file_count) { paths[fi] = files[fi].data as *i8; };
-    return backend::zov_sort_run(file_count, ((&paths[0usize]) as **i8), reverse as i32,
-        unique as i32, ignore_blanks as i32, dictionary as i32, fold as i32,
-        numeric as i32, general_numeric as i32, month as i32, stable as i32,
-        zero_terminated as i32, keydef.data as *i8, field_separator, ignore_nonprinting as i32);
+    if (files.len() == 0usize) { files.push("-"); };
+
+    let keyspec: KeySpec = parse_keydef(keydef);
+    let mut term: u8 = 10u8;
+    if (zero_terminated) {
+        term = 0u8;
+    };
+
+    let mut eff_numeric: bool = numeric;
+    let mut eff_general_numeric: bool = general_numeric;
+    let mut eff_month: bool = month;
+    let mut eff_ignore_blanks: bool = ignore_blanks;
+    let mut eff_dictionary: bool = dictionary;
+    let mut eff_fold: bool = fold;
+    let mut eff_ignore_nonprinting: bool = ignore_nonprinting;
+    if (keyspec.has_opts) {
+        eff_numeric = keyspec.numeric;
+        eff_general_numeric = keyspec.general_numeric;
+        eff_month = keyspec.month;
+        eff_ignore_blanks = keyspec.ignore_blanks;
+        eff_dictionary = keyspec.dictionary;
+        eff_fold = keyspec.fold;
+        eff_ignore_nonprinting = keyspec.ignore_nonprinting;
+    };
+
+    let mut main_buf: vec::Vec[u8] = vec::new[u8]();
+    let mut lines: vec::Vec[SortLine] = vec::new[SortLine]();
+    let mut ordinal: usize = 0usize;
+    let mut status: i32 = 0i32;
+
+    for (let fi in 0usize..files.len()) {
+        let ok: bool = read_file(files.get(fi), term, &mut main_buf, &mut lines, &mut ordinal);
+        if (!ok) {
+            status = 2i32;
+        };
+    };
+
+    let count: usize = lines.len();
+    let mut mb: *u8 = (&term) as *u8;
+    if (main_buf.len() > 0usize) {
+        mb = main_buf.data!;
+    };
+
+    if (count > 1usize) {
+        let mut aux: vec::Vec[SortLine] = vec::new[SortLine]();
+        for (let _ in 0usize..count) {
+            aux.push(SortLine { offset = 0usize, length = 0usize, ordinal = 0usize });
+        };
+        merge_sort(
+            lines.data!, aux.data!, 0usize, count - 1usize,
+            mb, &keyspec, field_separator,
+            reverse, unique, stable,
+            numeric, general_numeric, month,
+            ignore_blanks, dictionary, fold, ignore_nonprinting
+        );
+    };
+
+    if (count > 0usize) {
+        let lptr: *SortLine = lines.data!;
+        for (let idx in 0usize..count) {
+            if (unique && idx > 0usize) {
+                let prev: SortLine = lptr[idx - 1usize];
+                let curr: SortLine = lptr[idx];
+                let same: i32 = compare_primary(
+                    (&mb[prev.offset]) as *u8, prev.length,
+                    (&mb[curr.offset]) as *u8, curr.length,
+                    &keyspec, field_separator,
+                    eff_numeric, eff_general_numeric, eff_month,
+                    eff_ignore_blanks, eff_dictionary, eff_fold, eff_ignore_nonprinting
+                );
+                if (same == 0i32) {
+                    continue;
+                };
+            };
+            let cur_line: SortLine = lptr[idx];
+            if (cur_line.length > 0usize) {
+                let w: usize = c::fwrite((&mb[cur_line.offset]) as *void, 1usize, cur_line.length, c::stdout);
+                if (w != cur_line.length) {
+                    status = 2i32;
+                    break;
+                };
+            };
+            let tw: usize = c::fwrite((&term) as *void, 1usize, 1usize, c::stdout);
+            if (tw != 1usize) {
+                status = 2i32;
+                break;
+            };
+        };
+    };
+
+    if (c::fflush(c::stdout) != 0i32) {
+        status = 2i32;
+    };
+    return status;
 };
