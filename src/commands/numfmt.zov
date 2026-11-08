@@ -1,10 +1,1004 @@
 use std::env as args;
-use <numfmt_backend.h> as backend;
+use std::io;
+use std::vec;
+use <stdio.h> as c;
+use <ctype.h> as ctype;
+use <stdlib.h> as cstdlib;
+use <string.h> as strc;
+use <math.h> as cmath;
+use <locale.h> as clocale;
+use shared::io as stream;
+
+fn numfmt_unit(s: str, allow_auto: bool) i32 = {
+    if (allow_auto && s == "auto") { return 1i32; };
+    if (s == "none") { return 0i32; };
+    if (s == "si") { return 2i32; };
+    if (s == "iec") { return 3i32; };
+    if (s == "iec-i") { return 4i32; };
+    return -1i32;
+};
+
+fn suffix_power(ch: u8) i32 = {
+    let letters: str = "kKmMgGtTpPeEzZyYrRqQ";
+    for (let i in 0usize..letters.len) {
+        if (letters.data[i] == ch) {
+            return ((i / 2usize) as i32) + 1i32;
+        };
+    };
+    return 0i32;
+};
+
+fn numfmt_power(base: i32, exponent: i32) f64 = {
+    let mut val: f64 = 1.0;
+    let mut exp: i32 = exponent;
+    while (exp > 0i32) {
+        val = val * (base as f64);
+        exp -= 1i32;
+    };
+    return val;
+};
+
+fn is_ws(ch: u8) bool = {
+    return ch == 32u8 || ch == 9u8 || ch == 10u8 || ch == 13u8 || ch == 11u8 || ch == 12u8;
+};
+
+fn is_digit(ch: u8) bool = {
+    return ch >= 48u8 && ch <= 57u8;
+};
+
+fn numfmt_parse(text: &vec::Vec[u8], from: i32, accepted_suffix: str, unit_separator: str, val_out: &mut f64, prec_out: &mut i32) i32 = {
+    let mut begin: usize = 0usize;
+    let mut end: usize = text.length;
+    while (begin < end && is_ws(text.get(begin))) {
+        begin += 1usize;
+    };
+    while (end > begin && is_ws(text.get(end - 1usize))) {
+        end -= 1usize;
+    };
+    if (begin >= end) { return 0i32; };
+
+    let mut num_end: usize = end;
+    if (accepted_suffix.len > 0usize && (num_end - begin) >= accepted_suffix.len) {
+        let tail_start: usize = num_end - accepted_suffix.len;
+        let mut matches_suf: bool = true;
+        for (let k in 0usize..accepted_suffix.len) {
+            if (text.get(tail_start + k) != accepted_suffix.data[k]) {
+                matches_suf = false;
+                break;
+            };
+        };
+        if (matches_suf) {
+            num_end = tail_start;
+        };
+    };
+
+    let mut scan: usize = begin;
+    if (scan < num_end && text.get(scan) == 45u8) { // '-'
+        scan += 1usize;
+    };
+    let mut before: i32 = 0i32;
+    let mut after: i32 = 0i32;
+    let mut saw_dot: bool = false;
+    while (scan < num_end && is_digit(text.get(scan))) {
+        before += 1i32;
+        scan += 1usize;
+    };
+    if (scan < num_end && text.get(scan) == 46u8) { // '.'
+        saw_dot = true;
+        scan += 1usize;
+        while (scan < num_end && is_digit(text.get(scan))) {
+            after += 1i32;
+            scan += 1usize;
+        };
+    };
+    if ((before == 0i32 && after == 0i32) || (saw_dot && after == 0i32)) {
+        return 0i32;
+    };
+
+    let decimals: i32 = after;
+    let num_len: usize = scan - begin;
+    if (num_len >= 127usize) { return 0i32; };
+    let mut buf: [128]u8;
+    for (let i in 0usize..num_len) {
+        buf[i] = text.get(begin + i);
+    };
+    buf[num_len] = 0u8;
+
+    let mut parsed: f64 = cstdlib::strtod((&buf[0usize]) as *i8, null);
+
+    let mut suf_scan: usize = scan;
+    if (unit_separator.len > 0usize && (num_end - suf_scan) >= unit_separator.len) {
+        let mut matches_sep: bool = true;
+        for (let k in 0usize..unit_separator.len) {
+            if (text.get(suf_scan + k) != unit_separator.data[k]) {
+                matches_sep = false;
+                break;
+            };
+        };
+        if (matches_sep) {
+            suf_scan += unit_separator.len;
+        };
+    };
+
+    if (suf_scan < num_end) {
+        let suf_len: usize = num_end - suf_scan;
+        let ch0: u8 = text.get(suf_scan);
+        let has_char_1: bool = suf_len > 1usize;
+        let mut char_1: u8 = 0u8;
+        if (has_char_1) { char_1 = text.get(suf_scan + 1usize); };
+        let has_char_2: bool = suf_len > 2usize;
+
+        let exponent: i32 = suffix_power(ch0);
+        let candidate: bool = exponent != 0i32 && (ch0 == 107u8 || ch0 == 75u8 || (ch0 >= 65u8 && ch0 <= 90u8));
+
+        if (from == 0i32) {
+            let ok_candidate: bool = candidate && (!has_char_1 || ((char_1 == 105u8 || char_1 == 73u8) && !has_char_2));
+            if (ok_candidate) { return 2i32; };
+            return 3i32;
+        };
+
+        if (exponent == 0i32 || (ch0 >= 97u8 && ch0 <= 122u8 && ch0 != 107u8 && from != 3i32 && from != 4i32)) {
+            return 3i32;
+        };
+        if (from == 4i32 && !has_char_1) { return 5i32; };
+        if (from == 4i32 && (char_1 != 105u8 && char_1 != 73u8)) { return 5i32; };
+        if (from != 4i32 && has_char_1) {
+            if (from == 1i32 && (char_1 == 105u8 || char_1 == 73u8) && !has_char_2) {
+                // allowed
+            } else {
+                if (char_1 == 105u8 || char_1 == 73u8) { return 4i32; };
+                return 3i32;
+            };
+        };
+
+        let mut base: i32 = 1024i32;
+        if (from == 2i32) {
+            if (has_char_1) { return 3i32; };
+            base = 1000i32;
+        } else if (from == 3i32) {
+            if (has_char_1) { return 3i32; };
+        } else if (from == 4i32) {
+            if (!has_char_1 || (char_1 != 105u8 && char_1 != 73u8) || has_char_2) {
+                return 3i32;
+            };
+        } else if (from == 1i32) {
+            if (has_char_1 && ((char_1 != 105u8 && char_1 != 73u8) || has_char_2)) {
+                return 3i32;
+            };
+            if (has_char_1) {
+                base = 1024i32;
+            } else {
+                base = 1000i32;
+            };
+        };
+        parsed = parsed * numfmt_power(base, exponent);
+    };
+
+    *val_out = parsed;
+    *prec_out = decimals;
+    return 1i32;
+};
+
+fn numfmt_format_valid(format: str) bool = {
+    let mut p_idx: usize = 0usize;
+    let mut found_percent: bool = false;
+    for (let i in 0usize..format.len) {
+        if (format.data[i] == 37u8) { // '%'
+            if (found_percent) { return false; };
+            found_percent = true;
+            p_idx = i;
+        };
+    };
+    if (!found_percent) { return false; };
+
+    let mut p: usize = p_idx + 1usize;
+    if (p < format.len && format.data[p] == 48u8) { p += 1usize; }; // '0'
+    if (p < format.len && format.data[p] == 39u8) { p += 1usize; }; // '\''
+    if (p < format.len && format.data[p] == 45u8) { p += 1usize; }; // '-'
+    while (p < format.len && is_digit(format.data[p])) { p += 1usize; };
+    if (p < format.len && format.data[p] == 46u8) { // '.'
+        p += 1usize;
+        while (p < format.len && is_digit(format.data[p])) { p += 1usize; };
+    };
+    if (p >= format.len || format.data[p] != 102u8 || p + 1usize != format.len) { // 'f'
+        return false;
+    };
+    return true;
+};
+
+fn numfmt_bad_format(format: str) void = {
+    let mut count: usize = 0usize;
+    for (let i in 0usize..format.len) {
+        if (format.data[i] == 37u8) { count += 1usize; };
+    };
+    if (count == 0usize) {
+        io::eprintln("numfmt: format '" + format + "' has no % directive");
+    } else if (count > 1usize) {
+        io::eprintln("numfmt: format '" + format + "' has too many % directives");
+    } else {
+        io::eprintln("numfmt: invalid format '" + format + "', directive must be %[0]['][-][N][.][N]f");
+    };
+};
+
+fn numfmt_round(x: f64, method: i32, precision: i32) f64 = {
+    let scale: f64 = numfmt_power(10i32, precision);
+    let mut y: f64 = x * scale;
+    if (method == 1i32) { // up
+        y = cmath::ceil(y);
+    } else if (method == 2i32) { // down
+        y = cmath::floor(y);
+    } else if (method == 3i32) { // towards-zero
+        if (x < 0.0) { y = cmath::ceil(y); } else { y = cmath::floor(y); };
+    } else if (method == 4i32) { // nearest
+        y = cmath::round(y);
+    } else { // from-zero
+        if (x < 0.0) { y = cmath::floor(y); } else { y = cmath::ceil(y); };
+    };
+    return y / scale;
+};
+
+fn numfmt_field_selected(spec: str, field: usize) bool = {
+    if (spec.len == 0usize || field == 0usize) { return field == 1usize; };
+    if (spec == "-") { return true; };
+
+    let mut p: usize = 0usize;
+    while (p < spec.len) {
+        if (spec.data[p] == 45u8 && (p + 1usize == spec.len || spec.data[p + 1usize] == 44u8)) {
+            return true;
+        };
+        let mut first: usize = 0usize;
+        let mut last: usize = 0usize;
+        let mut have_first: bool = false;
+        let mut have_last: bool = false;
+        if (spec.data[p] == 45u8) {
+            p += 1usize;
+        } else {
+            if (!is_digit(spec.data[p])) { return false; };
+            have_first = true;
+            while (p < spec.len && is_digit(spec.data[p])) {
+                if (first > 100000000usize) { return false; };
+                first = first * 10usize + ((spec.data[p] - 48u8) as usize);
+                p += 1usize;
+            };
+        };
+        if (p < spec.len && spec.data[p] == 45u8) {
+            p += 1usize;
+            if (p < spec.len && is_digit(spec.data[p])) {
+                have_last = true;
+                while (p < spec.len && is_digit(spec.data[p])) {
+                    if (last > 100000000usize) { return false; };
+                    last = last * 10usize + ((spec.data[p] - 48u8) as usize);
+                    p += 1usize;
+                };
+            };
+        } else if (have_first) {
+            last = first;
+            have_last = true;
+        };
+        if ((!have_first && !have_last) || (have_first && first == 0usize) || (have_last && last == 0usize) || (have_first && have_last && first > last)) {
+            return false;
+        };
+        if ((!have_first || field >= first) && (!have_last || field <= last)) {
+            return true;
+        };
+        if (p < spec.len && spec.data[p] == 44u8) {
+            p += 1usize;
+        } else if (p < spec.len) {
+            return false;
+        };
+    };
+    return false;
+};
+
+fn numfmt_parse_field_spec(spec: str) bool = {
+    if (spec.len == 0usize) { return false; };
+    if (spec == "-") { return true; };
+    let mut p: usize = 0usize;
+    while (p < spec.len) {
+        let mut have_a: bool = false;
+        let mut have_b: bool = false;
+        let mut a: usize = 0usize;
+        let mut b: usize = 0usize;
+        if (spec.data[p] != 45u8) {
+            if (!is_digit(spec.data[p])) { return false; };
+            have_a = true;
+            while (p < spec.len && is_digit(spec.data[p])) {
+                if (a > 100000000usize) { return false; };
+                a = a * 10usize + ((spec.data[p] - 48u8) as usize);
+                p += 1usize;
+            };
+        };
+        if (p < spec.len && spec.data[p] == 45u8) {
+            p += 1usize;
+            if (p < spec.len && is_digit(spec.data[p])) {
+                have_b = true;
+                while (p < spec.len && is_digit(spec.data[p])) {
+                    if (b > 100000000usize) { return false; };
+                    b = b * 10usize + ((spec.data[p] - 48u8) as usize);
+                    p += 1usize;
+                };
+            };
+        } else if (have_a) {
+            b = a;
+            have_b = true;
+        };
+        if (!have_a && !have_b) {
+            if (p == spec.len || spec.data[p] == 44u8) {
+                if (p < spec.len && spec.data[p] == 44u8) {
+                    p += 1usize;
+                    if (p == spec.len) { return false; };
+                    continue;
+                };
+                return true;
+            };
+        };
+        if ((have_a && a == 0usize) || (have_b && b == 0usize) || (have_a && have_b && a > b)) {
+            return false;
+        };
+        if (p < spec.len && spec.data[p] == 44u8) {
+            p += 1usize;
+            if (p == spec.len) { return false; };
+        } else if (p < spec.len) {
+            return false;
+        };
+    };
+    return true;
+};
+
+fn numfmt_diagnostic(input: &vec::Vec[u8], parse_error: i32, invalid_mode: i32) void = {
+    if (invalid_mode == 3i32) { return; };
+    if (parse_error == 2i32) {
+        c::fputs("numfmt: rejecting suffix in input: '", c::stderr);
+        for (let i in 0usize..input.length) { c::fputc(input.get(i) as i32, c::stderr); };
+        c::fputs("' (consider using --from)\n", c::stderr);
+    } else if (parse_error == 4i32) {
+        c::fputs("numfmt: invalid suffix in input '", c::stderr);
+        for (let i in 0usize..input.length) { c::fputc(input.get(i) as i32, c::stderr); };
+        c::fputs("': 'i'\n", c::stderr);
+    } else if (parse_error == 5i32) {
+        c::fputs("numfmt: missing 'i' suffix in input: '", c::stderr);
+        for (let i in 0usize..input.length) { c::fputc(input.get(i) as i32, c::stderr); };
+        c::fputs("' (e.g Ki/Mi/Gi)\n", c::stderr);
+    } else if (parse_error == 3i32) {
+        c::fputs("numfmt: invalid suffix in input: '", c::stderr);
+        for (let i in 0usize..input.length) { c::fputc(input.get(i) as i32, c::stderr); };
+        c::fputs("'\n", c::stderr);
+    } else {
+        c::fputs("numfmt: invalid number: '", c::stderr);
+        for (let i in 0usize..input.length) { c::fputc(input.get(i) as i32, c::stderr); };
+        c::fputs("'\n", c::stderr);
+    };
+};
+
+fn numfmt_put_padded(text: &vec::Vec[u8], padding: i64) void = {
+    let n: usize = text.length;
+    let mut width: usize = padding as usize;
+    if (padding < 0i64) { width = ((-padding) as usize); };
+    if (padding > 0i64 && width > n) {
+        for (let _i in 0usize..(width - n)) {
+            c::fputc(32i32, c::stdout);
+        };
+    };
+    for (let i in 0usize..text.length) {
+        c::fputc(text.get(i) as i32, c::stdout);
+    };
+    if (padding < 0i64 && width > n) {
+        for (let _i in n..width) {
+            c::fputc(32i32, c::stdout);
+        };
+    };
+};
+
+fn numfmt_convert(input: &vec::Vec[u8], from: i32, to: i32,
+                  from_unit: f64, to_unit: f64,
+                  round_mode: i32, suffix: str,
+                  unit_separator: str, format: str,
+                  precision_override: i32,
+                  output: &mut vec::Vec[u8]) i32 = {
+    let mut value: f64 = 0.0;
+    let mut precision: i32 = 0i32;
+    let parsed: i32 = numfmt_parse(input, from, suffix, unit_separator, &mut value, &mut precision);
+    if (parsed != 1i32) { return parsed; };
+
+    value = value * from_unit;
+    value = value / to_unit;
+    let mut exponent: i32 = 0i32;
+    let mut base: f64 = 1024.0;
+    if (to == 2i32) { base = 1000.0; };
+    let mut scaled: f64 = value;
+    if (to > 0i32) {
+        let mut rounded_for_scale: f64 = numfmt_round(value, round_mode, 0i32);
+        while (exponent < 10i32 && cmath::fabs(rounded_for_scale) >= base) {
+            scaled = scaled / base;
+            rounded_for_scale = rounded_for_scale / base;
+            exponent += 1i32;
+        };
+    };
+    if (exponent > 0i32) {
+        scaled = numfmt_round(scaled, round_mode, 1i32);
+        if (cmath::fabs(scaled) >= base) {
+            scaled = scaled / base;
+            exponent += 1i32;
+        };
+    };
+
+    let mut buf: [1024]u8;
+    if (format.len > 0usize) {
+        let mut fmt_buf: [256]u8;
+        for (let i in 0usize..format.len) { fmt_buf[i] = format.data[i]; };
+        fmt_buf[format.len] = 0u8;
+        c::snprintf((&buf[0usize]) as *i8, 1024usize, (&fmt_buf[0usize]) as *i8, scaled);
+    } else if (exponent > 0i32) {
+        let si: str = " kMGTPEZYRQ";
+        let iec: str = " KMGTPEZYRQ";
+        let mut unit_ch: u8 = iec.data[exponent as usize];
+        if (to == 2i32) {
+            if (exponent == 1i32) { unit_ch = 107u8; }
+            else { unit_ch = si.data[exponent as usize]; };
+        };
+        let mut fmt_pattern: str = "%.1f%s%c%s%s";
+        let mut p_buf: [64]u8;
+        for (let i in 0usize..fmt_pattern.len) { p_buf[i] = fmt_pattern.data[i]; };
+        p_buf[fmt_pattern.len] = 0u8;
+
+        let mut sep_buf: [64]u8;
+        for (let i in 0usize..unit_separator.len) { sep_buf[i] = unit_separator.data[i]; };
+        sep_buf[unit_separator.len] = 0u8;
+
+        let mut suf_buf: [64]u8;
+        for (let i in 0usize..suffix.len) { suf_buf[i] = suffix.data[i]; };
+        suf_buf[suffix.len] = 0u8;
+
+        let mut infix_buf: [8]u8;
+        if (to == 4i32) { infix_buf[0] = 105u8; infix_buf[1] = 0u8; }
+        else { infix_buf[0] = 0u8; };
+
+        c::snprintf((&buf[0usize]) as *i8, 1024usize, (&p_buf[0usize]) as *i8,
+                    scaled, (&sep_buf[0usize]) as *i8, unit_ch as i32,
+                    (&infix_buf[0usize]) as *i8, (&suf_buf[0usize]) as *i8);
+    } else if (to > 0i32) {
+        let mut p_buf: [64]u8;
+        let p_str: str = "%.0f%s";
+        for (let i in 0usize..p_str.len) { p_buf[i] = p_str.data[i]; };
+        p_buf[p_str.len] = 0u8;
+
+        let mut suf_buf: [64]u8;
+        for (let i in 0usize..suffix.len) { suf_buf[i] = suffix.data[i]; };
+        suf_buf[suffix.len] = 0u8;
+
+        c::snprintf((&buf[0usize]) as *i8, 1024usize, (&p_buf[0usize]) as *i8,
+                    cmath::trunc(value), (&suf_buf[0usize]) as *i8);
+    } else {
+        let mut p: i32 = precision;
+        if (precision_override >= 0i32) { p = precision_override; };
+        if (p > 18i32) { p = 18i32; };
+
+        let mut p_buf: [64]u8;
+        let p_str: str = "%.*f%s";
+        for (let i in 0usize..p_str.len) { p_buf[i] = p_str.data[i]; };
+        p_buf[p_str.len] = 0u8;
+
+        let mut suf_buf: [64]u8;
+        for (let i in 0usize..suffix.len) { suf_buf[i] = suffix.data[i]; };
+        suf_buf[suffix.len] = 0u8;
+
+        c::snprintf((&buf[0usize]) as *i8, 1024usize, (&p_buf[0usize]) as *i8,
+                    p, scaled, (&suf_buf[0usize]) as *i8);
+    };
+
+    output.length = 0usize;
+    let mut len: usize = 0usize;
+    while (len < 1024usize && buf[len] != 0u8) {
+        output.push(buf[len]);
+        len += 1usize;
+    };
+    return 1i32;
+};
+
+fn numfmt_convert_line(line: &vec::Vec[u8], from: i32, to: i32,
+                       from_unit: f64, to_unit: f64,
+                       round_mode: i32, suffix: str,
+                       unit_separator: str, format: str,
+                       precision_override: i32, invalid_mode: i32,
+                       field_spec: str, delimiter: u8,
+                       padding: i64, padding_set: bool,
+                       zero_terminated: bool) i32 = {
+    let length: usize = line.length;
+    let mut begin: usize = 0usize;
+    let mut field: usize = 0usize;
+    let mut status: i32 = 0i32;
+
+    let mut has_ws: bool = false;
+    for (let i in 0usize..line.length) {
+        let ch: u8 = line.get(i);
+        if (is_ws(ch)) {
+            has_ws = true;
+            break;
+        };
+    };
+    let auto_align: bool = delimiter == 0u8 && !padding_set && has_ws;
+
+    if (delimiter != 0u8) {
+        let mut end: usize = 0usize;
+        while (end <= length) {
+            if (end < length && line.get(end) != delimiter) {
+                end += 1usize;
+                continue;
+            };
+            if (field > 0usize) {
+                c::fputc(delimiter as i32, c::stdout);
+            };
+            field += 1usize;
+            if (numfmt_field_selected(field_spec, field)) {
+                let mut token: vec::Vec[u8] = vec::new[u8]();
+                for (let k in begin..end) { token.push(line.get(k)); };
+                let mut converted: vec::Vec[u8] = vec::new[u8]();
+                let r: i32 = numfmt_convert(&token, from, to, from_unit, to_unit, round_mode, suffix, unit_separator, format, precision_override, &mut converted);
+                if (r != 1i32) {
+                    numfmt_diagnostic(&token, r, invalid_mode);
+                    status = 0i32;
+                    if (invalid_mode == 0i32 || invalid_mode == 1i32) { status = 2i32; };
+                    if (invalid_mode == 0i32) { return 2i32; };
+                    for (let i in 0usize..token.length) { c::fputc(token.get(i) as i32, c::stdout); };
+                } else {
+                    numfmt_put_padded(&converted, padding);
+                };
+            } else {
+                for (let i in begin..end) {
+                    c::fputc(line.get(i) as i32, c::stdout);
+                };
+            };
+            begin = end + 1usize;
+            end += 1usize;
+        };
+        let mut term_ch: i32 = 10i32;
+        if (zero_terminated) { term_ch = 0i32; };
+        c::fputc(term_ch, c::stdout);
+        return status;
+    };
+
+    while (begin < length) {
+        let mut end: usize = begin;
+        let is_sep: bool = is_ws(line.get(begin));
+        while (end < length) {
+            let ch: u8 = line.get(end);
+            let c_sep: bool = is_ws(ch);
+            if (c_sep != is_sep) { break; };
+            end += 1usize;
+        };
+        if (!is_sep) {
+            field += 1usize;
+            if (numfmt_field_selected(field_spec, field)) {
+                let mut token: vec::Vec[u8] = vec::new[u8]();
+                for (let k in begin..end) { token.push(line.get(k)); };
+                let mut converted: vec::Vec[u8] = vec::new[u8]();
+                let r: i32 = numfmt_convert(&token, from, to, from_unit, to_unit, round_mode, suffix, unit_separator, format, precision_override, &mut converted);
+                if (r != 1i32) {
+                    numfmt_diagnostic(&token, r, invalid_mode);
+                    status = 0i32;
+                    if (invalid_mode == 0i32 || invalid_mode == 1i32) { status = 2i32; };
+                    if (invalid_mode == 0i32) { return 2i32; };
+                    for (let i in 0usize..token.length) { c::fputc(token.get(i) as i32, c::stdout); };
+                } else {
+                    let mut pad: i64 = padding;
+                    if (auto_align) { pad = (end - begin) as i64; };
+                    numfmt_put_padded(&converted, pad);
+                };
+            } else {
+                for (let i in begin..end) {
+                    c::fputc(line.get(i) as i32, c::stdout);
+                };
+            };
+        } else {
+            for (let i in begin..end) {
+                c::fputc(line.get(i) as i32, c::stdout);
+            };
+        };
+        begin = end;
+    };
+
+    if (field == 0usize && length == 0usize && field_spec.len > 0usize && numfmt_field_selected(field_spec, 1usize)) {
+        let mut empty_line: vec::Vec[u8] = vec::new[u8]();
+        let mut converted: vec::Vec[u8] = vec::new[u8]();
+        let r: i32 = numfmt_convert(&empty_line, from, to, from_unit, to_unit, round_mode, suffix, unit_separator, format, precision_override, &mut converted);
+        if (r != 1i32) {
+            numfmt_diagnostic(&empty_line, r, invalid_mode);
+            if (invalid_mode == 0i32 || invalid_mode == 1i32) { return 2i32; };
+            return 0i32;
+        };
+    };
+
+    let mut term_ch: i32 = 10i32;
+    if (zero_terminated) { term_ch = 0i32; };
+    c::fputc(term_ch, c::stdout);
+    return status;
+};
+
+fn parse_i64(s: str, out: &mut i64) bool = {
+    if (s.len == 0usize) { return false; };
+    let mut neg: bool = false;
+    let mut start: usize = 0usize;
+    if (s.data[0usize] == 45u8) {
+        neg = true;
+        start = 1usize;
+    } else if (s.data[0usize] == 43u8) {
+        start = 1usize;
+    };
+    if (start >= s.len) { return false; };
+    let mut val: i64 = 0i64;
+    for (let i in start..s.len) {
+        let ch: u8 = s.data[i];
+        if (ch < 48u8 || ch > 57u8) { return false; };
+        val = val * 10i64 + ((ch - 48u8) as i64);
+    };
+    if (neg) { val = -val; };
+    *out = val;
+    return true;
+};
+
+fn print_help() void = {
+    io::println("Usage: numfmt [OPTION]... [NUMBER]...");
+    io::println("Reformat NUMBER(s), or the numbers from standard input if none are specified.\n");
+    io::println("Mandatory arguments to long options are mandatory for short options too.");
+    io::println("      --debug\n         print warnings about invalid input");
+    io::println("  -d, --delimiter=X\n         use X instead of whitespace for field delimiter");
+    io::println("      --field=FIELDS\n         replace the numbers in these input fields (default=1);\n         see FIELDS below for details");
+    io::println("      --format=FORMAT\n         use printf style floating-point FORMAT;\n         see FORMAT below for details");
+    io::println("      --from=UNIT\n         auto-scale input numbers to UNITs; default is 'none';\n         see UNIT below for details");
+    io::println("      --from-unit=N\n         specify the input unit size (instead of the default 1)");
+    io::println("      --grouping\n         use locale-defined grouping of digits, e.g. 1,000,000.\n         This has no effect in the C/POSIX locale");
+    io::println("      --header[=N]\n         print (without converting) the first N header lines;\n         N defaults to 1 if not specified");
+    io::println("      --invalid=MODE\n         failure mode for invalid numbers;\n         MODE can be: abort (default), fail, warn, ignore");
+    io::println("      --padding=N\n         pad the output to N characters;\n         positive N will right-align, negative N will left-align;\n         padding is ignored if the output is wider than N;\n         the default is to automatically pad if a whitespace is found");
+    io::println("      --round=METHOD\n         use METHOD for rounding when scaling; METHOD can be:\n         up, down, from-zero (default), towards-zero, nearest");
+    io::println("      --suffix=SUFFIX\n         add SUFFIX to output numbers,\n         and accept an optional SUFFIX in input numbers");
+    io::println("      --unit-separator=SEP\n         insert SEP between number and unit on output,\n         and accept an optional SEP in input numbers");
+    io::println("      --to=UNIT\n         auto-scale output numbers to UNITs; see UNIT below");
+    io::println("      --to-unit=N\n         the output unit size (instead of the default 1)");
+    io::println("  -z, --zero-terminated\n         line delimiter is NUL, not newline");
+    io::println("      --help\n         display this help and exit");
+    io::println("      --version\n         output version information and exit\n");
+    io::println("UNIT options:");
+    io::println("  none       no auto-scaling is done; suffixes will trigger an error");
+    io::println("  auto       accept optional single/two letter suffix:\n               1K = 1000, 1k = 1000,\n               1Ki = 1024,\n               1M = 1000000,\n               1Mi = 1048576,");
+    io::println("  si         accept optional single letter suffix:\n               1k = 1000, 1K = 1000,\n               1M = 1000000,\n               ...");
+    io::println("  iec        accept optional single letter suffix:\n               1K = 1024, 1k = 1024,\n               1M = 1048576,\n               ...");
+    io::println("  iec-i      accept optional two-letter suffix:\n               1Ki = 1024, 1ki = 1024,\n               1Mi = 1048576,\n               ...\n");
+    io::println("FIELDS supports cut(1) style field ranges:");
+    io::println("  N    N'th field, counted from 1\n  N-   from N'th field, to end of line");
+    io::println("  N-M  from N'th to M'th field (inclusive)\n  -M   from first to M'th field (inclusive)");
+    io::println("  -    all fields\nMultiple fields/ranges can be separated with commas\n");
+    io::println("FORMAT must be suitable for printing one floating-point argument '%f'.");
+    io::println("Optional quote (%'f) will enable --grouping (if supported by current locale).");
+    io::println("Optional width value (%10f) will pad output. Optional zero (%010f) width");
+    io::println("will zero pad the number. Optional negative values (%-10f) will left align.");
+    io::println("Optional precision (%.1f) will override the input determined precision.\n");
+    io::println("Exit status is 0 if all input numbers were successfully converted.");
+    io::println("By default, numfmt will stop at the first conversion error with exit status 2.");
+    io::println("With --invalid='fail' a warning is printed for each conversion error");
+    io::println("and the exit status is 2.  With --invalid='warn' each conversion error is");
+    io::println("diagnosed, but the exit status is 0.  With --invalid='ignore' conversion");
+    io::println("errors are not diagnosed and the exit status is 0.\n");
+    io::println("Examples:\n  $ numfmt --to=si 1000\n            -> \"1.0k\"");
+    io::println("  $ numfmt --to=iec 2048\n           -> \"2.0K\"");
+    io::println("  $ numfmt --to=iec-i 4096\n           -> \"4.0Ki\"");
+    io::println("  $ echo 1K | numfmt --from=si\n           -> \"1000\"");
+    io::println("  $ echo 1K | numfmt --from=iec\n           -> \"1024\"");
+    io::println("  $ df -B1 | numfmt --header --field 2-4 --to=si");
+    io::println("  $ ls -l  | numfmt --header --field 5 --to=iec");
+    io::println("  $ ls -lh | numfmt --header --field 5 --from=iec --padding=10");
+    io::println("  $ ls -lh | numfmt --header --field 5 --from=iec --format %10f\n");
+    io::println("Report bugs to: bug-coreutils@gnu.org");
+    io::println("GNU coreutils home page: <https://www.gnu.org/software/coreutils/>");
+    io::println("General help using GNU software: <https://www.gnu.org/gethelp/>");
+    io::println("Report any translation bugs to <https://translationproject.org/team/>");
+    io::println("Full documentation <https://www.gnu.org/software/coreutils/numfmt>");
+    io::println("or available locally via: info '(coreutils) numfmt invocation'");
+};
 
 export fn run(start: usize, argc: usize) i32 = {
-    let count: usize = argc - start;
-    if (count > 4096usize) { return 1; };
-    let mut argv: [4096]*i8;
-    for (let i in 0usize..count) { argv[i] = args::argat(start + i).data as *i8; };
-    return backend::zov_numfmt_run(count as i32, (&argv[0usize]) as **i8);
+    let mut from: i32 = 0i32;
+    let mut to: i32 = 0i32;
+    let mut zero: bool = false;
+    let mut round_mode: i32 = 0i32;
+    let mut invalid: i32 = 0i32;
+    let mut options: bool = true;
+    let mut delimiter: u8 = 0u8;
+    let mut header: usize = 0usize;
+    let mut precision: i32 = -1i32;
+    let mut _debug: bool = false;
+    let mut grouping: bool = false;
+    let mut padding_set: bool = false;
+    let mut padding: i64 = 0i64;
+    let mut from_unit: f64 = 1.0;
+    let mut to_unit: f64 = 1.0;
+    let mut suffix: str = "";
+    let mut unit_separator: str = "";
+    let mut format: str = "";
+    let mut field_spec: str = "";
+
+    let mut operands: vec::Vec[str] = vec::new[str]();
+
+    let mut i: usize = start;
+    while (i < argc) {
+        let a: str = args::argat(i);
+        if (options && a == "--") {
+            options = false;
+            i += 1usize;
+            continue;
+        };
+        if (options && a == "--help") {
+            print_help();
+            return 0i32;
+        };
+        if (options && a == "--version") {
+            io::println("numfmt (zovutils) 0.10.61");
+            return 0i32;
+        };
+        if (options && (a == "-z" || a == "--zero-terminated")) {
+            zero = true;
+            i += 1usize;
+            continue;
+        };
+        if (options && a.len >= 2usize && a[0usize..2usize] == "--") {
+            let mut key: str = a;
+            let mut val: str = "";
+            let mut has_val: bool = false;
+            for (let j in 0usize..a.len) {
+                if (a.data[j] == 61u8) { // '='
+                    key = a[0usize..j];
+                    val = a[(j + 1usize)..a.len];
+                    has_val = true;
+                    break;
+                };
+            };
+            if (key == "--debug" && !has_val) {
+                _debug = true;
+                i += 1usize;
+                continue;
+            };
+            if (key == "--grouping" && !has_val) {
+                grouping = true;
+                i += 1usize;
+                continue;
+            };
+            if (key == "--header") {
+                if (has_val) {
+                    let mut n: i64 = 0i64;
+                    if (!parse_i64(val, &mut n) || n < 0i64) {
+                        io::eprintln("numfmt: invalid number: '" + val + "'");
+                        io::eprintln("Try 'numfmt --help' for more information.");
+                        return 1i32;
+                    };
+                    header = n as usize;
+                } else {
+                    header = 1usize;
+                };
+                i += 1usize;
+                continue;
+            };
+            if (key == "--from" || key == "--to") {
+                let mut v: str = val;
+                if (!has_val) {
+                    if (i + 1usize < argc) {
+                        i += 1usize;
+                        v = args::argat(i);
+                    } else {
+                        io::eprintln("numfmt: option '" + key + "' requires an argument");
+                        io::eprintln("Try 'numfmt --help' for more information.");
+                        return 1i32;
+                    };
+                };
+                let is_from: bool = key == "--from";
+                let unit: i32 = numfmt_unit(v, is_from);
+                if (unit < 0i32 || (!is_from && unit == 1i32)) {
+                    if (is_from) {
+                        io::eprintln("numfmt: invalid argument '" + v + "' for '--from'\nValid arguments are:\n  - 'none'\n  - 'auto'\n  - 'si'\n  - 'iec'\n  - 'iec-i'");
+                    } else {
+                        io::eprintln("numfmt: invalid argument '" + v + "' for '--to'\nValid arguments are:\n  - 'none'\n  - 'si'\n  - 'iec'\n  - 'iec-i'");
+                    };
+                    io::eprintln("Try 'numfmt --help' for more information.");
+                    return 1i32;
+                };
+                if (is_from) { from = unit; } else { to = unit; };
+                i += 1usize;
+                continue;
+            };
+            if (key == "--from-unit" || key == "--to-unit") {
+                let mut v: str = val;
+                if (!has_val) {
+                    if (i + 1usize < argc) {
+                        i += 1usize;
+                        v = args::argat(i);
+                    } else {
+                        io::eprintln("numfmt: option '" + key + "' requires an argument");
+                        io::eprintln("Try 'numfmt --help' for more information.");
+                        return 1i32;
+                    };
+                };
+                let mut x: i64 = 0i64;
+                if (!parse_i64(v, &mut x) || x <= 0i64) {
+                    io::eprintln("numfmt: invalid unit size: '" + v + "'");
+                    return 1i32;
+                };
+                if (key == "--from-unit") { from_unit = x as f64; } else { to_unit = x as f64; };
+                i += 1usize;
+                continue;
+            };
+            if (key == "--delimiter" || key == "--unit-separator" || key == "--suffix" || key == "--format" || key == "--padding" || key == "--round" || key == "--invalid" || key == "--field") {
+                let mut v: str = val;
+                if (!has_val) {
+                    if (i + 1usize < argc) {
+                        i += 1usize;
+                        v = args::argat(i);
+                    } else {
+                        io::eprintln("numfmt: option '" + key + "' requires an argument");
+                        io::eprintln("Try 'numfmt --help' for more information.");
+                        return 1i32;
+                    };
+                };
+                if (key == "--delimiter") {
+                    if (v.len != 1usize) {
+                        io::eprintln("numfmt: the delimiter must be a single character");
+                        return 1i32;
+                    };
+                    delimiter = v.data[0usize];
+                } else if (key == "--unit-separator") {
+                    unit_separator = v;
+                } else if (key == "--suffix") {
+                    suffix = v;
+                } else if (key == "--format") {
+                    if (!numfmt_format_valid(v)) {
+                        numfmt_bad_format(v);
+                        return 1i32;
+                    };
+                    format = v;
+                } else if (key == "--padding") {
+                    let mut n: i64 = 0i64;
+                    if (!parse_i64(v, &mut n)) {
+                        io::eprintln("numfmt: invalid number: '" + v + "'");
+                        io::eprintln("Try 'numfmt --help' for more information.");
+                        return 1i32;
+                    };
+                    padding = n;
+                    padding_set = true;
+                } else if (key == "--round") {
+                    if (v == "up") { round_mode = 1i32; }
+                    else if (v == "down") { round_mode = 2i32; }
+                    else if (v == "towards-zero") { round_mode = 3i32; }
+                    else if (v == "nearest") { round_mode = 4i32; }
+                    else if (v == "from-zero") { round_mode = 0i32; }
+                    else {
+                        io::eprintln("numfmt: invalid argument '" + v + "' for '--round'\nValid arguments are:\n  - 'up'\n  - 'down'\n  - 'from-zero'\n  - 'towards-zero'\n  - 'nearest'");
+                        io::eprintln("Try 'numfmt --help' for more information.");
+                        return 1i32;
+                    };
+                } else if (key == "--invalid") {
+                    if (v == "abort") { invalid = 0i32; }
+                    else if (v == "fail") { invalid = 1i32; }
+                    else if (v == "warn") { invalid = 2i32; }
+                    else if (v == "ignore") { invalid = 3i32; }
+                    else {
+                        io::eprintln("numfmt: invalid argument '" + v + "' for '--invalid'\nValid arguments are:\n  - 'abort'\n  - 'fail'\n  - 'warn'\n  - 'ignore'");
+                        io::eprintln("Try 'numfmt --help' for more information.");
+                        return 1i32;
+                    };
+                } else if (key == "--field") {
+                    if (!numfmt_parse_field_spec(v)) {
+                        io::eprintln("numfmt: invalid field value '" + v + "'");
+                        io::eprintln("Try 'numfmt --help' for more information.");
+                        return 1i32;
+                    };
+                    field_spec = v;
+                };
+                i += 1usize;
+                continue;
+            };
+
+            io::eprintln("numfmt: unrecognized option '" + a + "'");
+            io::eprintln("Try 'numfmt --help' for more information.");
+            return 1i32;
+        };
+
+        if (options && a.len >= 2usize && a.data[0usize] == 45u8) {
+            if (a.data[1usize] == 100u8) { // '-d'
+                if (a.len > 2usize) {
+                    if (a.len > 3usize) {
+                        io::eprintln("numfmt: invalid delimiter: '" + a + "'");
+                        io::eprintln("Try 'numfmt --help' for more information.");
+                        return 1i32;
+                    };
+                    delimiter = a.data[2usize];
+                    i += 1usize;
+                    continue;
+                } else if (i + 1usize < argc) {
+                    i += 1usize;
+                    let v: str = args::argat(i);
+                    if (v.len != 1usize) {
+                        io::eprintln("numfmt: invalid delimiter: '" + v + "'");
+                        io::eprintln("Try 'numfmt --help' for more information.");
+                        return 1i32;
+                    };
+                    delimiter = v.data[0usize];
+                    i += 1usize;
+                    continue;
+                };
+            };
+            io::eprintln("numfmt: invalid option -- '" + a[1usize..2usize] + "'");
+            io::eprintln("Try 'numfmt --help' for more information.");
+            return 1i32;
+        };
+
+        operands.push(a);
+        i += 1usize;
+    };
+
+    if (grouping && to > 0i32) {
+        io::eprintln("numfmt: grouping cannot be combined with --to");
+        return 1i32;
+    };
+    if (format.len > 0usize && !numfmt_format_valid(format)) {
+        return 1i32;
+    };
+
+    let mut status: i32 = 0i32;
+    if (operands.length > 0usize) {
+        for (let idx in 0usize..operands.length) {
+            let mut op_vec: vec::Vec[u8] = vec::new[u8]();
+            let op_str: str = operands.get(idx);
+            for (let k in 0usize..op_str.len) { op_vec.push(op_str.data[k]); };
+            let r: i32 = numfmt_convert_line(&op_vec, from, to, from_unit, to_unit, round_mode, suffix, unit_separator, format, precision, invalid, field_spec, delimiter, padding, padding_set, zero);
+            if (r == 2i32) {
+                status = 2i32;
+                if (invalid == 0i32) { break; };
+            } else if (r != 0i32) {
+                status = r;
+            };
+        };
+    } else {
+        let mut line: vec::Vec[u8] = vec::new[u8]();
+        let mut line_number: usize = 0usize;
+        while (true) {
+            let ch: i32 = c::getchar();
+            if (ch == -1i32) { break; };
+            if ((zero && ch == 0i32) || (!zero && ch == 10i32)) {
+                line_number += 1usize;
+                if (line_number <= header) {
+                    for (let k in 0usize..line.length) { c::fputc(line.get(k) as i32, c::stdout); };
+                    let mut term_ch: i32 = 10i32;
+                    if (zero) { term_ch = 0i32; };
+                    c::fputc(term_ch, c::stdout);
+                } else {
+                    let r: i32 = numfmt_convert_line(&line, from, to, from_unit, to_unit, round_mode, suffix, unit_separator, format, precision, invalid, field_spec, delimiter, padding, padding_set, zero);
+                    if (r == 2i32) {
+                        status = 2i32;
+                        if (invalid == 0i32) { break; };
+                    } else if (r != 0i32) {
+                        status = r;
+                    };
+                };
+                line.length = 0usize;
+            } else {
+                line.push(ch as u8);
+            };
+        };
+        if (line.length > 0usize && !(status == 2i32 && invalid == 0i32)) {
+            line_number += 1usize;
+            if (line_number <= header) {
+                for (let k in 0usize..line.length) { c::fputc(line.get(k) as i32, c::stdout); };
+                let mut term_ch: i32 = 10i32;
+                if (zero) { term_ch = 0i32; };
+                c::fputc(term_ch, c::stdout);
+            } else {
+                let r: i32 = numfmt_convert_line(&line, from, to, from_unit, to_unit, round_mode, suffix, unit_separator, format, precision, invalid, field_spec, delimiter, padding, padding_set, zero);
+                if (r == 2i32) { status = 2i32; }
+                else if (r != 0i32) { status = r; };
+            };
+        };
+    };
+
+    if (!stream::finishoutput("numfmt")) {
+        return 2i32;
+    };
+    return status;
 };
