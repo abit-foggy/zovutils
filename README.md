@@ -4,7 +4,7 @@
 ![Version 0.10.61](https://img.shields.io/badge/version-0.10.61-blue)
 ![Alpha](https://img.shields.io/badge/status-alpha-orange)
 ![GNU Coreutils target 9.11](https://img.shields.io/badge/target-GNU%20Coreutils%209.11-lightgrey)
-![Zov 0.10.0](https://img.shields.io/badge/language-Zov%200.10.0-6f42c1)
+![Zov 0.11.0](https://img.shields.io/badge/language-Zov%200.11.0-6f42c1)
 
 `zovutils` is a multicall command-line utilities project written in Zov. It
 targets GNU Coreutils 9.11 behavior and compiles through Zov to C99, then to a

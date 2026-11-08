@@ -2,7 +2,7 @@
 name = "zovutils"
 version = "0.10.61"
 edition = "2026"
-zovc = "0.10.0"
+zovc = "0.11.0"
 
 [dependencies]
 
