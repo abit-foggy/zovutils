@@ -30,7 +30,7 @@ export fn run(start: usize, argc: usize) i32 = {
             return 1;
         };
         if (first == "--version") {
-            io::println("false (zovutils) 0.10.40");
+            io::println("false (zovutils) 0.10.41");
             stream::finishoutput("false");
             return 1;
         };
