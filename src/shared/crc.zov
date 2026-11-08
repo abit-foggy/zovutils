@@ -1,0 +1,230 @@
+use std::env as args;
+use std::io;
+use std::vec;
+use <stdio.h> as c;
+use <string.h> as strc;
+use <platform_errno.h> as platform_errno;
+use io as stream;
+
+export fn cksum_byte(crc: u32, byte: u8) u32 = {
+    let mut c_val: u32 = crc ^ ((byte as u32) << 24);
+    for (let _i in 0usize..8usize) {
+        if ((c_val & 0x80000000u32) != 0u32) {
+            c_val = (c_val << 1) ^ 0x04c11db7u32;
+        } else {
+            c_val = c_val << 1;
+        };
+    };
+    return c_val;
+};
+
+export fn crc32b_byte(crc: u32, byte: u8) u32 = {
+    let mut c_val: u32 = crc ^ (byte as u32);
+    for (let _i in 0usize..8usize) {
+        if ((c_val & 1u32) != 0u32) {
+            c_val = (c_val >> 1) ^ 0xedb88320u32;
+        } else {
+            c_val = c_val >> 1;
+        };
+    };
+    return c_val;
+};
+
+fn print_help(program: str) void = {
+    io::println("Usage: " + program + " [OPTION]... [FILE]...");
+    io::println("Print CRC checksum and byte counts of each FILE.");
+    io::println("With no FILE, or when FILE is -, read standard input.");
+    io::println("  -r, --algorithm=bsd   use BSD sum algorithm");
+    io::println("  -s, --algorithm=sysv  use System V sum algorithm");
+    io::println("      --help            display this help and exit");
+    io::println("      --version         output version information and exit");
+};
+
+export fn run_cksum(program: str, start: usize, argc: usize) i32 = {
+    let is_cksum: bool = program == "cksum";
+    let mut algorithm: i32 = 1i32;
+    if (is_cksum) {
+        algorithm = 0i32;
+    };
+    let mut end_options: bool = false;
+    let mut status: i32 = 0i32;
+    let mut files = vec::new[str]();
+
+    let mut i: usize = start;
+    while (i < argc) {
+        let a: str = args::argat(i);
+        if (!end_options && a == "--") {
+            end_options = true;
+            i += 1usize;
+            continue;
+        };
+        if (!end_options && (a == "--help" || a == "--version")) {
+            if (a == "--version") {
+                io::println(program + " (zovutils) 0.10.61");
+                return 0;
+            };
+            print_help(program);
+            return 0;
+        };
+        if (!end_options && !is_cksum && (a == "-s" || a == "--sysv")) {
+            algorithm = 2i32;
+            i += 1usize;
+            continue;
+        };
+        if (!end_options && !is_cksum && a == "-r") {
+            algorithm = 1i32;
+            i += 1usize;
+            continue;
+        };
+        if (!end_options && is_cksum && (a == "-a" || a == "--algorithm")) {
+            if (i + 1usize >= argc) {
+                io::eprintln(program + ": option requires an argument -- 'a'\nTry '" + program + " --help' for more information.");
+                return 1;
+            };
+            i += 1usize;
+            let val: str = args::argat(i);
+            if (val == "crc") { algorithm = 0i32; }
+            else if (val == "bsd") { algorithm = 1i32; }
+            else if (val == "sysv") { algorithm = 2i32; }
+            else if (val == "crc32b") { algorithm = 3i32; }
+            else {
+                io::eprintln(program + ": invalid argument '" + val + "' for '--algorithm'\nValid arguments are:\n  - 'bsd'\n  - 'crc'\n  - 'crc32b'\n  - 'sysv'\nTry '" + program + " --help' for more information.");
+                return 1;
+            };
+            i += 1usize;
+            continue;
+        };
+        if (!end_options && is_cksum && a.len >= 12usize && a[0usize..12usize] == "--algorithm=") {
+            let val: str = a[12usize..a.len];
+            if (val == "crc") { algorithm = 0i32; }
+            else if (val == "bsd") { algorithm = 1i32; }
+            else if (val == "sysv") { algorithm = 2i32; }
+            else if (val == "crc32b") { algorithm = 3i32; }
+            else {
+                io::eprintln(program + ": invalid argument '" + val + "' for '--algorithm'\nValid arguments are:\n  - 'bsd'\n  - 'crc'\n  - 'crc32b'\n  - 'sysv'\nTry '" + program + " --help' for more information.");
+                return 1;
+            };
+            i += 1usize;
+            continue;
+        };
+        if (!end_options && a.len > 0usize && a.data[0usize] == 45u8 && a != "-") {
+            if (is_cksum && a.len > 1usize && a.data[1usize] != 45u8) {
+                c::fprintf(c::stderr, "cksum: invalid option -- '%c'\nTry 'cksum --help' for more information.\n", a.data[1usize] as i32);
+            } else {
+                io::eprintln(program + ": unrecognized option '" + a + "'\nTry '" + program + " --help' for more information.");
+            };
+            return 1;
+        };
+        files.push(a);
+        i += 1usize;
+    };
+
+    let implicit_stdin: bool = files.len() == 0usize;
+    if (implicit_stdin) {
+        files.push("-");
+    };
+
+    let mut buf: [16384]u8;
+    for (let fi in 0usize..files.len()) {
+        let name: str = files.get(fi);
+        let mut in_fp: *c::FILE = c::stdin;
+        if (name != "-") {
+            let opened: nullable *c::FILE = stream::openread(name);
+            match (opened) {
+                case let fp: *c::FILE => { in_fp = fp; },
+                case null => {
+                    let err: i32 = platform_errno::zov_errno_value();
+                    let err_str: *i8 = (strc::strerror(err))!;
+                    io::eprint(program + ": " + name + ": ");
+                    c::fputs(err_str, c::stderr);
+                    c::fputc(10i32, c::stderr);
+                    status = 1;
+                    continue;
+                },
+            };
+        };
+
+        let mut crc: u32 = 0u32;
+        if (algorithm == 3i32) {
+            crc = 0xffffffffu32;
+        };
+        let mut sum: u64 = 0u64;
+        let mut len: u64 = 0u64;
+
+        while (true) {
+            let n: usize = c::fread((&buf[0usize]) as *void, 1usize, 16384usize, in_fp);
+            if (n == 0usize) { break; };
+            for (let j in 0usize..n) {
+                let b: u8 = buf[j];
+                len += 1u64;
+                if (algorithm == 0i32) {
+                    crc = cksum_byte(crc, b);
+                } else if (algorithm == 3i32) {
+                    crc = crc32b_byte(crc, b);
+                } else if (algorithm == 2i32) {
+                    sum += b as u64;
+                } else {
+                    sum = (sum >> 1) + ((sum & 1u64) << 15);
+                    sum += b as u64;
+                    sum = sum & 0xffffu64;
+                };
+            };
+        };
+
+        if (stream::readerror(in_fp)) {
+            let err: i32 = platform_errno::zov_errno_value();
+            let err_str: *i8 = (strc::strerror(err))!;
+            io::eprint(program + ": " + name + ": read error: ");
+            c::fputs(err_str, c::stderr);
+            c::fputc(10i32, c::stderr);
+            status = 1;
+        };
+
+        if (in_fp != c::stdin) {
+            c::fclose(in_fp);
+        };
+
+        if (algorithm == 0i32) {
+            let mut l: u64 = len;
+            while (l != 0u64) {
+                crc = cksum_byte(crc, (l & 255u64) as u8);
+                l = l >> 8;
+            };
+            crc = ~crc;
+            if (implicit_stdin) {
+                io::println(crc + " " + len);
+            } else {
+                io::println(crc + " " + len + " " + name);
+            };
+        } else if (algorithm == 3i32) {
+            crc = ~crc;
+            if (implicit_stdin) {
+                io::println(crc + " " + len);
+            } else {
+                io::println(crc + " " + len + " " + name);
+            };
+        } else if (algorithm == 2i32) {
+            sum = (sum & 0xffffu64) + (sum >> 16);
+            sum = (sum & 0xffffu64) + (sum >> 16);
+            let blocks: u64 = (len + 511u64) / 512u64;
+            if (implicit_stdin) {
+                io::println(sum + " " + blocks);
+            } else {
+                io::println(sum + " " + blocks + " " + name);
+            };
+        } else {
+            let blocks: u64 = (len + 1023u64) / 1024u64;
+            let mut outbuf: [512]u8;
+            let sum_u32: u32 = (sum & 0xffffu64) as u32;
+            c::snprintf((&outbuf[0usize]) as *i8, 512usize, "%05u %5llu\0".data as *i8, sum_u32, blocks);
+            c::fputs((&outbuf[0usize]) as *i8, c::stdout);
+            if (!implicit_stdin) {
+                c::fputc(32i32, c::stdout);
+                stream::putstr(c::stdout, name);
+            };
+            c::fputc(10i32, c::stdout);
+        };
+    };
+
+    return status;
+};
