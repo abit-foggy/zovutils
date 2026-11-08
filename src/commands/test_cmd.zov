@@ -1,7 +1,32 @@
 use std::env as args;
 use std::io;
-use <stdio.h> as c;
-use <test_backend.h> as backend;
+use <platform_stat.h> as platform_stat;
+
+fn parse_test_int(s: str, out: &mut i64) bool = {
+    if (s.len == 0usize) { return false; };
+    let mut i: usize = 0usize;
+    let mut neg: bool = false;
+    if (s.data[0usize] == 45u8) { // '-'
+        neg = true;
+        i += 1usize;
+    } else if (s.data[0usize] == 43u8) { // '+'
+        i += 1usize;
+    };
+    if (i >= s.len) { return false; };
+    let mut val: i64 = 0i64;
+    while (i < s.len) {
+        let b: u8 = s.data[i];
+        if (b < 48u8 || b > 57u8) { return false; };
+        val = val * 10i64 + ((b - 48u8) as i64);
+        i += 1usize;
+    };
+    if (neg) {
+        *out = -val;
+    } else {
+        *out = val;
+    };
+    return true;
+};
 
 fn is_unary(op: str) bool = {
     return op == "-n" || op == "-z" || op == "-e" || op == "-a" || op == "-f" ||
@@ -62,7 +87,7 @@ fn parse_primary(start: usize, count: usize, pos: &mut usize, invalid: &mut bool
         *pos += 1usize;
         if (left == "-n") { return operand.len > 0usize; };
         if (left == "-z") { return operand.len == 0usize; };
-        return backend::zov_test_file(left.data as *i8, operand.data as *i8, operand.data as *i8) != 0i32;
+        return platform_stat::zov_test_file(left.data as *i8, operand.data as *i8, operand.data as *i8) != 0i32;
     };
 
     if (*pos < count) {
@@ -73,21 +98,32 @@ fn parse_primary(start: usize, count: usize, pos: &mut usize, invalid: &mut bool
             let right: str = args::argat(start + *pos);
             *pos += 1usize;
             if (op == "-eq" || op == "-ne" || op == "-gt" || op == "-ge" || op == "-lt" || op == "-le") {
-                let mut valid: i32 = 0i32;
-                let result: i32 = backend::zov_test_integer(op.data as *i8, left.data as *i8, right.data as *i8, &mut valid);
-                if (valid != 1i32) {
-                    let mut bad: str = right;
-                    if (valid == -1i32) { bad = left; };
-                    io::eprintln("test: invalid integer '" + bad + "'");
+                let mut x: i64 = 0i64;
+                if (!parse_test_int(left, &mut x)) {
+                    io::eprintln("test: invalid integer '" + left + "'");
                     *invalid = true;
                     return false;
                 };
-                return result != 0i32;
+                let mut y: i64 = 0i64;
+                if (!parse_test_int(right, &mut y)) {
+                    io::eprintln("test: invalid integer '" + right + "'");
+                    *invalid = true;
+                    return false;
+                };
+                if (op == "-eq") { return x == y; };
+                if (op == "-ne") { return x != y; };
+                if (op == "-gt") { return x > y; };
+                if (op == "-ge") { return x >= y; };
+                if (op == "-lt") { return x < y; };
+                return x <= y;
             };
             if (op == "-ef" || op == "-nt" || op == "-ot") {
-                return backend::zov_test_file(op.data as *i8, left.data as *i8, right.data as *i8) != 0i32;
+                return platform_stat::zov_test_file(op.data as *i8, left.data as *i8, right.data as *i8) != 0i32;
             };
-            return backend::zov_test_string(op.data as *i8, left.data as *i8, right.data as *i8) != 0i32;
+            if (op == "=" || op == "==") { return left == right; };
+            if (op == "!=") { return left != right; };
+            if (op == "<") { return left < right; };
+            return left > right;
         };
     };
     return left.len > 0usize;
