@@ -1,9 +1,259 @@
 use std::env as args;
-use <dircolors_backend.h> as backend;
+use std::vec as vec;
+use <stdio.h> as c;
+use <string.h> as strc;
+use <fnmatch.h> as fnmatch;
+use <platform_errno.h> as platform_errno;
+use <dircolors_database.h> as dircolors_db;
+
+fn print_help() = {
+    c::fputs("Usage: dircolors [OPTION]... [FILE]\n", c::stdout);
+    c::fputs("Output commands to set the LS_COLORS environment variable.\n", c::stdout);
+    c::fputs("  -b, --sh, --bourne-shell  output Bourne shell code\n", c::stdout);
+    c::fputs("  -c, --csh, --c-shell      output C shell code\n", c::stdout);
+    c::fputs("  -p, --print-database      output defaults\n", c::stdout);
+    c::fputs("      --print-ls-colors      output escaped colors for display\n", c::stdout);
+    c::fputs("      --help                 display this help and exit\n", c::stdout);
+    c::fputs("      --version              output version information and exit\n", c::stdout);
+};
+
+fn map_key(s: str) str = {
+    if (s == "NORMAL") { return "no"; };
+    if (s == "FILE") { return "fi"; };
+    if (s == "DIR") { return "di"; };
+    if (s == "LINK") { return "ln"; };
+    if (s == "MULTIHARDLINK") { return "mh"; };
+    if (s == "FIFO") { return "pi"; };
+    if (s == "SOCK") { return "so"; };
+    if (s == "DOOR") { return "do"; };
+    if (s == "BLK") { return "bd"; };
+    if (s == "CHR") { return "cd"; };
+    if (s == "ORPHAN") { return "or"; };
+    if (s == "MISSING") { return "mi"; };
+    if (s == "SETUID") { return "su"; };
+    if (s == "SETGID") { return "sg"; };
+    if (s == "CAPABILITY") { return "ca"; };
+    if (s == "STICKY") { return "st"; };
+    if (s == "OTHER_WRITABLE") { return "ow"; };
+    if (s == "STICKY_OTHER_WRITABLE") { return "tw"; };
+    if (s == "EXEC") { return "ex"; };
+    if (s.len > 0usize && s[0usize] == 42u8) { return s; };
+    return "";
+};
+
+fn trim_slice(s: str) str = {
+    let mut start: usize = 0usize;
+    while (start < s.len && (s[start] == 32u8 || s[start] == 9u8 || s[start] == 10u8 || s[start] == 13u8)) {
+        start = start + 1usize;
+    };
+    let mut end: usize = s.len;
+    while (end > start && (s[end - 1usize] == 32u8 || s[end - 1usize] == 9u8 || s[end - 1usize] == 10u8 || s[end - 1usize] == 13u8)) {
+        end = end - 1usize;
+    };
+    return s[start..end];
+};
+
+fn read_line(fp: *c::FILE, buf: &mut [4096]u8, len_out: &mut usize) bool = {
+    let mut i: usize = 0usize;
+    while (i < 4095usize) {
+        let ch: i32 = c::fgetc(fp);
+        if (ch == -1i32) {
+            if (i == 0usize) {
+                return false;
+            };
+            buf[i] = 0u8;
+            *len_out = i;
+            return true;
+        };
+        if (ch == 10i32) {
+            buf[i] = 0u8;
+            *len_out = i;
+            return true;
+        };
+        buf[i] = ch as u8;
+        i = i + 1usize;
+    };
+    buf[i] = 0u8;
+    *len_out = i;
+    return true;
+};
+
 export fn run(start: usize, argc: usize) i32 = {
-    let count: usize = argc - start;
-    if (count > 4096usize) { return 1; };
-    let mut argv: [4096]*i8;
-    for (let i in 0usize..count) { argv[i] = args::argat(start + i).data as *i8; };
-    return backend::zov_dircolors_run(count as i32, (&argv[0usize]) as **i8);
+    let mut shell: bool = false; // false = sh, true = csh
+    let mut shell_selected: bool = false;
+    let mut print_database: bool = false;
+    let mut print_colors: bool = false;
+    let mut file: str = "";
+
+    let mut i: usize = start;
+    while (i < argc) {
+        let a: str = args::argat(i).view();
+        if (a == "--help") {
+            print_help();
+            return 0;
+        };
+        if (a == "--version") {
+            c::fputs("dircolors (zovutils) 0.10.61\n", c::stdout);
+            return 0;
+        };
+        if (a == "-b" || a == "--sh" || a == "--bourne-shell") {
+            shell = false;
+            shell_selected = true;
+            i = i + 1usize;
+            continue;
+        };
+        if (a == "-c" || a == "--csh" || a == "--c-shell") {
+            shell = true;
+            shell_selected = true;
+            i = i + 1usize;
+            continue;
+        };
+        if (a == "-p" || a == "--print-database") {
+            print_database = true;
+            i = i + 1usize;
+            continue;
+        };
+        if (a == "--print-ls-colors") {
+            print_colors = true;
+            i = i + 1usize;
+            continue;
+        };
+        if (a.len > 0usize && a[0usize] == 45u8 && a != "-") {
+            c::fprintf(c::stderr, "dircolors: unrecognized option '%s'\nTry 'dircolors --help' for more information.\n", a.data as *i8);
+            return 1;
+        };
+        if (file.len > 0usize) {
+            c::fprintf(c::stderr, "dircolors: extra operand '%s'\nTry 'dircolors --help' for more information.\n", a.data as *i8);
+            return 1;
+        };
+        file = a;
+        i = i + 1usize;
+    };
+
+    if (print_colors && shell_selected) {
+        c::fprintf(c::stderr, "dircolors: the options to output non shell syntax,\nand to select a shell syntax are mutually exclusive\nTry 'dircolors --help' for more information.\n");
+        return 1;
+    };
+
+    if (print_database && file.len > 0usize) {
+        c::fprintf(c::stderr, "dircolors: extra operand '%s'\nfile operands cannot be combined with --print-database (-p)\nTry 'dircolors --help' for more information.\n", file.data as *i8);
+        return 1;
+    };
+
+    if (print_database) {
+        c::fputs(dircolors_db::zov_get_dircolors_database(), c::stdout);
+        return 0;
+    };
+
+    let mut keys: vec::Vec<String> = vec::new<String>();
+    let mut values: vec::Vec<String> = vec::new<String>();
+    let mut term_seen: bool = false;
+    let mut term_matches: bool = false;
+
+    if (file.len > 0usize) {
+        let fp: nullable *c::FILE = c::fopen(file.data as *i8, "r");
+        if (fp == null) {
+            let err: i32 = platform_errno::zov_errno_value();
+            c::fprintf(c::stderr, "dircolors: %s: %s\n", file.data as *i8, strc::strerror(err));
+            return 1;
+        };
+        let file_ptr: *c::FILE = fp!;
+
+        let mut line_buf: [4096]u8;
+        let mut line_len: usize = 0usize;
+        let mut lineno: u64 = 0u64;
+
+        let mut failed: bool = false;
+        while (read_line(file_ptr, &mut line_buf, &mut line_len)) {
+            lineno = lineno + 1u64;
+            let raw_line: str = zov_str_from_raw((&mut line_buf[0usize]) as *u8, line_len);
+            let line: str = trim_slice(raw_line);
+            if (line.len == 0usize || line[0usize] == 35u8) {
+                continue;
+            };
+
+            let mut split_pos: usize = 0usize;
+            while (split_pos < line.len && line[split_pos] != 32u8 && line[split_pos] != 9u8) {
+                split_pos = split_pos + 1usize;
+            };
+            if (split_pos >= line.len) {
+                c::fprintf(c::stderr, "dircolors: %s:%lu: invalid line;  missing second token\n", file.data as *i8, lineno);
+                failed = true;
+                break;
+            };
+
+            let key: str = line[0usize..split_pos];
+            let value: str = trim_slice(line[split_pos..line.len]);
+            if (value.len == 0usize) {
+                c::fprintf(c::stderr, "dircolors: %s:%lu: invalid line;  missing second token\n", file.data as *i8, lineno);
+                failed = true;
+                break;
+            };
+
+            if (key == "TERM") {
+                term_seen = true;
+                let term_env: nullable *i8 = c::getenv("TERM".data as *i8);
+                if (term_env != null) {
+                    let owned_val: String = String::from(value);
+                    let rc: i32 = fnmatch::fnmatch(owned_val.view().data as *i8, term_env!, 0i32);
+                    if (rc == 0i32) {
+                        term_matches = true;
+                    };
+                };
+                continue;
+            };
+
+            if (key == "COLOR" || key == "OPTIONS" || key == "EIGHTBIT") {
+                continue;
+            };
+
+            let mapped: str = map_key(key);
+            if (mapped.len > 0usize) {
+                keys.push(String::from(mapped));
+                values.push(String::from(value));
+            };
+        };
+
+        c::fclose(file_ptr);
+        if (failed) {
+            return 1;
+        };
+    };
+
+    if (term_seen && !term_matches) {
+        keys.clear();
+        values.clear();
+    };
+
+    if (print_colors) {
+        for (let idx in 0usize..keys.len()) {
+            let k: String = keys.get(idx);
+            let v: String = values.get(idx);
+            c::printf("\033[%sm%s\t%s\033[0m\n", v.view().data as *i8, k.view().data as *i8, v.view().data as *i8);
+        };
+        return 0;
+    };
+
+    let mut colors: String = String::from("");
+    let mut used: bool = false;
+    for (let idx in 0usize..keys.len()) {
+        if (used) {
+            colors = colors + ":";
+        };
+        let k: String = keys.get(idx);
+        let v: String = values.get(idx);
+        colors = colors + k.view() + "=" + v.view();
+        used = true;
+    };
+    if (keys.len() > 0usize) {
+        colors = colors + ":";
+    };
+
+    if (shell) {
+        c::printf("setenv LS_COLORS '%s'\n", colors.view().data as *i8);
+    } else {
+        c::printf("LS_COLORS='%s';\nexport LS_COLORS\n", colors.view().data as *i8);
+    };
+
+    return 0;
 };

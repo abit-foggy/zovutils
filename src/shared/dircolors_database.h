@@ -246,4 +246,9 @@ static const char zov_dircolors_database[] =
 "#\n"
 "# Subsequent TERM or COLORTERM entries, can be used to add / override\n"
 "# config specific to those matching environment variables.\n";
+
+static inline const char *zov_get_dircolors_database(void) {
+    return zov_dircolors_database;
+}
+
 #endif
