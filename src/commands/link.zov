@@ -1,10 +1,114 @@
 use std::env as args;
-use <link_backend.h> as backend;
+use std::io;
+use <unistd.h> as u;
+use <stdio.h> as c;
+use <string.h> as strc;
+use <platform_errno.h> as platform_errno;
+use <platform_quote.h> as platform_quote;
+
+fn print_help() void = {
+    io::print("Usage: link FILE1 FILE2\n" +
+          "  or:  link OPTION\n" +
+          "Call the link function to create a link named FILE2 to an existing FILE1.\n\n" +
+          "      --help\n" +
+          "         display this help and exit\n" +
+          "      --version\n" +
+          "         output version information and exit\n\n" +
+          "Report bugs to: bug-coreutils@gnu.org\n" +
+          "GNU coreutils home page: <https://www.gnu.org/software/coreutils/>\n" +
+          "General help using GNU software: <https://www.gnu.org/gethelp/>\n" +
+          "Report any translation bugs to <https://translationproject.org/team/>\n" +
+          "Full documentation <https://www.gnu.org/software/coreutils/link>\n" +
+          "or available locally via: info '(coreutils) link invocation'\n");
+};
+
+fn is_option_prefix(arg: str, name: str) bool = {
+    let len: usize = arg.len;
+    return len > 2usize && len <= name.len && arg == name[0usize..len];
+};
 
 export fn run(start: usize, argc: usize) i32 = {
-    let count: usize = argc - start;
-    if (count > 4096usize) { return 1; };
-    let mut argv: [4096]*i8;
-    for (let i in 0usize..count) { argv[i] = args::argat(start + i).data as *i8; };
-    return backend::zov_link_run(count as i32, (&argv[0usize]) as **i8);
+    let mut op0: str = "";
+    let mut op1: str = "";
+    let mut count: usize = 0usize;
+    let mut options_done: bool = false;
+
+    let mut i: usize = start;
+    while (i < argc) {
+        let arg: str = args::argat(i);
+        if (!options_done && arg == "--") {
+            options_done = true;
+            i += 1usize;
+            continue;
+        };
+        if (!options_done && arg.len >= 2usize && arg[0usize..2usize] == "--") {
+            let mut key: str = arg;
+            let mut has_equal: bool = false;
+            for (let j in 2usize..arg.len) {
+                if (arg.data[j] == 61u8) { // '='
+                    key = arg[0usize..j];
+                    has_equal = true;
+                    break;
+                };
+            };
+            if (is_option_prefix(key, "--help")) {
+                if (has_equal) {
+                    c::fputs("link: option '--help' doesn't allow an argument\nTry 'link --help' for more information.\n", c::stderr);
+                    return 1i32;
+                };
+                print_help();
+                return 0i32;
+            };
+            if (is_option_prefix(key, "--version")) {
+                if (has_equal) {
+                    c::fputs("link: option '--version' doesn't allow an argument\nTry 'link --help' for more information.\n", c::stderr);
+                    return 1i32;
+                };
+                io::println("link (zovutils) 0.10.61");
+                return 0i32;
+            };
+            c::fprintf(c::stderr, "link: unrecognized option '%s'\nTry 'link --help' for more information.\n", arg.data as *i8);
+            return 1i32;
+        };
+        if (!options_done && arg.len > 1usize && arg.data[0usize] == 45u8) {
+            c::fprintf(c::stderr, "link: invalid option -- '%c'\nTry 'link --help' for more information.\n", arg.data[1usize] as i32);
+            return 1i32;
+        };
+        if (count == 2usize) {
+            c::fputs("link: extra operand ", c::stderr);
+            platform_quote::zov_quote_shell(c::stderr, arg.data as *i8);
+            c::fputs("\nTry 'link --help' for more information.\n", c::stderr);
+            return 1i32;
+        };
+        if (count == 0usize) {
+            op0 = arg;
+        } else {
+            op1 = arg;
+        };
+        count += 1usize;
+        i += 1usize;
+    };
+
+    if (count == 0usize) {
+        c::fputs("link: missing operand\nTry 'link --help' for more information.\n", c::stderr);
+        return 1i32;
+    };
+    if (count == 1usize) {
+        c::fputs("link: missing operand after ", c::stderr);
+        platform_quote::zov_quote_shell(c::stderr, op0.data as *i8);
+        c::fputs("\nTry 'link --help' for more information.\n", c::stderr);
+        return 1i32;
+    };
+
+    platform_errno::zov_errno_set(0i32);
+    if (u::link(op0.data as *void, op1.data as *void) == 0i32) {
+        return 0i32;
+    };
+    let error: i32 = platform_errno::zov_errno_value();
+    c::fputs("link: cannot create link ", c::stderr);
+    platform_quote::zov_quote_shell(c::stderr, op1.data as *i8);
+    c::fputs(" to ", c::stderr);
+    platform_quote::zov_quote_shell(c::stderr, op0.data as *i8);
+    c::fprintf(c::stderr, ": %s\n", strc::strerror(error));
+    return 1i32;
 };
