@@ -8,8 +8,12 @@
 #include <wchar.h>
 #include <wctype.h>
 
-static inline int zov_locale_uses_unicode_quotes(void) {
+static inline void zov_init_ctype_locale(void) {
     setlocale(LC_CTYPE, "");
+}
+
+static inline int zov_locale_uses_unicode_quotes(void) {
+    zov_init_ctype_locale();
     const char *codeset = nl_langinfo(CODESET);
     return codeset != NULL
         && (strcasecmp(codeset, "UTF-8") == 0 || strcasecmp(codeset, "UTF8") == 0);
@@ -54,6 +58,33 @@ static inline size_t zov_printable_utf8_length(const char *text, size_t length) 
         return 0;
     }
     return count;
+}
+
+static inline void zov_fold_next_char(const unsigned char *text, size_t length,
+                                      size_t *bytes_out, size_t *width_out) {
+    if (length == 0) { *bytes_out = 0; *width_out = 0; return; }
+    unsigned char c = text[0];
+    if (c >= 0x80 && MB_CUR_MAX > 1) {
+        wchar_t wc;
+        mbstate_t state;
+        memset(&state, 0, sizeof(state));
+        size_t rc = mbrtowc(&wc, (const char *)text, length, &state);
+        if (rc != (size_t)-1 && rc != (size_t)-2 && rc != 0) {
+            *bytes_out = rc;
+            int w = wcwidth(wc);
+            *width_out = w < 0 ? 1 : (size_t)w;
+            return;
+        }
+    }
+    *bytes_out = 1;
+    if (c == 0 || c == '\b') *width_out = 0;
+    else if (c == '\t') *width_out = 1;
+    else if (MB_CUR_MAX > 1) {
+        int w = wcwidth((wchar_t)c);
+        *width_out = w < 0 ? 1 : (size_t)w;
+    } else {
+        *width_out = 1;
+    }
 }
 
 #endif

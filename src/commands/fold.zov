@@ -1,7 +1,11 @@
 use std::env as args;
 use std::io;
+use std::mem as mem;
+use std::vec as vec;
 use <stdio.h> as c;
-use <fold_backend.h> as backend;
+use <string.h> as strc;
+use <platform_locale.h> as platform_locale;
+use <platform_errno.h> as platform_errno;
 use shared::io as stream;
 
 fn usage_error() void = { io::eprintln("Try 'fold --help' for more information."); };
@@ -19,9 +23,9 @@ fn parse_width(value: str) usize = {
     if (value.len == 0usize) { return 0usize; };
     let mut n: usize = 0usize;
     for (let i in 0usize..value.len) {
-        let c: u8 = value.data[i];
-        if (c < 48u8 || c > 57u8) { return 0usize; };
-        let digit: usize = (c - 48u8) as usize;
+        let digit_ch: u8 = value.data[i];
+        if (digit_ch < 48u8 || digit_ch > 57u8) { return 0usize; };
+        let digit: usize = (digit_ch - 48u8) as usize;
         if (n > (18446744073709551615usize - digit) / 10usize) { return 0usize; };
         n = n * 10usize + digit;
     };
@@ -30,8 +34,11 @@ fn parse_width(value: str) usize = {
 
 fn width_error(value: str) void = {
     let parsed: usize = parse_width(value);
-    if (parsed == 0usize && value == "0") { backend::zov_fold_zero_width_error(); }
-    else { io::eprintln("fold: invalid number of columns: '" + value + "'"); };
+    if (parsed == 0usize && value == "0") {
+        c::fprintf(c::stderr, "fold: invalid number of columns: '0': %s\n", strc::strerror(platform_errno::zov_erange_value()));
+    } else {
+        io::eprintln("fold: invalid number of columns: '" + value + "'");
+    };
 };
 
 fn help() void = {
@@ -47,6 +54,133 @@ fn help() void = {
     io::print("Report bugs to: bug-coreutils@gnu.org\nGNU coreutils home page: <https://www.gnu.org/software/coreutils/>\n");
     io::print("General help using GNU software: <https://www.gnu.org/gethelp/>\nReport any translation bugs to <https://translationproject.org/team/>\n");
     io::print("Full documentation <https://www.gnu.org/software/coreutils/fold>\nor available locally via: info '(coreutils) fold invocation'\n");
+};
+
+type FoldUnit = struct {
+    byte_start: usize,
+    byte_length: usize,
+    width: usize,
+    blank: bool,
+    tab: bool,
+    backspace: bool,
+};
+
+type FoldLine = struct {
+    data: *u8,
+    len: usize,
+    cap: usize,
+};
+
+fn fold_read_line(fp: *c::FILE, line: &mut FoldLine, terminated: &mut bool) i32 = {
+    line.len = 0usize;
+    *terminated = false;
+    while (true) {
+        let ch: i32 = c::fgetc(fp);
+        if (ch == -1i32) {
+            if (line.len != 0usize || stream::readerror(fp)) { return 1i32; };
+            return 0i32;
+        };
+        if (ch == 10i32) {
+            *terminated = true;
+            return 1i32;
+        };
+        if (line.len == line.cap) {
+            let mut next: usize = 256usize;
+            if (line.cap != 0usize) { next = line.cap * 2usize; };
+            line.data = mem::reallocbuf[u8](line.data, next);
+            line.cap = next;
+        };
+        line.data[line.len] = ch as u8;
+        line.len += 1usize;
+    };
+    return 0i32;
+};
+
+fn make_units(line: *u8, length: usize, bytes_mode: bool, char_mode: bool, units: &mut vec::Vec[FoldUnit]) void = {
+    let mut offset: usize = 0usize;
+    while (offset < length) {
+        let mut char_bytes: usize = 1usize;
+        let mut char_width: usize = 1usize;
+        platform_locale::zov_fold_next_char(((&line[offset]) as *u8), length - offset, &mut char_bytes, &mut char_width);
+        let c_byte: u8 = line[offset];
+        let mut final_width: usize = char_width;
+        if (bytes_mode) {
+            final_width = char_bytes;
+        } else if (char_mode && c_byte >= 128u8 && char_bytes > 1usize) {
+            final_width = 1usize;
+        };
+        units.push(FoldUnit {
+            byte_start = offset,
+            byte_length = char_bytes,
+            width = final_width,
+            blank = c_byte == 32u8 || c_byte == 9u8,
+            tab = c_byte == 9u8,
+            backspace = c_byte == 8u8,
+        });
+        offset += char_bytes;
+    };
+};
+
+fn emit_segment(line: *u8, units: &vec::Vec[FoldUnit], first: usize, after: usize) bool = {
+    if (first == after) { return true; };
+    let begin: usize = units.get(first).byte_start;
+    let last_unit: FoldUnit = units.get(after - 1usize);
+    let end: usize = last_unit.byte_start + last_unit.byte_length;
+    let seg_len: usize = end - begin;
+    return stream::writebytes(c::stdout, ((&line[begin]) as *u8), seg_len);
+};
+
+fn process_line(line: *u8, length: usize, width: usize, bytes: bool, characters: bool, spaces: bool) bool = {
+    let mut units = vec::new[FoldUnit]();
+    make_units(line, length, bytes, characters, &mut units);
+    let count: usize = units.len();
+    let mut start: usize = 0usize;
+    let mut ok: bool = true;
+    while (start < count) {
+        let mut column: usize = 0usize;
+        let mut last_blank: usize = 18446744073709551615usize;
+        let mut i: usize = start;
+        while (i < count) {
+            let u: FoldUnit = units.get(i);
+            let mut cost: usize = u.width;
+            if (u.tab && !bytes && !characters) {
+                cost = 8usize - (column % 8usize);
+            };
+            let mut after_column: usize = 0usize;
+            if (u.backspace) {
+                if (column > 0usize) { after_column = column - 1usize; };
+            } else {
+                if (cost > 18446744073709551615usize - column) {
+                    after_column = 18446744073709551615usize;
+                } else {
+                    after_column = column + cost;
+                };
+            };
+            if (after_column > width && i > start) { break; };
+            column = after_column;
+            if (u.blank) { last_blank = i; };
+            if (column > width && i == start) {
+                i += 1usize;
+                break;
+            };
+            i += 1usize;
+        };
+        if (i >= count) {
+            if (!emit_segment(line, &units, start, count)) { ok = false; };
+            break;
+        };
+        let mut end: usize = i;
+        if (spaces && last_blank != 18446744073709551615usize && last_blank >= start && last_blank < i) {
+            end = last_blank + 1usize;
+        };
+        if (end == start) {
+            if (i == start) { end = i + 1usize; } else { end = i; };
+        };
+        if (!emit_segment(line, &units, start, end)) { ok = false; };
+        if (end < count && c::fputc(10i32, c::stdout) == -1i32) { ok = false; };
+        start = end;
+    };
+    return ok;
 };
 
 export fn run(start: usize, argc: usize) i32 = {
@@ -109,8 +243,47 @@ export fn run(start: usize, argc: usize) i32 = {
         files[file_count] = arg; file_count += 1usize; i += 1usize;
     };
     if (file_count == 0usize) { files[0usize] = "-"; file_count = 1usize; };
-    let mut paths: [256]*i8;
-    for (let fi in 0usize..file_count) { paths[fi] = files[fi].data as *i8; };
-    return backend::zov_fold_run(file_count, ((&paths[0usize]) as **i8), width,
-        bytes as i32, characters as i32, spaces as i32);
+
+    platform_locale::zov_init_ctype_locale();
+    let mut status: i32 = 0;
+    let mut line: FoldLine = FoldLine { data = mem::alloc[u8](256usize), len = 0usize, cap = 256usize };
+    for (let fi in 0usize..file_count) {
+        let path: str = files[fi];
+        let is_stdin: bool = path == "-";
+        let mut fp: *c::FILE = c::stdin;
+        if (!is_stdin) {
+            let open_res: nullable *c::FILE = stream::openread(path);
+            match (open_res) {
+                case let opened: *c::FILE => { fp = opened; },
+                case null => {
+                    let err: i32 = platform_errno::zov_errno_value();
+                    c::fprintf(c::stderr, "fold: %s: %s\n", path.data as *i8, strc::strerror(err));
+                    status = 1;
+                    continue;
+                },
+            };
+        };
+        while (true) {
+            let mut terminated: bool = false;
+            let rc: i32 = fold_read_line(fp, &mut line, &mut terminated);
+            if (rc == 0i32) { break; };
+            if (rc < 0i32) {
+                c::fprintf(c::stderr, "fold: read error: %s\n", path.data as *i8);
+                status = 1;
+                break;
+            };
+            if (!process_line(line.data, line.len, width, bytes, characters, spaces)) {
+                status = 1;
+            };
+            if (terminated && c::fputc(10i32, c::stdout) == -1i32) {
+                status = 1;
+            };
+        };
+        if (!is_stdin) {
+            stream::closefile(fp);
+        };
+    };
+    mem::freeptr[u8](line.data);
+    if (!stream::finishoutput("fold")) { status = 1; };
+    return status;
 };

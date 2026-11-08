@@ -66,4 +66,8 @@ static inline int zov_errno_eio(void) {
     return EIO;
 }
 
+static inline int zov_erange_value(void) {
+    return ERANGE;
+}
+
 #endif
