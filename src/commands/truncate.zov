@@ -1,9 +1,216 @@
 use std::env as args;
-use <truncate_backend.h> as backend;
+use std::io as io;
+use std::vec;
+use <stdio.h> as c;
+use <string.h> as strc;
+use <platform_errno.h> as platform_errno;
+use <platform_stat.h> as platform_stat;
+
+type TruncSizeResult = struct {
+    valid: bool,
+    size: i64,
+    relative: i32,
+};
+
+fn parse_trunc_size(s: str) TruncSizeResult = {
+    if (s.len == 0usize) {
+        return TruncSizeResult{ valid = false, size = 0i64, relative = 0i32 };
+    };
+    let mut i: usize = 0usize;
+    let mut rel: i32 = 0i32;
+    if (s.data[0usize] == 43u8) { // '+'
+        rel = 1i32;
+        i += 1usize;
+    } else if (s.data[0usize] == 45u8) { // '-'
+        rel = -1i32;
+        i += 1usize;
+    };
+    if (i >= s.len) {
+        return TruncSizeResult{ valid = false, size = 0i64, relative = 0i32 };
+    };
+    let num_start: usize = i;
+    let mut n: i64 = 0i64;
+    while (i < s.len && s.data[i] >= 48u8 && s.data[i] <= 57u8) {
+        let d: i64 = (s.data[i] - 48u8) as i64;
+        if (n > (0x7fffffffffffffffi64 - d) / 10i64) {
+            return TruncSizeResult{ valid = false, size = 0i64, relative = 0i32 };
+        };
+        n = n * 10i64 + d;
+        i += 1usize;
+    };
+    if (i == num_start) {
+        return TruncSizeResult{ valid = false, size = 0i64, relative = 0i32 };
+    };
+    let mut mul: i64 = 1i64;
+    if (i < s.len) {
+        if (i + 1usize != s.len) {
+            return TruncSizeResult{ valid = false, size = 0i64, relative = 0i32 };
+        };
+        let ch: u8 = s.data[i];
+        if (ch == 107u8 || ch == 75u8) { mul = 1024i64; } // 'k', 'K'
+        else if (ch == 109u8 || ch == 77u8) { mul = 1048576i64; } // 'm', 'M'
+        else if (ch == 103u8 || ch == 71u8) { mul = 1073741824i64; } // 'g', 'G'
+        else if (ch == 116u8 || ch == 84u8) { mul = 1099511627776i64; } // 't', 'T'
+        else if (ch == 112u8 || ch == 80u8) { mul = 1125899906842624i64; } // 'p', 'P'
+        else if (ch == 98u8) { mul = 512i64; } // 'b'
+        else {
+            return TruncSizeResult{ valid = false, size = 0i64, relative = 0i32 };
+        };
+    };
+    if (n > 0x7fffffffffffffffi64 / mul) {
+        return TruncSizeResult{ valid = false, size = 0i64, relative = 0i32 };
+    };
+    return TruncSizeResult{ valid = true, size = n * mul, relative = rel };
+};
+
+fn print_help() = {
+    c::fputs("Usage: truncate OPTION... FILE...\nShrink or extend the size of each FILE to the specified size.\n  -c, --no-create        do not create files that do not exist\n  -r, --reference=RFILE  use the size of RFILE\n  -s, --size=SIZE        set or adjust the file size by SIZE bytes\n      --help             display this help and exit\n      --version          output version information and exit\n", c::stdout);
+};
+
 export fn run(start: usize, argc: usize) i32 = {
-    let count: usize = argc - start;
-    if (count > 4096usize) { return 1; };
-    let mut argv: [4096]*i8;
-    for (let i in 0usize..count) { argv[i] = args::argat(start + i).data as *i8; };
-    return backend::zov_truncate_run(count as i32, (&argv[0usize]) as **i8);
+    let mut size: i64 = 0i64;
+    let mut relative: i32 = 0i32;
+    let mut have_size: bool = false;
+    let mut nocreate: bool = false;
+    let mut options_done: bool = false;
+    let mut ref_file: str = "";
+    let mut have_ref: bool = false;
+    let mut files: vec::Vec[str] = vec::new[str]();
+
+    let mut i: usize = start;
+    while (i < argc) {
+        let a: str = args::argat(i);
+        if (!options_done && a.len == 2usize && a.data[0usize] == 45u8 && a.data[1usize] == 45u8) { // "--"
+            options_done = true;
+            i += 1usize;
+            continue;
+        };
+        if (!options_done && (a == "--help" || a == "--version")) {
+            if (a == "--version") {
+                io::println("truncate (zovutils) 0.10.61");
+            } else {
+                print_help();
+            };
+            return 0i32;
+        };
+        if (!options_done && (a == "-c" || a == "--no-create")) {
+            nocreate = true;
+            i += 1usize;
+            continue;
+        };
+        if (!options_done && (a == "-s" || a == "--size")) {
+            if (i + 1usize >= argc) {
+                c::fputs("truncate: option requires an argument -- 's'\n", c::stderr);
+                return 1i32;
+            };
+            let s_arg: str = args::argat(i + 1usize);
+            let res: TruncSizeResult = parse_trunc_size(s_arg);
+            if (!res.valid) {
+                c::fprintf(c::stderr, "truncate: Invalid number: '%s'\n", s_arg.data as *i8);
+                return 1i32;
+            };
+            size = res.size;
+            relative = res.relative;
+            have_size = true;
+            i += 2usize;
+            continue;
+        };
+        if (!options_done && a.len >= 7usize && a[0..7] == "--size=") {
+            let s_arg: str = a[7..a.len];
+            let res: TruncSizeResult = parse_trunc_size(s_arg);
+            if (!res.valid) {
+                c::fprintf(c::stderr, "truncate: Invalid number: '%s'\n", s_arg.data as *i8);
+                return 1i32;
+            };
+            size = res.size;
+            relative = res.relative;
+            have_size = true;
+            i += 1usize;
+            continue;
+        };
+        if (!options_done && (a == "-r" || a == "--reference")) {
+            if (i + 1usize >= argc) {
+                c::fputs("truncate: option requires an argument -- 'r'\n", c::stderr);
+                return 1i32;
+            };
+            ref_file = args::argat(i + 1usize);
+            have_ref = true;
+            i += 2usize;
+            continue;
+        };
+        if (!options_done && a.len >= 12usize && a[0..12] == "--reference=") {
+            ref_file = a[12..a.len];
+            have_ref = true;
+            i += 1usize;
+            continue;
+        };
+        if (!options_done && a.len > 0usize && a.data[0usize] == 45u8 && a != "-") {
+            c::fprintf(c::stderr, "truncate: unrecognized option '%s'\nTry 'truncate --help' for more information.\n", a.data as *i8);
+            return 1i32;
+        };
+        files.push(a);
+        i += 1usize;
+    };
+
+    if (!have_size && !have_ref) {
+        c::fputs("truncate: missing file operand\nTry 'truncate --help' for more information.\n", c::stderr);
+        return 1i32;
+    };
+    if (files.len() == 0usize) {
+        c::fputs("truncate: missing file operand\nTry 'truncate --help' for more information.\n", c::stderr);
+        return 1i32;
+    };
+
+    if (have_ref) {
+        let mut ref_size: i64 = 0i64;
+        platform_errno::zov_errno_set(0i32);
+        if (platform_stat::zov_stat_size(ref_file.data as *i8, &mut ref_size) != 0i32) {
+            let err: i32 = platform_errno::zov_errno_value();
+            c::fprintf(c::stderr, "truncate: cannot stat '%s': %s\n", ref_file.data as *i8, strc::strerror(err));
+            return 1i32;
+        };
+        size = ref_size;
+        relative = 0i32;
+        have_size = true;
+    };
+
+    let mut status: i32 = 0i32;
+    for (let fi in 0usize..files.len()) {
+        let file: str = files.get(fi);
+        let mut st_size: i64 = 0i64;
+        let exists: bool = platform_stat::zov_stat_size(file.data as *i8, &mut st_size) == 0i32;
+        if (!exists && nocreate) {
+            continue;
+        };
+        let mut create_flag: i32 = 0i32;
+        if (!exists) {
+            create_flag = 1i32;
+        };
+        platform_errno::zov_errno_set(0i32);
+        let fd: i32 = platform_stat::zov_open_for_truncate(file.data as *i8, create_flag);
+        if (fd < 0i32) {
+            let err: i32 = platform_errno::zov_errno_value();
+            c::fprintf(c::stderr, "truncate: cannot open '%s' for writing: %s\n", file.data as *i8, strc::strerror(err));
+            status = 1i32;
+            continue;
+        };
+        let mut target: i64 = size;
+        if (relative > 0i32) {
+            target = st_size + size;
+        } else if (relative < 0i32) {
+            target = st_size - size;
+        };
+        if (target < 0i64) {
+            target = 0i64;
+        };
+        platform_errno::zov_errno_set(0i32);
+        if (platform_stat::zov_file_truncate(fd, target) < 0i32) {
+            let err: i32 = platform_errno::zov_errno_value();
+            c::fprintf(c::stderr, "truncate: failed to truncate '%s' at %lld bytes: %s\n", file.data as *i8, target, strc::strerror(err));
+            status = 1i32;
+        };
+        platform_stat::zov_close_fd(fd);
+    };
+
+    return status;
 };

@@ -67,4 +67,24 @@ static inline long long zov_regular_bytes_remaining(int descriptor) {
     return (long long) (end - position);
 }
 
+static inline int zov_stat_size(const char *path, int64_t *size_out) {
+    struct stat st;
+    if (stat(path, &st) != 0) return -1;
+    *size_out = (int64_t)st.st_size;
+    return 0;
+}
+
+static inline int zov_open_for_truncate(const char *path, int create) {
+    int flags = O_WRONLY | (create ? O_CREAT : 0);
+    return open(path, flags, 0666);
+}
+
+static inline int zov_file_truncate(int fd, int64_t target) {
+    return ftruncate(fd, (off_t)target);
+}
+
+static inline int zov_close_fd(int fd) {
+    return close(fd);
+}
+
 #endif
