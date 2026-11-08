@@ -1,8 +1,9 @@
 use std::env as args;
 use std::io;
-use std::mem as mem;
+use std::vec;
 use <stdio.h> as c;
-use <seq_backend.h> as backend;
+use <stdlib.h> as stdlib;
+use <platform_errno.h> as platform_errno;
 use shared::io as stream;
 
 fn usage_error() void = {
@@ -55,8 +56,31 @@ fn is_prefix(value: str, full: str) bool = {
     return value.len > 2usize && value.len <= full.len && value == full[0usize..value.len];
 };
 
+fn is_nan(v: f64) bool = {
+    return v != v;
+};
+
 fn number_status(value: str, output: &mut f64) i32 = {
-    return backend::zov_seq_parse_number(value.data as *i8, output);
+    platform_errno::zov_errno_set(0i32);
+    let mut end: nullable *i8 = null;
+    let mut buf: [128]u8;
+    let mut p: *i8 = value.data as *i8;
+    if (value.len < 127usize) {
+        for (let i in 0usize..value.len) { buf[i] = value.data[i]; };
+        buf[value.len] = 0u8;
+        p = (&buf[0usize]) as *i8;
+    };
+    let parsed: f64 = stdlib::strtod(p, (&end) as **i8);
+    match (end) {
+        case let ep: *i8 => {
+            if (ep == p || ep[0] != 0i8) { return 1i32; };
+        },
+        case null => { return 1i32; },
+    };
+    if (is_nan(parsed)) { return 2i32; };
+    if (platform_errno::zov_errno_is_erange() != 0i32) { return 3i32; };
+    *output = parsed;
+    return 0i32;
 };
 
 fn looks_numeric(value: str) bool = {
@@ -81,6 +105,126 @@ fn fixed_precision(value: str, fixed: &mut bool) i32 = {
         else if (after_dot && ch >= 48u8 && ch <= 57u8) { precision += 1i32; };
     };
     return precision;
+};
+
+fn is_flag(ch: u8) bool = {
+    return ch == 45u8 || ch == 43u8 || ch == 32u8 || ch == 35u8 || ch == 48u8 || ch == 39u8; // -+ #0'
+};
+
+fn is_conv(ch: u8) bool = {
+    return ch == 97u8 || ch == 65u8 || ch == 101u8 || ch == 69u8 || ch == 102u8 || ch == 70u8 || ch == 103u8 || ch == 71u8; // aAeEfFgG
+};
+
+fn seq_validate_format(format: str, bad_conv: &mut i32) i32 = {
+    let mut conversions: i32 = 0i32;
+    *bad_conv = 0i32;
+    let mut i: usize = 0usize;
+    while (i < format.len) {
+        if (format.data[i] != 37u8) {
+            i += 1usize;
+            continue;
+        };
+        i += 1usize;
+        if (i == format.len) {
+            *bad_conv = 0i32;
+            return 4i32;
+        };
+        if (format.data[i] == 37u8) {
+            i += 1usize;
+            continue;
+        };
+        conversions += 1i32;
+        while (i < format.len && is_flag(format.data[i])) {
+            i += 1usize;
+        };
+        while (i < format.len && format.data[i] >= 48u8 && format.data[i] <= 57u8) {
+            i += 1usize;
+        };
+        if (i < format.len && format.data[i] == 36u8) {
+            *bad_conv = 36i32;
+            return 2i32;
+        };
+        if (i < format.len && format.data[i] == 46u8) {
+            i += 1usize;
+            while (i < format.len && format.data[i] >= 48u8 && format.data[i] <= 57u8) {
+                i += 1usize;
+            };
+        };
+        if (i < format.len && (format.data[i] == 76u8 || format.data[i] == 108u8)) {
+            i += 1usize;
+        };
+        if (i == format.len || !is_conv(format.data[i])) {
+            if (i < format.len) { *bad_conv = format.data[i] as i32; }
+            else { *bad_conv = 0i32; };
+            return 2i32;
+        };
+        i += 1usize;
+        if (conversions > 1i32) { return 3i32; };
+    };
+    if (conversions == 0i32) { return 1i32; };
+    return 0i32;
+};
+
+fn seq_normalize_format(format: str) Vec[u8] = {
+    let mut out = vec::new[u8]();
+    let mut i: usize = 0usize;
+    while (i < format.len) {
+        let ch: u8 = format.data[i];
+        out.push(ch);
+        if (ch != 37u8) {
+            i += 1usize;
+            continue;
+        };
+        if (i + 1usize < format.len && format.data[i + 1usize] == 37u8) {
+            i += 1usize;
+            out.push(format.data[i]);
+            i += 1usize;
+            continue;
+        };
+        i += 1usize;
+        while (i < format.len && is_flag(format.data[i])) {
+            out.push(format.data[i]);
+            i += 1usize;
+        };
+        while (i < format.len && format.data[i] >= 48u8 && format.data[i] <= 57u8) {
+            out.push(format.data[i]);
+            i += 1usize;
+        };
+        if (i < format.len && format.data[i] == 46u8) {
+            out.push(format.data[i]);
+            i += 1usize;
+            while (i < format.len && format.data[i] >= 48u8 && format.data[i] <= 57u8) {
+                out.push(format.data[i]);
+                i += 1usize;
+            };
+        };
+        if (i < format.len && (format.data[i] == 76u8 || format.data[i] == 108u8)) {
+            i += 1usize;
+        };
+        if (i < format.len) {
+            out.push(format.data[i]);
+            i += 1usize;
+        };
+    };
+    out.push(0u8);
+    return out;
+};
+
+fn seq_default_width(first: f64, last: f64, fixed: bool, precision: i32) i32 = {
+    let mut buf1: [256]u8;
+    let mut buf2: [256]u8;
+    let mut n1: i32 = 0i32;
+    let mut n2: i32 = 0i32;
+    if (fixed) {
+        n1 = c::snprintf((&buf1[0usize]) as *i8, 256usize, "%.*f\0".data as *i8, precision, first);
+        n2 = c::snprintf((&buf2[0usize]) as *i8, 256usize, "%.*f\0".data as *i8, precision, last);
+    } else {
+        n1 = c::snprintf((&buf1[0usize]) as *i8, 256usize, "%.*g\0".data as *i8, precision, first);
+        n2 = c::snprintf((&buf2[0usize]) as *i8, 256usize, "%.*g\0".data as *i8, precision, last);
+    };
+    let mut w: i32 = n1;
+    if (n2 > w) { w = n2; };
+    return w;
 };
 
 export fn run(start: usize, argc: usize) i32 = {
@@ -194,41 +338,71 @@ export fn run(start: usize, argc: usize) i32 = {
     if (last_precision > precision) { precision = last_precision; };
     if (!fixed) { precision = 6i32; };
 
-    let mut normalized_format: nullable *i8 = null;
+    let mut normalized_format = vec::new[u8]();
     if (has_format) {
         let mut bad_conversion: i32 = 0i32;
-        let format_status: i32 = backend::zov_seq_validate_format(format.data as *i8, &mut bad_conversion);
+        let format_status: i32 = seq_validate_format(format, &mut bad_conversion);
         if (format_status == 1i32) {
             io::eprintln("seq: format '" + format + "' has no %" + " directive"); return 1;
         };
         if (format_status == 2i32) {
-            if (bad_conversion == 0i32) { c::fprintf(c::stderr, "seq: format '%%' has unknown %% directive\n"); }
-            else { c::fprintf(c::stderr, "seq: format '%s' has unknown %%%c directive\n", format, bad_conversion); };
+            if (bad_conversion == 0i32) {
+                c::fprintf(c::stderr, "seq: format '%%' has unknown %% directive\n");
+            } else {
+                io::eprint("seq: format '" + format + "' has unknown %");
+                c::fputc(bad_conversion, c::stderr);
+                io::eprintln(" directive");
+            };
             return 1;
         };
         if (format_status == 3i32) { io::eprintln("seq: format '" + format + "' has too many %" + " directives"); return 1; };
         if (format_status == 4i32) { io::eprintln("seq: format '" + format + "' ends in %"); return 1; };
-        normalized_format = backend::zov_seq_normalize_format(format.data as *i8);
+        normalized_format = seq_normalize_format(format);
     };
-    let mut format_ptr: *i8 = format.data as *i8;
-    match (normalized_format) { case let ptr: *i8 => { format_ptr = ptr; }, case null => {} };
+
+    let mut format_c_buf: [256]u8;
+    let mut format_ptr: *i8 = "\0".data as *i8;
+    if (has_format) {
+        if (normalized_format.len() > 0usize) {
+            format_ptr = ((&normalized_format.asslice()[0usize]) as *u8) as *i8;
+        } else {
+            for (let k in 0usize..format.len) { format_c_buf[k] = format.data[k]; };
+            format_c_buf[format.len] = 0u8;
+            format_ptr = (&format_c_buf[0usize]) as *i8;
+        };
+    };
+
     let mut width: i32 = 0i32;
-    if (equal_width) { width = backend::zov_seq_default_width(first, last, fixed as i32, precision); };
+    if (equal_width) { width = seq_default_width(first, last, fixed, precision); };
 
     let mut current: f64 = first;
     let mut printed: bool = false;
     let mut status: i32 = 0i32;
     while ((increment > 0.0f64 && current <= last) || (increment < 0.0f64 && current >= last)) {
         if (printed && !stream::putstr(c::stdout, separator)) { status = 1; break; };
-        let mut rendered: nullable *i8 = null;
-        if (has_format) { rendered = backend::zov_seq_render_format(format_ptr, current); }
-        else { rendered = backend::zov_seq_render_default(current, fixed as i32, precision, width); };
-        match (rendered) {
-            case let value: *i8 => {
-                c::fputs(value, c::stdout);
-                mem::freeptr[u8](value as *u8);
-            },
-            case null => { status = 1; break; },
+        if (has_format) {
+            let mut buf: [512]u8;
+            let n: i32 = c::snprintf((&buf[0usize]) as *i8, 512usize, format_ptr, current);
+            if (n < 0i32) { status = 1; break; };
+            c::fputs((&buf[0usize]) as *i8, c::stdout);
+        } else {
+            let mut buf: [256]u8;
+            let mut n: i32 = 0i32;
+            if (fixed) {
+                if (width > 0i32) {
+                    n = c::snprintf((&buf[0usize]) as *i8, 256usize, "%0*.*f\0".data as *i8, width, precision, current);
+                } else {
+                    n = c::snprintf((&buf[0usize]) as *i8, 256usize, "%.*f\0".data as *i8, precision, current);
+                };
+            } else {
+                if (width > 0i32) {
+                    n = c::snprintf((&buf[0usize]) as *i8, 256usize, "%0*.*g\0".data as *i8, width, precision, current);
+                } else {
+                    n = c::snprintf((&buf[0usize]) as *i8, 256usize, "%.*g\0".data as *i8, precision, current);
+                };
+            };
+            if (n < 0i32) { status = 1; break; };
+            c::fputs((&buf[0usize]) as *i8, c::stdout);
         };
         printed = true;
         let next: f64 = current + increment;
@@ -236,7 +410,6 @@ export fn run(start: usize, argc: usize) i32 = {
         current = next;
     };
     if (printed && !stream::putbyte(c::stdout, 10u8)) { status = 1; };
-    if (normalized_format != null) { mem::freeptr[u8](format_ptr as *u8); };
     if (!stream::finishoutput("seq")) { return 1; };
     return status;
 };
