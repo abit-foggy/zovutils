@@ -1,9 +1,226 @@
 use std::env as args;
-use <id_backend.h> as backend;
+use std::io;
+use <stdio.h> as c;
+use <string.h> as strc;
+use <platform_errno.h> as platform_errno;
+use <platform_identity.h> as platform_identity;
+
+fn print_uid_name(uid: u32) void = {
+    let name: nullable *i8 = platform_identity::zov_user_name(uid);
+    if (name != null) {
+        c::fputs(name!, c::stdout);
+    } else {
+        c::printf("%lu\0".data as *i8, uid as u64);
+    };
+};
+
+fn print_gid_name(gid: u32) void = {
+    let name: nullable *i8 = platform_identity::zov_group_name(gid);
+    if (name != null) {
+        c::fputs(name!, c::stdout);
+    } else {
+        c::printf("%lu\0".data as *i8, gid as u64);
+    };
+};
+
 export fn run(start: usize, argc: usize) i32 = {
-    let count: usize = argc - start;
-    if (count > 4096usize) { return 1; };
-    let mut argv: [4096]*i8;
-    for (let i in 0usize..count) { argv[i] = args::argat(start + i).data as *i8; };
-    return backend::zov_id_run(count as i32, (&argv[0usize]) as **i8);
+    let mut mode: i32 = 0i32;
+    let mut names: bool = false;
+    let mut real: bool = false;
+    let mut context: bool = false;
+    let mut _all: bool = false;
+
+    let mut i: usize = start;
+    while (i < argc) {
+        let a: str = args::argat(i);
+        if (a == "--help") {
+            io::println("Usage: id [OPTION]... [USER]\n" +
+                        "Print user and group information for the specified USER, or the current user.\n" +
+                        "  -a             ignore, for compatibility with other versions\n" +
+                        "  -u, --user      print only the effective user ID\n" +
+                        "  -g, --group     print only the effective group ID\n" +
+                        "  -G, --groups    print all group IDs\n" +
+                        "  -n, --name      print a name instead of a number\n" +
+                        "  -r, --real      print the real ID instead of the effective ID\n" +
+                        "  -Z, --context   print only the security context\n" +
+                        "      --help      display this help and exit\n" +
+                        "      --version   output version information and exit");
+            return 0i32;
+        };
+        if (a == "--version") {
+            io::println("id (zovutils) 0.10.61");
+            return 0i32;
+        };
+        if (a == "-a") { _all = true; i += 1usize; continue; };
+        if (a == "-n" || a == "--name") { names = true; i += 1usize; continue; };
+        if (a == "-r" || a == "--real") { real = true; i += 1usize; continue; };
+        if (a == "-Z" || a == "--context") { context = true; i += 1usize; continue; };
+        if (a == "-u" || a == "--user") {
+            if (mode != 0i32) {
+                c::fputs("id: cannot print only user and only group\n\0".data as *i8, c::stderr);
+                return 1i32;
+            };
+            mode = 1i32;
+            i += 1usize;
+            continue;
+        };
+        if (a == "-g" || a == "--group") {
+            if (mode != 0i32) {
+                c::fputs("id: cannot print only user and only group\n\0".data as *i8, c::stderr);
+                return 1i32;
+            };
+            mode = 2i32;
+            i += 1usize;
+            continue;
+        };
+        if (a == "-G" || a == "--groups") {
+            mode = 3i32;
+            i += 1usize;
+            continue;
+        };
+        if (a.len > 1usize && a.data[0usize] == 45u8 && a.data[1usize] != 45u8) {
+            let mut valid: bool = true;
+            for (let j in 1usize..a.len) {
+                let ch: u8 = a.data[j];
+                if (ch == 117u8) { // 'u'
+                    if (mode != 0i32 && mode != 1i32) { valid = false; };
+                    mode = 1i32;
+                } else if (ch == 103u8) { // 'g'
+                    if (mode != 0i32 && mode != 2i32) { valid = false; };
+                    mode = 2i32;
+                } else if (ch == 71u8) { // 'G'
+                    mode = 3i32;
+                } else if (ch == 110u8) { // 'n'
+                    names = true;
+                } else if (ch == 114u8) { // 'r'
+                    real = true;
+                } else if (ch == 97u8) { // 'a'
+                    _all = true;
+                } else if (ch == 90u8) { // 'Z'
+                    context = true;
+                } else {
+                    valid = false;
+                };
+            };
+            if (valid) {
+                i += 1usize;
+                continue;
+            };
+        };
+        if (a.len > 0usize && a.data[0usize] == 45u8 && a != "-") {
+            c::fprintf(c::stderr, "id: unrecognized option '%s'\nTry 'id --help' for more information.\n\0".data as *i8, a.data as *i8);
+            return 1i32;
+        };
+        c::fputs("id: cannot print information for a user other than the current one\n\0".data as *i8, c::stderr);
+        return 1i32;
+    };
+
+    let mut uid: u32 = platform_identity::zov_geteuid();
+    let mut gid: u32 = platform_identity::zov_getegid();
+    if (real) {
+        uid = platform_identity::zov_getuid();
+        gid = platform_identity::zov_getgid();
+    };
+
+    if (real && mode == 0i32) {
+        c::fputs("id: '-r' is only permitted with -u or -g\nTry 'id --help' for more information.\n\0".data as *i8, c::stderr);
+        return 1i32;
+    };
+
+    if (names && mode != 1i32 && mode != 2i32 && mode != 3i32) {
+        c::fputs("id: '-n' is only permitted with -u, -g, or -G\nTry 'id --help' for more information.\n\0".data as *i8, c::stderr);
+        return 1i32;
+    };
+
+    if (mode == 1i32) {
+        if (names) {
+            print_uid_name(uid);
+            c::putchar(10i32);
+        } else {
+            c::printf("%lu\n\0".data as *i8, uid as u64);
+        };
+        return 0i32;
+    };
+
+    if (mode == 2i32) {
+        if (names) {
+            print_gid_name(gid);
+            c::putchar(10i32);
+        } else {
+            c::printf("%lu\n\0".data as *i8, gid as u64);
+        };
+        return 0i32;
+    };
+
+    if (mode == 3i32) {
+        let mut gs: [512]u32;
+        let n: i32 = platform_identity::zov_get_current_groups((&mut gs[0usize]) as *u32, 512i32);
+        if (n < 0i32) {
+            c::fprintf(c::stderr, "id: cannot get groups: %s\n\0".data as *i8, strc::strerror(platform_errno::zov_errno_value()));
+            return 1i32;
+        };
+        if (names) {
+            print_gid_name(gid);
+        } else {
+            c::printf("%lu\0".data as *i8, gid as u64);
+        };
+        for (let idx in 0usize..(n as usize)) {
+            let g: u32 = gs[idx];
+            if (g != gid) {
+                c::putchar(32i32);
+                if (names) {
+                    print_gid_name(g);
+                } else {
+                    c::printf("%lu\0".data as *i8, g as u64);
+                };
+            };
+        };
+        c::putchar(10i32);
+        return 0i32;
+    };
+
+    if (context) {
+        let mut buf: [4096]u8;
+        let rc: i32 = platform_identity::zov_get_security_context((&mut buf[0usize]) as *i8, 4096usize);
+        if (rc != 0i32) {
+            c::fprintf(c::stderr, "id: cannot get security context: %s\n\0".data as *i8, strc::strerror(rc));
+            return 1i32;
+        };
+        c::puts((&mut buf[0usize]) as *i8);
+        return 0i32;
+    };
+
+    c::printf("uid=%lu(\0".data as *i8, uid as u64);
+    print_uid_name(uid);
+    c::printf(") gid=%lu(\0".data as *i8, gid as u64);
+    print_gid_name(gid);
+    c::fputs(") groups=\0".data as *i8, c::stdout);
+    c::printf("%lu(\0".data as *i8, gid as u64);
+    print_gid_name(gid);
+    c::putchar(41i32); // ')'
+
+    let mut gs: [512]u32;
+    let n: i32 = platform_identity::zov_get_current_groups((&mut gs[0usize]) as *u32, 512i32);
+    if (n > 0i32) {
+        for (let idx in 0usize..(n as usize)) {
+            let g: u32 = gs[idx];
+            if (g != gid) {
+                c::putchar(44i32); // ','
+                c::printf("%lu(\0".data as *i8, g as u64);
+                print_gid_name(g);
+                c::putchar(41i32); // ')'
+            };
+        };
+    };
+
+    if (platform_identity::zov_selinux_active() != 0i32) {
+        let mut buf: [4096]u8;
+        if (platform_identity::zov_get_security_context((&mut buf[0usize]) as *i8, 4096usize) == 0i32) {
+            if (buf[0usize] != 0u8) {
+                c::printf(" context=%s\0".data as *i8, (&mut buf[0usize]) as *i8);
+            };
+        };
+    };
+    c::putchar(10i32);
+    return 0i32;
 };
