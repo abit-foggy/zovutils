@@ -136,4 +136,12 @@ static inline int zov_context_enabled(void) {
 #endif
 }
 
+static inline int zov_open_wronly(const char *path) {
+    return open(path, O_WRONLY);
+}
+
+static inline int zov_fsync(int fd) {
+    return fsync(fd);
+}
+
 #endif

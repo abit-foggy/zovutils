@@ -1,9 +1,289 @@
 use std::env as args;
-use <shred_backend.h> as backend;
+use std::io as io;
+use std::vec;
+use <stdio.h> as c;
+use <unistd.h> as posix;
+use <string.h> as strc;
+use <platform_errno.h> as platform_errno;
+use <platform_stat.h> as platform_stat;
+
+type ParseSizeResult = struct {
+    valid: bool,
+    val: i64,
+};
+
+fn parse_shred_size(s: str) ParseSizeResult = {
+    if (s.len == 0usize) {
+        return ParseSizeResult{ valid = false, val = 0i64 };
+    };
+    let mut i: usize = 0usize;
+    let mut v: i64 = 0i64;
+    while (i < s.len && s.data[i] >= 48u8 && s.data[i] <= 57u8) {
+        let d: i64 = (s.data[i] - 48u8) as i64;
+        if (v > (0x7fffffffffffffffi64 - d) / 10i64) {
+            return ParseSizeResult{ valid = false, val = 0i64 };
+        };
+        v = v * 10i64 + d;
+        i += 1usize;
+    };
+    if (i == 0usize) {
+        return ParseSizeResult{ valid = false, val = 0i64 };
+    };
+    let mut mul: i64 = 1i64;
+    if (i < s.len) {
+        if (i + 1usize != s.len) {
+            return ParseSizeResult{ valid = false, val = 0i64 };
+        };
+        let ch: u8 = s.data[i];
+        if (ch == 107u8 || ch == 75u8) { mul = 1024i64; } // 'k', 'K'
+        else if (ch == 77u8) { mul = 1048576i64; } // 'M'
+        else if (ch == 71u8) { mul = 1073741824i64; } // 'G'
+        else {
+            return ParseSizeResult{ valid = false, val = 0i64 };
+        };
+    };
+    return ParseSizeResult{ valid = true, val = v * mul };
+};
+
+fn parse_shred_passes(s: str) ParseSizeResult = {
+    if (s.len == 0usize) {
+        return ParseSizeResult{ valid = false, val = 0i64 };
+    };
+    let mut i: usize = 0usize;
+    let mut v: i64 = 0i64;
+    while (i < s.len) {
+        let ch: u8 = s.data[i];
+        if (ch < 48u8 || ch > 57u8) {
+            return ParseSizeResult{ valid = false, val = 0i64 };
+        };
+        let d: i64 = (ch - 48u8) as i64;
+        if (v > (0x7fffffffffffffffi64 - d) / 10i64) {
+            return ParseSizeResult{ valid = false, val = 0i64 };
+        };
+        v = v * 10i64 + d;
+        i += 1usize;
+    };
+    let mut pass: i64 = v;
+    if (v > 1000i64) {
+        pass = 1000i64;
+    };
+    return ParseSizeResult{ valid = true, val = pass };
+};
+
+fn print_help() = {
+    c::fputs("Usage: shred [OPTION]... FILE...\nOverwrite the specified FILE(s) repeatedly, in order to make it harder\nfor even very expensive hardware probing to recover the data.\n  -f, --force           change permissions to allow writing if necessary\n  -n, --iterations=N    overwrite N times instead of the default (3)\n  -s, --size=N          shred this many bytes (suffixes like K, M, G accepted)\n  -u, --remove          deallocate and remove file after overwriting\n  -v, --verbose         show progress\n  -z, --zero            add a final overwrite with zeros\n      --help            display this help and exit\n      --version         output version information and exit\n", c::stdout);
+};
+
 export fn run(start: usize, argc: usize) i32 = {
-    let count: usize = argc - start;
-    if (count > 4096usize) { return 1; };
-    let mut argv: [4096]*i8;
-    for (let i in 0usize..count) { argv[i] = args::argat(start + i).data as *i8; };
-    return backend::zov_shred_run(count as i32, (&argv[0usize]) as **i8);
+    let mut passes: i32 = 3i32;
+    let mut remove_file: bool = false;
+    let mut zero: bool = false;
+    let mut verbose: bool = false;
+    let mut exact: bool = false;
+    let mut size_override: i64 = -1i64;
+    let mut random_source: str = "/dev/urandom";
+    let mut files: vec::Vec[str] = vec::new[str]();
+
+    let mut i: usize = start;
+    while (i < argc) {
+        let a: str = args::argat(i);
+        if (a == "--help") {
+            print_help();
+            return 0i32;
+        };
+        if (a == "--version") {
+            io::println("shred (zovutils) 0.10.61");
+            return 0i32;
+        };
+        if (a == "-u" || a == "--remove") {
+            remove_file = true;
+            i += 1usize;
+            continue;
+        };
+        if (a == "-z" || a == "--zero") {
+            zero = true;
+            i += 1usize;
+            continue;
+        };
+        if (a == "-v" || a == "--verbose") {
+            verbose = true;
+            i += 1usize;
+            continue;
+        };
+        if (a == "-f" || a == "--force") {
+            i += 1usize;
+            continue;
+        };
+        if (a == "-x" || a == "--exact") {
+            exact = true;
+            i += 1usize;
+            continue;
+        };
+        if (a == "--random-source") {
+            if (i + 1usize >= argc) {
+                c::fputs("shred: option requires an argument -- 'random-source'\n", c::stderr);
+                return 1i32;
+            };
+            random_source = args::argat(i + 1usize);
+            i += 2usize;
+            continue;
+        };
+        if (a.len >= 16usize && a[0..16] == "--random-source=") {
+            random_source = a[16..a.len];
+            i += 1usize;
+            continue;
+        };
+        if (a.len >= 7usize && a[0..7] == "--size=") {
+            let res: ParseSizeResult = parse_shred_size(a[7..a.len]);
+            if (!res.valid || res.val < 0i64) {
+                return 1i32;
+            };
+            size_override = res.val;
+            i += 1usize;
+            continue;
+        };
+        if (a.len >= 13usize && a[0..13] == "--iterations=") {
+            let res: ParseSizeResult = parse_shred_passes(a[13..a.len]);
+            if (!res.valid || res.val < 0i64) {
+                return 1i32;
+            };
+            passes = res.val as i32;
+            i += 1usize;
+            continue;
+        };
+        if (a == "-n" || a == "--iterations") {
+            if (i + 1usize >= argc) {
+                return 1i32;
+            };
+            let v_str: str = args::argat(i + 1usize);
+            let res: ParseSizeResult = parse_shred_passes(v_str);
+            if (!res.valid || res.val < 0i64) {
+                c::fprintf(c::stderr, "shred: invalid number of passes: '%s'\n", v_str.data as *i8);
+                return 1i32;
+            };
+            passes = res.val as i32;
+            i += 2usize;
+            continue;
+        };
+        if (a == "-s" || a == "--size") {
+            if (i + 1usize >= argc) {
+                return 1i32;
+            };
+            let v_str: str = args::argat(i + 1usize);
+            let res: ParseSizeResult = parse_shred_size(v_str);
+            if (!res.valid || res.val < 0i64) {
+                c::fprintf(c::stderr, "shred: invalid size: '%s'\n", v_str.data as *i8);
+                return 1i32;
+            };
+            size_override = res.val;
+            i += 2usize;
+            continue;
+        };
+        if (a.len > 0usize && a.data[0usize] == 45u8 && a != "-") {
+            c::fprintf(c::stderr, "shred: unrecognized option '%s'\nTry 'shred --help' for more information.\n", a.data as *i8);
+            return 1i32;
+        };
+        files.push(a);
+        i += 1usize;
+    };
+
+    if (files.len() == 0usize) {
+        c::fputs("shred: missing file operand\nTry 'shred --help' for more information.\n", c::stderr);
+        return 1i32;
+    };
+
+    platform_errno::zov_errno_set(0i32);
+    let rng_fp: nullable *c::FILE = c::fopen(random_source.data as *i8, "rb".data as *i8);
+    if (rng_fp == null) {
+        let err: i32 = platform_errno::zov_errno_value();
+        c::fprintf(c::stderr, "shred: cannot open random source: %s\n", strc::strerror(err));
+        return 1i32;
+    };
+    let rng: *c::FILE = rng_fp!;
+
+    let mut buf: [16384]u8;
+    let mut status: i32 = 0i32;
+
+    for (let fi in 0usize..files.len()) {
+        let path: str = files.get(fi);
+        platform_errno::zov_errno_set(0i32);
+        let fd: i32 = platform_stat::zov_open_wronly(path.data as *i8);
+        if (fd < 0i32) {
+            let err: i32 = platform_errno::zov_errno_value();
+            c::fprintf(c::stderr, "shred: failed to open '%s': %s\n", path.data as *i8, strc::strerror(err));
+            status = 1i32;
+            continue;
+        };
+
+        let mut st_size: i64 = 0i64;
+        if (platform_stat::zov_stat_size(path.data as *i8, &mut st_size) < 0i32) {
+            posix::close(fd);
+            status = 1i32;
+            continue;
+        };
+
+        let mut length: i64 = size_override;
+        if (size_override < 0i64) {
+            length = st_size;
+            if (!exact && length % 4096i64 != 0i64) {
+                length += 4096i64 - (length % 4096i64);
+            };
+        };
+
+        let mut total_passes: i32 = passes;
+        if (zero) {
+            total_passes += 1i32;
+        };
+
+        for (let pass in 0i32..total_passes) {
+            if (posix::lseek(fd, 0i64, 0i32) < 0i64) {
+                status = 1i32;
+                break;
+            };
+            let mut left: i64 = length;
+            while (left > 0i64) {
+                let mut n: usize = 16384usize;
+                if (left < 16384i64) {
+                    n = left as usize;
+                };
+                if (zero && pass == passes) {
+                    for (let b in 0usize..n) {
+                        buf[b] = 0u8;
+                    };
+                } else {
+                    let nr: usize = c::fread((&buf[0usize]) as *void, 1usize, n, rng);
+                    if (nr != n) {
+                        status = 1i32;
+                        break;
+                    };
+                };
+                let nw: i64 = posix::write(fd, (&buf[0usize]) as *void, n) as i64;
+                if (nw != (n as i64)) {
+                    status = 1i32;
+                    break;
+                };
+                left -= n as i64;
+            };
+            if (platform_stat::zov_fsync(fd) < 0i32) {
+                status = 1i32;
+            };
+        };
+
+        posix::close(fd);
+
+        if (verbose) {
+            c::fprintf(c::stderr, "shred: %s: pass completed\n", path.data as *i8);
+        };
+        if (remove_file) {
+            platform_errno::zov_errno_set(0i32);
+            if (posix::unlink(path.data as *i8) < 0i32) {
+                let err: i32 = platform_errno::zov_errno_value();
+                c::fprintf(c::stderr, "shred: failed to remove '%s': %s\n", path.data as *i8, strc::strerror(err));
+                status = 1i32;
+            };
+        };
+    };
+
+    c::fclose(rng);
+    return status;
 };
