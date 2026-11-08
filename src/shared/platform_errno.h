@@ -54,4 +54,8 @@ static inline int zov_errno_would_block(void) {
     return errno == EAGAIN || errno == EWOULDBLOCK;
 }
 
+static inline int zov_errno_is_erange(void) {
+    return errno == ERANGE;
+}
+
 #endif

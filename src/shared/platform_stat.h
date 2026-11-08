@@ -28,6 +28,15 @@ static inline int zov_same_file(int descriptor, const char *path) {
         && descriptor_info.st_ino == path_info.st_ino;
 }
 
+static inline int zov_same_path(const char *first, const char *second) {
+    struct stat first_info;
+    struct stat second_info;
+    return stat(first, &first_info) == 0
+        && stat(second, &second_info) == 0
+        && first_info.st_dev == second_info.st_dev
+        && first_info.st_ino == second_info.st_ino;
+}
+
 static inline int zov_same_open_file(int first, int second) {
     struct stat first_info;
     struct stat second_info;
