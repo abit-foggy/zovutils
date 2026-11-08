@@ -1,7 +1,10 @@
 use std::env as args;
 use std::io;
+use std::mem as mem;
+use std::vec as vec;
 use <stdio.h> as c;
-use <paste_backend.h> as backend;
+use <string.h> as strc;
+use <platform_errno.h> as platform_errno;
 use shared::io as stream;
 
 fn usage_error() void = {
@@ -38,6 +41,77 @@ fn help() void = {
     io::print("Report any translation bugs to <https://translationproject.org/team/>\n");
     io::print("Full documentation <https://www.gnu.org/software/coreutils/paste>\n");
     io::print("or available locally via: info '(coreutils) paste invocation'\n");
+};
+
+type PasteLine = struct {
+    data: *u8,
+    len: usize,
+    cap: usize,
+};
+
+fn decode_delimiters(text: str) vec::Vec[u8] = {
+    let mut out = vec::new[u8]();
+    let n: usize = text.len;
+    let mut i: usize = 0usize;
+    while (i < n) {
+        let mut c_byte: u8 = text.data[i];
+        if (c_byte == 92u8 && i + 1usize < n) {
+            i += 1usize;
+            let next_ch: u8 = text.data[i];
+            if (next_ch == 110u8) { c_byte = 10u8; }
+            else if (next_ch == 116u8) { c_byte = 9u8; }
+            else if (next_ch == 98u8) { c_byte = 8u8; }
+            else if (next_ch == 114u8) { c_byte = 13u8; }
+            else if (next_ch == 102u8) { c_byte = 12u8; }
+            else if (next_ch == 118u8) { c_byte = 11u8; }
+            else if (next_ch >= 48u8 && next_ch <= 55u8) {
+                let mut val: usize = (next_ch - 48u8) as usize;
+                let mut k: usize = 0usize;
+                while (k < 2usize && i + 1usize < n && text.data[i + 1usize] >= 48u8 && text.data[i + 1usize] <= 55u8) {
+                    i += 1usize;
+                    val = val * 8usize + ((text.data[i] - 48u8) as usize);
+                    k += 1usize;
+                };
+                c_byte = val as u8;
+            } else {
+                c_byte = next_ch;
+            };
+        };
+        out.push(c_byte);
+        i += 1usize;
+    };
+    return out;
+};
+
+fn paste_readline(fp: *c::FILE, line: &mut PasteLine, term: u8) i32 = {
+    line.len = 0usize;
+    while (true) {
+        let ch: i32 = c::fgetc(fp);
+        if (ch == -1i32) {
+            if (stream::readerror(fp)) { return -1i32; };
+            if (line.len > 0usize) { return 1i32; };
+            return 0i32;
+        };
+        if ((ch as u8) == term) {
+            return 1i32;
+        };
+        if (line.len == line.cap) {
+            let mut next: usize = 4096usize;
+            if (line.cap != 0usize) { next = line.cap * 2usize; };
+            line.data = mem::reallocbuf[u8](line.data, next);
+            line.cap = next;
+        };
+        line.data[line.len] = ch as u8;
+        line.len += 1usize;
+    };
+    return 0i32;
+};
+
+fn emit_delimiter(delims: &vec::Vec[u8], idx: &mut usize) bool = {
+    if (delims.len() == 0usize) { return true; };
+    let c_byte: u8 = delims.get(*idx % delims.len());
+    *idx += 1usize;
+    return stream::putbyte(c::stdout, c_byte);
 };
 
 export fn run(start: usize, argc: usize) i32 = {
@@ -88,7 +162,94 @@ export fn run(start: usize, argc: usize) i32 = {
         files[0usize] = "-";
         file_count = 1usize;
     };
-    let mut paths: [256]*i8;
-    for (let fi in 0usize..file_count) { paths[fi] = files[fi].data as *i8; };
-    return backend::zov_paste_run(file_count, ((&paths[0usize]) as **i8), delimiter.data as *i8, serial as i32, zero_terminated as i32);
+
+    let delimiters: vec::Vec[u8] = decode_delimiters(delimiter);
+    let mut term: u8 = 10u8;
+    if (zero_terminated) { term = 0u8; };
+
+    let mut fps: [256]*c::FILE;
+    let mut close_fps: [256]bool;
+    let mut actives = vec::new[bool]();
+    let mut lines: [256]PasteLine;
+    let mut status: i32 = 0;
+
+    for (let f in 0usize..file_count) {
+        lines[f] = PasteLine { data = mem::alloc[u8](4096usize), len = 0usize, cap = 4096usize };
+        close_fps[f] = false;
+        let path: str = files[f];
+        if (path == "-") {
+            fps[f] = c::stdin;
+            actives.push(true);
+        } else {
+            let open_res: nullable *c::FILE = stream::openread(path);
+            match (open_res) {
+                case let opened: *c::FILE => {
+                    fps[f] = opened;
+                    close_fps[f] = true;
+                    actives.push(true);
+                },
+                case null => {
+                    let err: i32 = platform_errno::zov_errno_value();
+                    c::fprintf(c::stderr, "paste: %s: %s\n", path.data as *i8, strc::strerror(err));
+                    fps[f] = c::stdin;
+                    actives.push(false);
+                    status = 1;
+                },
+            };
+        };
+    };
+
+    if (status == 0) {
+        if (!serial) {
+            while (true) {
+                let mut any: bool = false;
+                for (let f in 0usize..file_count) {
+                    if (!actives.get(f)) { continue; };
+                    let rc: i32 = paste_readline(fps[f], &mut lines[f], term);
+                    if (rc < 0i32) { status = 1; actives.set(f, false); continue; };
+                    if (rc == 0i32) { actives.set(f, false); continue; };
+                    any = true;
+                };
+                if (!any) { break; };
+                let mut delim_idx: usize = 0usize;
+                for (let f in 0usize..file_count) {
+                    if (f > 0usize) {
+                        if (!emit_delimiter(&delimiters, &mut delim_idx)) { status = 1; break; };
+                    };
+                    if (lines[f].len > 0usize) {
+                        if (!stream::writebytes(c::stdout, lines[f].data, lines[f].len)) { status = 1; break; };
+                    };
+                };
+                if (!stream::putbyte(c::stdout, term)) { status = 1; break; };
+            };
+        } else {
+            for (let f in 0usize..file_count) {
+                let mut delim_idx: usize = 0usize;
+                let mut first: bool = true;
+                while (actives.get(f)) {
+                    let rc: i32 = paste_readline(fps[f], &mut lines[f], term);
+                    if (rc < 0i32) { status = 1; break; };
+                    if (rc == 0i32) { actives.set(f, false); break; };
+                    if (!first) {
+                        if (!emit_delimiter(&delimiters, &mut delim_idx)) { status = 1; break; };
+                    };
+                    if (!stream::writebytes(c::stdout, lines[f].data, lines[f].len)) { status = 1; break; };
+                    first = false;
+                };
+                if (!first) {
+                    if (!stream::putbyte(c::stdout, term)) { status = 1; break; };
+                };
+            };
+        };
+    };
+
+    for (let f in 0usize..file_count) {
+        if (close_fps[f]) {
+            stream::closefile(fps[f]);
+        };
+        mem::freeptr[u8](lines[f].data);
+    };
+
+    if (!stream::finishoutput("paste")) { status = 1; };
+    return status;
 };
