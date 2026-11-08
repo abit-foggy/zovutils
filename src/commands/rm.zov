@@ -1,10 +1,409 @@
 use std::env as args;
-use <rm_backend.h> as backend;
+use std::io;
+use std::vec;
+use <stdio.h> as c;
+use <string.h> as strc;
+use <stdlib.h> as stdlib;
+use <platform_errno.h> as platform_errno;
+use <platform_stat.h> as platform_stat;
+use <platform_quote.h> as platform_quote;
+
+type RmOptions = struct {
+    recursive: bool,
+    force: bool,
+    interactive: i32,
+    verbose: bool,
+    directory_only: bool,
+    one_file_system: bool,
+    preserve_root: bool,
+    root_device: u64,
+};
+
+fn print_help() void = {
+    io::print("Usage: rm [OPTION]... [FILE]...\n" +
+          "Remove (unlink) the FILE(s).\n\n" +
+          "  -f, --force\n" +
+          "         ignore nonexistent files and arguments, never prompt\n" +
+          "  -i\n" +
+          "         prompt before every removal\n" +
+          "  -I\n" +
+          "         prompt once before removing more than three files,\n" +
+          "         or when removing recursively; less intrusive than -i,\n" +
+          "         while still giving protection against most mistakes\n" +
+          "      --interactive[=WHEN]\n" +
+          "         prompt according to WHEN: never, once (-I), or always (-i);\n" +
+          "         without WHEN, prompt always\n" +
+          "      --one-file-system\n" +
+          "         when removing a hierarchy recursively,\n" +
+          "         skip any directory that is on a file system different\n" +
+          "         from that of the corresponding command line argument\n" +
+          "      --no-preserve-root\n" +
+          "         do not treat '/' specially\n" +
+          "      --preserve-root[=all]\n" +
+          "         do not remove '/' (default);\n" +
+          "         with 'all', reject any command line argument\n" +
+          "         on a separate device from its parent\n" +
+          "  -r, -R, --recursive\n" +
+          "         remove directories and their contents recursively\n" +
+          "  -d, --dir\n" +
+          "         remove empty directories\n" +
+          "  -v, --verbose\n" +
+          "         explain what is being done\n" +
+          "      --help\n" +
+          "         display this help and exit\n" +
+          "      --version\n" +
+          "         output version information and exit\n\n" +
+          "By default, rm does not remove directories.  Use the --recursive (-r or -R)\n" +
+          "option to remove each listed directory, too, along with all of its contents.\n\n" +
+          "Any attempt to remove a file whose last file name component is '.' or '..'\n" +
+          "is rejected with a diagnostic.\n\n" +
+          "To remove a file whose name starts with a '-', for example '-foo',\n" +
+          "use one of these commands:\n" +
+          "  rm -- -foo\n\n" +
+          "  rm ./-foo\n\n" +
+          "If you use rm to remove a file, it might be possible to recover\n" +
+          "some of its contents, given sufficient expertise and/or time.  For greater\n" +
+          "assurance that the contents are unrecoverable, consider using shred(1).\n\n" +
+          "Report bugs to: bug-coreutils@gnu.org\n" +
+          "GNU coreutils home page: <https://www.gnu.org/software/coreutils/>\n" +
+          "General help using GNU software: <https://www.gnu.org/gethelp/>\n" +
+          "Report any translation bugs to <https://translationproject.org/team/>\n" +
+          "Full documentation <https://www.gnu.org/software/coreutils/rm>\n" +
+          "or available locally via: info '(coreutils) rm invocation'\n");
+};
+
+fn is_long_opt(arg: str, keylen: usize, name: str) bool = {
+    if (keylen <= 2usize) { return false; };
+    if (keylen > name.len) { return false; };
+    let sub: str = arg[0usize..keylen];
+    let nsub: str = name[0usize..keylen];
+    return sub == nsub;
+};
+
+fn join_path(dir: str, name: str) String = {
+    if (dir.len == 0usize) { return String::from(name); };
+    if (dir[dir.len - 1usize] == 47u8) {
+        return dir + name;
+    };
+    return dir + "/" + name;
+};
+
+fn confirm(path: str, kind: str, ask: bool) bool = {
+    if (!ask) { return true; };
+    c::fprintf(c::stderr, "rm: %s \0".data as *i8, kind.data as *i8);
+    platform_quote::zov_quote_shell(c::stderr, path.data as *i8);
+    c::fputs("? \0".data as *i8, c::stderr);
+    c::fflush(c::stderr);
+    let mut answer: [32]u8;
+    let res: nullable *i8 = c::fgets((&mut answer[0usize]) as *i8, 32i32, c::stdin);
+    if (res == null) { return false; };
+    let first: u8 = answer[0usize];
+    return first == 121u8 || first == 89u8; // 'y' or 'Y'
+};
+
+fn rm_error(path: str, err: i32) void = {
+    c::fputs("rm: cannot remove \0".data as *i8, c::stderr);
+    platform_quote::zov_quote_shell(c::stderr, path.data as *i8);
+    c::fprintf(c::stderr, ": %s\n\0".data as *i8, strc::strerror(err));
+};
+
+fn rm_report(path: str, is_dir: bool) void = {
+    c::fputs("removed \0".data as *i8, c::stdout);
+    if (is_dir) {
+        c::fputs("directory \0".data as *i8, c::stdout);
+    };
+    platform_quote::zov_quote_shell(c::stdout, path.data as *i8);
+    c::fputc(10i32, c::stdout);
+};
+
+fn rm_one(path: str, opt: &mut RmOptions, interactive: bool, root_call: bool) i32 = {
+    let mut dev: u64 = 0u64;
+    let mut mode: u32 = 0u32;
+    let stat_rc: i32 = platform_stat::zov_stat_dev_mode(path.data as *i8, &mut dev, &mut mode);
+    if (stat_rc != 0i32) {
+        if (platform_errno::zov_errno_is_enoent(stat_rc) != 0i32) {
+            if (opt.force) { return 0i32; };
+        };
+        rm_error(path, stat_rc);
+        return 1i32;
+    };
+    let is_directory: bool = (mode & 0o170000u32) == 0o40000u32;
+    if (root_call) {
+        if (opt.recursive) {
+            if (opt.preserve_root) {
+                if (is_directory) {
+                    if (platform_stat::zov_realpath_is_root(path.data as *i8) != 0i32) {
+                        c::fputs("rm: it is dangerous to operate recursively on '/'\n\0".data as *i8, c::stderr);
+                        c::fputs("rm: use --no-preserve-root to override this failsafe\n\0".data as *i8, c::stderr);
+                        return 1i32;
+                    };
+                };
+            };
+        };
+    };
+    if (!is_directory || !opt.recursive) {
+        if (is_directory) {
+            if (!opt.recursive) {
+                if (!opt.directory_only) {
+                    c::fputs("rm: cannot remove \0".data as *i8, c::stderr);
+                    platform_quote::zov_quote_shell(c::stderr, path.data as *i8);
+                    c::fputs(": Is a directory\n\0".data as *i8, c::stderr);
+                    return 1i32;
+                };
+            };
+        };
+        let mut kind: str = "remove special file";
+        if (is_directory) {
+            kind = "remove directory";
+        } else {
+            if ((mode & 0o170000u32) == 0o120000u32) {
+                kind = "remove symbolic link";
+            } else {
+                if ((mode & 0o170000u32) == 0o100000u32) {
+                    kind = "remove regular file";
+                };
+            };
+        };
+        if (!confirm(path, kind, interactive)) { return 0i32; };
+        let mut result: i32 = 0i32;
+        if (is_directory) {
+            result = platform_stat::zov_rmdir(path.data as *i8);
+        } else {
+            result = platform_stat::zov_unlink(path.data as *i8);
+        };
+        if (result != 0i32) {
+            rm_error(path, result);
+            return 1i32;
+        };
+        if (opt.verbose) {
+            rm_report(path, is_directory);
+        };
+        return 0i32;
+    };
+    if (opt.one_file_system) {
+        if (!root_call) {
+            if (dev != opt.root_device) {
+                return 0i32;
+            };
+        };
+    };
+    if (!confirm(path, "descend into directory", interactive)) { return 0i32; };
+    let dir: nullable *void = platform_stat::zov_opendir(path.data as *i8);
+    if (dir == null) {
+        rm_error(path, platform_errno::zov_errno_value());
+        return 1i32;
+    };
+    let mut status: i32 = 0i32;
+    while (true) {
+        let ent: nullable *i8 = platform_stat::zov_readdir(dir!);
+        if (ent == null) { break; };
+        let name: str = zov_str_from_raw(ent! as *u8, strc::strlen(ent!));
+        if (name == "." || name == "..") { continue; };
+        let child: String = join_path(path, name);
+        if (rm_one(child.view(), opt, interactive, false) != 0i32) {
+            status = 1i32;
+        };
+    };
+    if (platform_stat::zov_closedir(dir!) != 0i32) {
+        status = 1i32;
+    };
+    if (status != 0i32) {
+        return status;
+    };
+    if (!confirm(path, "remove directory", interactive)) { return 0i32; };
+    let rmdir_rc: i32 = platform_stat::zov_rmdir(path.data as *i8);
+    if (rmdir_rc != 0i32) {
+        rm_error(path, rmdir_rc);
+        return 1i32;
+    };
+    if (opt.verbose) {
+        rm_report(path, true);
+    };
+    return 0i32;
+};
 
 export fn run(start: usize, argc: usize) i32 = {
-    let count: usize = argc - start;
-    if (count > 4096usize) { return 1; };
-    let mut argv: [4096]*i8;
-    for (let i in 0usize..count) { argv[i] = args::argat(start + i).data as *i8; };
-    return backend::zov_rm_run(count as i32, (&argv[0usize]) as **i8);
+    let mut opt = RmOptions {
+        recursive = false,
+        force = false,
+        interactive = 0i32,
+        verbose = false,
+        directory_only = false,
+        one_file_system = false,
+        preserve_root = true,
+        root_device = 0u64,
+    };
+    let mut paths: vec::Vec[str] = vec::new[str]();
+    let mut done: bool = false;
+    let mut options_done: bool = false;
+    let mut i: usize = start;
+
+    while (i < argc) {
+        let a: str = args::argat(i);
+        if (!done && a.len == 2usize && a.data[0usize] == 45u8 && a.data[1usize] == 45u8) {
+            done = true;
+            options_done = true;
+            i += 1usize;
+            continue;
+        };
+        if (!done && a.len >= 2usize && a.data[0usize] == 45u8 && a.data[1usize] == 45u8) {
+            let mut eq_pos: usize = a.len;
+            for (let j in 2usize..a.len) {
+                if (a.data[j] == 61u8) {
+                    eq_pos = j;
+                    break;
+                };
+            };
+            let has_eq: bool = eq_pos < a.len;
+            let mut val: str = "";
+            if (has_eq) {
+                val = a[(eq_pos + 1usize)..a.len];
+            };
+
+            if (is_long_opt(a, eq_pos, "--help")) {
+                if (has_eq) {
+                    c::fputs("rm: option '--help' doesn't allow an argument\nTry 'rm --help' for more information.\n\0".data as *i8, c::stderr);
+                    return 1i32;
+                };
+                print_help();
+                return 0i32;
+            };
+            if (is_long_opt(a, eq_pos, "--version")) {
+                io::println("rm (zovutils) 0.10.61");
+                return 0i32;
+            };
+            if (is_long_opt(a, eq_pos, "--recursive")) {
+                opt.recursive = true;
+                i += 1usize;
+                continue;
+            };
+            if (is_long_opt(a, eq_pos, "--force")) {
+                opt.force = true;
+                opt.interactive = 0i32;
+                i += 1usize;
+                continue;
+            };
+            if (is_long_opt(a, eq_pos, "--interactive")) {
+                if (has_eq) {
+                    if (val == "never" || val == "no" || val == "none") {
+                        opt.interactive = 0i32;
+                    } else if (val == "once") {
+                        opt.interactive = 2i32;
+                    } else if (val == "always" || val == "yes") {
+                        opt.interactive = 1i32;
+                    } else {
+                        let err_msg: String = "rm: invalid argument '" + val + "' for '--interactive'\nValid arguments are:\n  - 'never', 'no', 'none'\n  - 'once'\n  - 'always', 'yes'\nTry 'rm --help' for more information.\n";
+                        c::fputs(err_msg.view().data as *i8, c::stderr);
+                        return 1i32;
+                    };
+                } else {
+                    opt.interactive = 1i32;
+                };
+                opt.force = false;
+                i += 1usize;
+                continue;
+            };
+            if (is_long_opt(a, eq_pos, "--verbose")) {
+                opt.verbose = true;
+                i += 1usize;
+                continue;
+            };
+            if (is_long_opt(a, eq_pos, "--dir")) {
+                opt.directory_only = true;
+                i += 1usize;
+                continue;
+            };
+            if (is_long_opt(a, eq_pos, "--one-file-system")) {
+                opt.one_file_system = true;
+                i += 1usize;
+                continue;
+            };
+            if (is_long_opt(a, eq_pos, "--preserve-root")) {
+                opt.preserve_root = true;
+                i += 1usize;
+                continue;
+            };
+            if (is_long_opt(a, eq_pos, "--no-preserve-root")) {
+                opt.preserve_root = false;
+                i += 1usize;
+                continue;
+            };
+            c::fprintf(c::stderr, "rm: unrecognized option '%s'\nTry 'rm --help' for more information.\n\0".data as *i8, a.data as *i8);
+            return 1i32;
+        };
+        if (!done && !options_done && a.len > 1usize && a.data[0usize] == 45u8) {
+            for (let j in 1usize..a.len) {
+                let ch: u8 = a.data[j];
+                if (ch == 114u8 || ch == 82u8) { // 'r' or 'R'
+                    opt.recursive = true;
+                } else if (ch == 102u8) { // 'f'
+                    opt.force = true;
+                    opt.interactive = 0i32;
+                } else if (ch == 105u8) { // 'i'
+                    opt.interactive = 1i32;
+                    opt.force = false;
+                } else if (ch == 73u8) { // 'I'
+                    opt.interactive = 2i32;
+                    opt.force = false;
+                } else if (ch == 118u8) { // 'v'
+                    opt.verbose = true;
+                } else if (ch == 100u8) { // 'd'
+                    opt.directory_only = true;
+                } else {
+                    c::fprintf(c::stderr, "rm: invalid option -- '%c'\nTry 'rm --help' for more information.\n\0".data as *i8, ch as i32);
+                    return 1i32;
+                };
+            };
+            i += 1usize;
+            continue;
+        };
+        paths.push(a);
+        let pc: nullable *i8 = stdlib::getenv("POSIXLY_CORRECT");
+        if (pc != null && (pc!)[0usize] != 0i8) {
+            options_done = true;
+        };
+        i += 1usize;
+    };
+
+    if (paths.len() == 0usize) {
+        if (opt.force) {
+            return 0i32;
+        };
+        c::fputs("rm: missing operand\nTry 'rm --help' for more information.\n\0".data as *i8, c::stderr);
+        return 1i32;
+    };
+
+    if (opt.interactive == 2i32) {
+        if (opt.recursive || paths.len() > 3usize) {
+            if (opt.recursive) {
+                c::fputs("rm: remove all arguments recursively? \0".data as *i8, c::stderr);
+            } else {
+                c::fprintf(c::stderr, "rm: remove %d arguments? \0".data as *i8, paths.len() as i32);
+            };
+            c::fflush(c::stderr);
+            let mut answer: [32]u8;
+            let res: nullable *i8 = c::fgets((&mut answer[0usize]) as *i8, 32i32, c::stdin);
+            if (res == null) { return 0i32; };
+            let first: u8 = answer[0usize];
+            if (first != 121u8 && first != 89u8) {
+                return 0i32;
+            };
+            opt.interactive = 0i32;
+        };
+    };
+
+    let mut status: i32 = 0i32;
+    for (let p in 0usize..paths.len()) {
+        let p_arg: str = paths.get(p);
+        let mut dev: u64 = 0u64;
+        let mut mode: u32 = 0u32;
+        if (platform_stat::zov_stat_dev_mode(p_arg.data as *i8, &mut dev, &mut mode) == 0i32) {
+            opt.root_device = dev;
+        };
+        let r: i32 = rm_one(p_arg, &mut opt, opt.interactive == 1i32, true);
+        if (r != 0i32) {
+            status = 1i32;
+        };
+    };
+    return status;
 };

@@ -475,4 +475,19 @@ static inline int zov_stat_owner(const char *path, int follow, uint32_t *uid_out
     return 0;
 }
 
+static inline int zov_rmdir(const char *pathname) {
+    if (rmdir(pathname) != 0) {
+        return errno;
+    }
+    return 0;
+}
+
+static inline int zov_stat_dev_mode(const char *path, uint64_t *dev_out, uint32_t *mode_out) {
+    struct stat st;
+    if (lstat(path, &st) != 0) return errno;
+    if (dev_out) *dev_out = (uint64_t)st.st_dev;
+    if (mode_out) *mode_out = (uint32_t)st.st_mode;
+    return 0;
+}
+
 #endif
