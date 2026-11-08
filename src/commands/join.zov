@@ -1,7 +1,9 @@
 use std::env as args;
 use std::io;
+use std::vec as vec;
 use <stdio.h> as c;
-use <join_backend.h> as backend;
+use <string.h> as strc;
+use <platform_errno.h> as platform_errno;
 use shared::io as stream;
 
 fn longkey(arg: str) str = {
@@ -28,6 +30,377 @@ fn number(value: str) usize = {
 
 fn help() void = {
     io::print("Usage: join [OPTION]... FILE1 FILE2\nFor each pair of input lines with identical join fields, write a line to\nstandard output.  The default join field is the first, delimited by blanks.\n\nWhen FILE1 or FILE2 (not both) is -, read standard input.\n  -a FILENUM\n         also print unpairable lines from file FILENUM,\n         where FILENUM is 1 or 2, corresponding to FILE1 or FILE2\n  -e STRING\n         replace missing (empty) input fields with STRING;\n         I.e., missing fields specified with '-12jo' options\n  -i, --ignore-case\n         ignore differences in case when comparing fields\n  -j FIELD\n         equivalent to '-1 FIELD -2 FIELD'\n  -o FORMAT\n         obey FORMAT while constructing output line\n  -t CHAR\n         use CHAR as input and output field separator\n  -v FILENUM\n         like -a FILENUM, but suppress joined output lines\n  -1 FIELD\n         join on this FIELD of file 1\n  -2 FIELD\n         join on this FIELD of file 2\n      --check-order\n         check that the input is correctly sorted, even\n         if all input lines are pairable\n      --nocheck-order\n         do not check that the input is correctly sorted\n      --header\n         treat the first line in each file as field headers,\n         print them without trying to pair them\n  -z, --zero-terminated\n         line delimiter is NUL, not newline\n      --help\n         display this help and exit\n      --version\n         output version information and exit\n\nUnless -t CHAR is given, leading blanks separate fields and are ignored,\nelse fields are separated by CHAR.  Any FIELD is a field number counted\nfrom 1.  FORMAT is one or more comma or blank separated specifications,\neach being 'FILENUM.FIELD' or '0'.  Default FORMAT outputs the join field,\nthe remaining fields from FILE1, the remaining fields from FILE2, all\nseparated by CHAR.  If FORMAT is the keyword 'auto', then the first\nline of each file determines the number of fields output for each line.\n\nImportant: FILE1 and FILE2 must be sorted on the join fields.\nE.g., use \"sort -k 1b,1\" if 'join' has no options,\nor use \"join -t ''\" if 'sort' has no options.\nComparisons honor the rules specified by 'LC_COLLATE'.\nIf the input is not sorted and some lines cannot be joined, a\nwarning message will be given.\n\nReport bugs to: bug-coreutils@gnu.org\nGNU coreutils home page: <https://www.gnu.org/software/coreutils/>\nGeneral help using GNU software: <https://www.gnu.org/gethelp/>\nReport any translation bugs to <https://translationproject.org/team/>\nFull documentation <https://www.gnu.org/software/coreutils/join>\nor available locally via: info '(coreutils) join invocation'\n");
+};
+
+type JoinLineRecord = struct {
+    offset: usize,
+    length: usize,
+};
+
+type JoinField = struct {
+    start: usize,
+    length: usize,
+};
+
+type JoinFormatSpec = struct {
+    is_zero: bool,
+    file_num: usize,
+    field_num: usize,
+};
+
+fn split_fields(
+    data: *u8,
+    rec_offset: usize,
+    rec_len: usize,
+    delimiter: i32,
+    fields: &mut vec::Vec[JoinField]
+) void = {
+    fields.clear();
+    let mut i: usize = 0usize;
+    if (delimiter >= 0i32) {
+        let delim_byte: u8 = delimiter as u8;
+        while (true) {
+            let start: usize = i;
+            while (i < rec_len && data[rec_offset + i] != delim_byte) {
+                i += 1usize;
+            };
+            fields.push(JoinField {
+                start = start,
+                length = i - start,
+            });
+            if (i == rec_len) {
+                break;
+            };
+            i += 1usize;
+        };
+    } else {
+        while (i < rec_len) {
+            while (i < rec_len && (data[rec_offset + i] == 32u8 || data[rec_offset + i] == 9u8)) {
+                i += 1usize;
+            };
+            if (i == rec_len) {
+                break;
+            };
+            let start: usize = i;
+            while (i < rec_len && data[rec_offset + i] != 32u8 && data[rec_offset + i] != 9u8) {
+                i += 1usize;
+            };
+            fields.push(JoinField {
+                start = start,
+                length = i - start,
+            });
+        };
+    };
+};
+
+fn compare_join_fields(
+    buf_a: *u8,
+    rec_a: &JoinLineRecord,
+    fields_a: &vec::Vec[JoinField],
+    field1: usize,
+    buf_b: *u8,
+    rec_b: &JoinLineRecord,
+    fields_b: &vec::Vec[JoinField],
+    field2: usize,
+    ignore_case: bool
+) i32 = {
+    let mut ai: usize = rec_a.offset + rec_a.length;
+    let mut al: usize = 0usize;
+    if (field1 <= fields_a.len() && field1 > 0usize) {
+        let fa: JoinField = fields_a.get(field1 - 1usize);
+        ai = rec_a.offset + fa.start;
+        al = fa.length;
+    };
+
+    let mut bi: usize = rec_b.offset + rec_b.length;
+    let mut bl: usize = 0usize;
+    if (field2 <= fields_b.len() && field2 > 0usize) {
+        let fb: JoinField = fields_b.get(field2 - 1usize);
+        bi = rec_b.offset + fb.start;
+        bl = fb.length;
+    };
+
+    let mut n: usize = al;
+    if (bl < n) {
+        n = bl;
+    };
+
+    for (let i in 0usize..n) {
+        let mut x: u8 = buf_a[ai + i];
+        let mut y: u8 = buf_b[bi + i];
+        if (ignore_case) {
+            if (x >= 65u8 && x <= 90u8) { x += 32u8; };
+            if (y >= 65u8 && y <= 90u8) { y += 32u8; };
+        };
+        if (x != y) {
+            if (x < y) { return -1i32; };
+            return 1i32;
+        };
+    };
+    if (al < bl) { return -1i32; };
+    if (al > bl) { return 1i32; };
+    return 0i32;
+};
+
+fn write_join_field(
+    buf: *u8,
+    rec_offset: usize,
+    fields: &vec::Vec[JoinField],
+    field_number: usize,
+    empty_replacement: str,
+    use_empty: bool
+) bool = {
+    if (field_number == 0usize || field_number > fields.len()) {
+        if (use_empty && empty_replacement.len > 0usize) {
+            let written: usize = c::fwrite(empty_replacement.data as *void, 1usize, empty_replacement.len, c::stdout);
+            return written == empty_replacement.len;
+        };
+        return true;
+    };
+    let f: JoinField = fields.get(field_number - 1usize);
+    if (f.length == 0usize && use_empty && empty_replacement.len > 0usize) {
+        let written: usize = c::fwrite(empty_replacement.data as *void, 1usize, empty_replacement.len, c::stdout);
+        return written == empty_replacement.len;
+    };
+    if (f.length == 0usize) {
+        return true;
+    };
+    let ptr: *void = (&buf[rec_offset + f.start]) as *void;
+    let written: usize = c::fwrite(ptr, 1usize, f.length, c::stdout);
+    return written == f.length;
+};
+
+fn write_join_output(
+    has_a: bool,
+    buf_a: *u8,
+    rec_a: &JoinLineRecord,
+    fields_a: &vec::Vec[JoinField],
+    has_b: bool,
+    buf_b: *u8,
+    rec_b: &JoinLineRecord,
+    fields_b: &vec::Vec[JoinField],
+    field1: usize,
+    field2: usize,
+    format_type: u8,
+    specs: &vec::Vec[JoinFormatSpec],
+    separator: u8,
+    terminator: u8,
+    empty_replacement: str,
+    use_empty: bool,
+    matched: bool,
+    auto_count_a: usize,
+    auto_count_b: usize
+) bool = {
+    if (format_type == 1u8) {
+        if (has_a) {
+            if (!write_join_field(buf_a, rec_a.offset, fields_a, field1, empty_replacement, use_empty)) { return false; };
+        } else {
+            if (!write_join_field(buf_b, rec_b.offset, fields_b, field2, empty_replacement, use_empty)) { return false; };
+        };
+        for (let f in 1usize..(auto_count_a + 1usize)) {
+            if (f != field1) {
+                if (c::fputc(separator as i32, c::stdout) == -1i32) { return false; };
+                if (!has_a) {
+                    if (use_empty && empty_replacement.len > 0usize) {
+                        let w: usize = c::fwrite(empty_replacement.data as *void, 1usize, empty_replacement.len, c::stdout);
+                        if (w != empty_replacement.len) { return false; };
+                    };
+                } else {
+                    if (!write_join_field(buf_a, rec_a.offset, fields_a, f, empty_replacement, use_empty)) { return false; };
+                };
+            };
+        };
+        for (let f in 1usize..(auto_count_b + 1usize)) {
+            if (f != field2) {
+                if (c::fputc(separator as i32, c::stdout) == -1i32) { return false; };
+                if (!has_b) {
+                    if (use_empty && empty_replacement.len > 0usize) {
+                        let w: usize = c::fwrite(empty_replacement.data as *void, 1usize, empty_replacement.len, c::stdout);
+                        if (w != empty_replacement.len) { return false; };
+                    };
+                } else {
+                    if (!write_join_field(buf_b, rec_b.offset, fields_b, f, empty_replacement, use_empty)) { return false; };
+                };
+            };
+        };
+        return c::fputc(terminator as i32, c::stdout) != -1i32;
+    };
+
+    if (format_type == 2u8) {
+        let mut first: bool = true;
+        for (let k in 0usize..specs.len()) {
+            let spec: JoinFormatSpec = specs.get(k);
+            if (!first) {
+                if (c::fputc(separator as i32, c::stdout) == -1i32) { return false; };
+            };
+            if (spec.is_zero) {
+                if (matched || has_a) {
+                    if (!write_join_field(buf_a, rec_a.offset, fields_a, field1, empty_replacement, use_empty)) { return false; };
+                } else {
+                    if (!write_join_field(buf_b, rec_b.offset, fields_b, field2, empty_replacement, use_empty)) { return false; };
+                };
+            } else {
+                if (spec.file_num == 1usize) {
+                    if (!has_a) {
+                        if (use_empty && empty_replacement.len > 0usize) {
+                            let w: usize = c::fwrite(empty_replacement.data as *void, 1usize, empty_replacement.len, c::stdout);
+                            if (w != empty_replacement.len) { return false; };
+                        };
+                    } else {
+                        if (!write_join_field(buf_a, rec_a.offset, fields_a, spec.field_num, empty_replacement, use_empty)) { return false; };
+                    };
+                } else {
+                    if (!has_b) {
+                        if (use_empty && empty_replacement.len > 0usize) {
+                            let w: usize = c::fwrite(empty_replacement.data as *void, 1usize, empty_replacement.len, c::stdout);
+                            if (w != empty_replacement.len) { return false; };
+                        };
+                    } else {
+                        if (!write_join_field(buf_b, rec_b.offset, fields_b, spec.field_num, empty_replacement, use_empty)) { return false; };
+                    };
+                };
+            };
+            first = false;
+        };
+        return c::fputc(terminator as i32, c::stdout) != -1i32;
+    };
+
+    if (has_a) {
+        if (!write_join_field(buf_a, rec_a.offset, fields_a, field1, empty_replacement, use_empty)) { return false; };
+    } else {
+        if (!write_join_field(buf_b, rec_b.offset, fields_b, field2, empty_replacement, use_empty)) { return false; };
+    };
+    if (has_a) {
+        for (let i in 1usize..(fields_a.len() + 1usize)) {
+            if (i != field1) {
+                if (c::fputc(separator as i32, c::stdout) == -1i32) { return false; };
+                if (!write_join_field(buf_a, rec_a.offset, fields_a, i, empty_replacement, use_empty)) { return false; };
+            };
+        };
+    };
+    if (has_b) {
+        for (let i in 1usize..(fields_b.len() + 1usize)) {
+            if (i != field2) {
+                if (c::fputc(separator as i32, c::stdout) == -1i32) { return false; };
+                if (!write_join_field(buf_b, rec_b.offset, fields_b, i, empty_replacement, use_empty)) { return false; };
+            };
+        };
+    };
+    return c::fputc(terminator as i32, c::stdout) != -1i32;
+};
+
+fn read_join_file(
+    path: str,
+    terminator: u8,
+    buf: &mut vec::Vec[u8],
+    lines: &mut vec::Vec[JoinLineRecord]
+) bool = {
+    let mut fp: nullable *c::FILE = null;
+    if (path == "-") {
+        fp = c::stdin;
+    } else {
+        fp = c::fopen(path.data as *i8, "rb".data as *i8);
+    };
+    if (fp == null) {
+        let err: i32 = platform_errno::zov_errno_value();
+        c::fprintf(c::stderr, "join: %s: %s\n", path.data as *i8, strc::strerror(err));
+        return false;
+    };
+    let f: *c::FILE = fp!;
+    let mut chunk: [65536]u8;
+    let mut line_start: usize = buf.len();
+    let mut cur_len: usize = 0usize;
+
+    while (true) {
+        let n: usize = c::fread((&mut chunk[0usize]) as *void, 1usize, 65536usize, f);
+        if (n == 0usize) {
+            break;
+        };
+        for (let j in 0usize..n) {
+            let ch: u8 = chunk[j];
+            if (ch == terminator) {
+                lines.push(JoinLineRecord {
+                    offset = line_start,
+                    length = cur_len,
+                });
+                line_start = buf.len();
+                cur_len = 0usize;
+            } else {
+                buf.push(ch);
+                cur_len += 1usize;
+            };
+        };
+    };
+    let err: i32 = c::ferror(f);
+    if (path != "-") {
+        c::fclose(f);
+    };
+    if (err != 0i32) {
+        c::fprintf(c::stderr, "join: read error\n");
+        return false;
+    };
+    if (cur_len != 0usize) {
+        lines.push(JoinLineRecord {
+            offset = line_start,
+            length = cur_len,
+        });
+    };
+    return true;
+};
+
+fn parse_join_format(fmt: str, specs: &mut vec::Vec[JoinFormatSpec]) bool = {
+    specs.clear();
+    let mut p: usize = 0usize;
+    let n: usize = fmt.len;
+    while (p < n) {
+        while (p < n && (fmt.data[p] == 44u8 || fmt.data[p] == 32u8 || fmt.data[p] == 9u8)) {
+            p += 1usize;
+        };
+        if (p == n) {
+            break;
+        };
+        let mut q: usize = p;
+        while (q < n && fmt.data[q] != 44u8 && fmt.data[q] != 32u8 && fmt.data[q] != 9u8) {
+            q += 1usize;
+        };
+        if (q - p == 1usize && fmt.data[p] == 48u8) {
+            specs.push(JoinFormatSpec {
+                is_zero = true,
+                file_num = 0usize,
+                field_num = 0usize,
+            });
+        } else {
+            let mut dot: usize = p;
+            while (dot < q && fmt.data[dot] != 46u8) {
+                dot += 1usize;
+            };
+            if (dot == p || dot + 1usize >= q) {
+                return false;
+            };
+            let mut file_num: usize = 0usize;
+            for (let k in p..dot) {
+                let ch: u8 = fmt.data[k];
+                if (ch < 48u8 || ch > 57u8) { return false; };
+                file_num = file_num * 10usize + ((ch - 48u8) as usize);
+            };
+            let mut field_num: usize = 0usize;
+            for (let k in (dot + 1usize)..q) {
+                let ch: u8 = fmt.data[k];
+                if (ch < 48u8 || ch > 57u8) { return false; };
+                field_num = field_num * 10usize + ((ch - 48u8) as usize);
+            };
+            if (file_num != 1usize && file_num != 2usize) {
+                return false;
+            };
+            specs.push(JoinFormatSpec {
+                is_zero = false,
+                file_num = file_num,
+                field_num = field_num,
+            });
+        };
+        p = q;
+    };
+    return true;
 };
 
 export fn run(start: usize, argc: usize) i32 = {
@@ -115,10 +488,214 @@ export fn run(start: usize, argc: usize) i32 = {
     };
     if (file_count != 2usize) { io::eprintln("join: missing operand\nTry 'join --help' for more information."); return 1; };
     if (files[0usize] == "-" && files[1usize] == "-") { io::eprintln("join: both files cannot be standard input"); return 1; };
-    if (!has_format) { format = ""; };
-    return backend::zov_join_run(files[0usize].data as *i8, files[1usize].data as *i8,
-        field1, field2, delimiter, separator, terminator, ignore_case as i32,
-        unpaired1 as i32, unpaired2 as i32, suppress_joined as i32,
-        header as i32, check_order as i32, empty.data as *i8,
-        format.data as *i8);
+
+    let mut format_type: u8 = 0u8;
+    let mut specs: vec::Vec[JoinFormatSpec] = vec::new[JoinFormatSpec]();
+    if (has_format) {
+        if (format == "auto") {
+            format_type = 1u8;
+        } else {
+            if (!parse_join_format(format, &mut specs)) {
+                return 1;
+            };
+            format_type = 2u8;
+        };
+    };
+
+    let mut buf_a: vec::Vec[u8] = vec::new[u8]();
+    let mut lines_a: vec::Vec[JoinLineRecord] = vec::new[JoinLineRecord]();
+    if (!read_join_file(files[0usize], terminator, &mut buf_a, &mut lines_a)) {
+        return 1;
+    };
+
+    let mut buf_b: vec::Vec[u8] = vec::new[u8]();
+    let mut lines_b: vec::Vec[JoinLineRecord] = vec::new[JoinLineRecord]();
+    if (!read_join_file(files[1usize], terminator, &mut buf_b, &mut lines_b)) {
+        return 1;
+    };
+
+    let mut auto_count_a: usize = 0usize;
+    let mut auto_count_b: usize = 0usize;
+    let mut fields_a: vec::Vec[JoinField] = vec::new[JoinField]();
+    let mut fields_b: vec::Vec[JoinField] = vec::new[JoinField]();
+    if (format_type == 1u8) {
+        if (lines_a.len() > 0usize) {
+            let rec0: JoinLineRecord = lines_a.get(0usize);
+            split_fields(buf_a.data!, rec0.offset, rec0.length, delimiter, &mut fields_a);
+            auto_count_a = fields_a.len();
+        };
+        if (lines_b.len() > 0usize) {
+            let rec0: JoinLineRecord = lines_b.get(0usize);
+            split_fields(buf_b.data!, rec0.offset, rec0.length, delimiter, &mut fields_b);
+            auto_count_b = fields_b.len();
+        };
+    };
+
+    let mut status: i32 = 0i32;
+    let mut start_a: usize = 0usize;
+    let mut start_b: usize = 0usize;
+    if (header && lines_a.len() > 0usize && lines_b.len() > 0usize) {
+        let rec_a0: JoinLineRecord = lines_a.get(0usize);
+        let rec_b0: JoinLineRecord = lines_b.get(0usize);
+        split_fields(buf_a.data!, rec_a0.offset, rec_a0.length, delimiter, &mut fields_a);
+        split_fields(buf_b.data!, rec_b0.offset, rec_b0.length, delimiter, &mut fields_b);
+        if (!write_join_output(
+            true, buf_a.data!, &rec_a0, &fields_a,
+            true, buf_b.data!, &rec_b0, &fields_b,
+            field1, field2, format_type, &specs, separator, terminator,
+            empty, empty.len > 0usize, true, auto_count_a, auto_count_b
+        )) {
+            status = 1i32;
+        };
+        start_a = 1usize;
+        start_b = 1usize;
+    };
+
+    if (check_order) {
+        let mut prev_fields: vec::Vec[JoinField] = vec::new[JoinField]();
+        let mut curr_fields: vec::Vec[JoinField] = vec::new[JoinField]();
+        for (let k in (start_a + 1usize)..lines_a.len()) {
+            let prev_rec: JoinLineRecord = lines_a.get(k - 1usize);
+            let curr_rec: JoinLineRecord = lines_a.get(k);
+            split_fields(buf_a.data!, prev_rec.offset, prev_rec.length, delimiter, &mut prev_fields);
+            split_fields(buf_a.data!, curr_rec.offset, curr_rec.length, delimiter, &mut curr_fields);
+            if (compare_join_fields(buf_a.data!, &prev_rec, &prev_fields, field1,
+                                    buf_a.data!, &curr_rec, &curr_fields, field1, ignore_case) > 0i32) {
+                c::fprintf(c::stderr, "join: %s:%zu: is not sorted: ", files[0usize].data as *i8, k + 1usize);
+                c::fwrite((&buf_a.data![curr_rec.offset]) as *void, 1usize, curr_rec.length, c::stderr);
+                c::fputc(10i32, c::stderr);
+                return 1;
+            };
+        };
+        for (let k in (start_b + 1usize)..lines_b.len()) {
+            let prev_rec: JoinLineRecord = lines_b.get(k - 1usize);
+            let curr_rec: JoinLineRecord = lines_b.get(k);
+            split_fields(buf_b.data!, prev_rec.offset, prev_rec.length, delimiter, &mut prev_fields);
+            split_fields(buf_b.data!, curr_rec.offset, curr_rec.length, delimiter, &mut curr_fields);
+            if (compare_join_fields(buf_b.data!, &prev_rec, &prev_fields, field2,
+                                    buf_b.data!, &curr_rec, &curr_fields, field2, ignore_case) > 0i32) {
+                c::fprintf(c::stderr, "join: %s:%zu: is not sorted: ", files[1usize].data as *i8, k + 1usize);
+                c::fwrite((&buf_b.data![curr_rec.offset]) as *void, 1usize, curr_rec.length, c::stderr);
+                c::fputc(10i32, c::stderr);
+                return 1;
+            };
+        };
+    };
+
+    let mut i_rec: usize = start_a;
+    let mut j_rec: usize = start_b;
+    let dummy_rec: JoinLineRecord = JoinLineRecord { offset = 0usize, length = 0usize };
+    let empty_fields: vec::Vec[JoinField] = vec::new[JoinField]();
+
+    while (i_rec < lines_a.len() && j_rec < lines_b.len()) {
+        let ra: JoinLineRecord = lines_a.get(i_rec);
+        let rb: JoinLineRecord = lines_b.get(j_rec);
+        split_fields(buf_a.data!, ra.offset, ra.length, delimiter, &mut fields_a);
+        split_fields(buf_b.data!, rb.offset, rb.length, delimiter, &mut fields_b);
+        let cmp: i32 = compare_join_fields(buf_a.data!, &ra, &fields_a, field1,
+                                          buf_b.data!, &rb, &fields_b, field2, ignore_case);
+        if (cmp < 0i32) {
+            if (unpaired1) {
+                if (!write_join_output(
+                    true, buf_a.data!, &ra, &fields_a,
+                    false, buf_b.data!, &dummy_rec, &empty_fields,
+                    field1, field2, format_type, &specs, separator, terminator,
+                    empty, empty.len > 0usize, false, auto_count_a, auto_count_b
+                )) { status = 1i32; };
+            };
+            i_rec += 1usize;
+            continue;
+        };
+        if (cmp > 0i32) {
+            if (unpaired2) {
+                if (!write_join_output(
+                    false, buf_a.data!, &dummy_rec, &empty_fields,
+                    true, buf_b.data!, &rb, &fields_b,
+                    field1, field2, format_type, &specs, separator, terminator,
+                    empty, empty.len > 0usize, false, auto_count_a, auto_count_b
+                )) { status = 1i32; };
+            };
+            j_rec += 1usize;
+            continue;
+        };
+
+        // cmp == 0: find equal-key spans in both files
+        let mut end_a: usize = i_rec + 1usize;
+        let mut f_temp: vec::Vec[JoinField] = vec::new[JoinField]();
+        while (end_a < lines_a.len()) {
+            let next_a: JoinLineRecord = lines_a.get(end_a);
+            split_fields(buf_a.data!, next_a.offset, next_a.length, delimiter, &mut f_temp);
+            if (compare_join_fields(buf_a.data!, &ra, &fields_a, field1,
+                                    buf_a.data!, &next_a, &f_temp, field1, ignore_case) != 0i32) {
+                break;
+            };
+            end_a += 1usize;
+        };
+
+        let mut end_b: usize = j_rec + 1usize;
+        while (end_b < lines_b.len()) {
+            let next_b: JoinLineRecord = lines_b.get(end_b);
+            split_fields(buf_b.data!, next_b.offset, next_b.length, delimiter, &mut f_temp);
+            if (compare_join_fields(buf_b.data!, &rb, &fields_b, field2,
+                                    buf_b.data!, &next_b, &f_temp, field2, ignore_case) != 0i32) {
+                break;
+            };
+            end_b += 1usize;
+        };
+
+        if (!suppress_joined) {
+            let mut fields_x: vec::Vec[JoinField] = vec::new[JoinField]();
+            let mut fields_y: vec::Vec[JoinField] = vec::new[JoinField]();
+            for (let x in i_rec..end_a) {
+                let rx: JoinLineRecord = lines_a.get(x);
+                split_fields(buf_a.data!, rx.offset, rx.length, delimiter, &mut fields_x);
+                for (let y in j_rec..end_b) {
+                    let ry: JoinLineRecord = lines_b.get(y);
+                    split_fields(buf_b.data!, ry.offset, ry.length, delimiter, &mut fields_y);
+                    if (!write_join_output(
+                        true, buf_a.data!, &rx, &fields_x,
+                        true, buf_b.data!, &ry, &fields_y,
+                        field1, field2, format_type, &specs, separator, terminator,
+                        empty, empty.len > 0usize, true, auto_count_a, auto_count_b
+                    )) { status = 1i32; };
+                };
+            };
+        };
+
+        i_rec = end_a;
+        j_rec = end_b;
+    };
+
+    while (i_rec < lines_a.len()) {
+        let ra: JoinLineRecord = lines_a.get(i_rec);
+        split_fields(buf_a.data!, ra.offset, ra.length, delimiter, &mut fields_a);
+        if (unpaired1) {
+            if (!write_join_output(
+                true, buf_a.data!, &ra, &fields_a,
+                false, buf_b.data!, &dummy_rec, &empty_fields,
+                field1, field2, format_type, &specs, separator, terminator,
+                empty, empty.len > 0usize, false, auto_count_a, auto_count_b
+            )) { status = 1i32; };
+        };
+        i_rec += 1usize;
+    };
+
+    while (j_rec < lines_b.len()) {
+        let rb: JoinLineRecord = lines_b.get(j_rec);
+        split_fields(buf_b.data!, rb.offset, rb.length, delimiter, &mut fields_b);
+        if (unpaired2) {
+            if (!write_join_output(
+                false, buf_a.data!, &dummy_rec, &empty_fields,
+                true, buf_b.data!, &rb, &fields_b,
+                field1, field2, format_type, &specs, separator, terminator,
+                empty, empty.len > 0usize, false, auto_count_a, auto_count_b
+            )) { status = 1i32; };
+        };
+        j_rec += 1usize;
+    };
+
+    if (c::fflush(c::stdout) != 0i32) {
+        status = 1i32;
+    };
+    return status;
 };
