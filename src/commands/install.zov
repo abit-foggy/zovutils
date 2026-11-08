@@ -1,9 +1,296 @@
 use std::env as args;
-use <install_backend.h> as backend;
+use std::vec as vec;
+use <stdio.h> as c;
+use <string.h> as strc;
+use <platform_errno.h> as platform_errno;
+use <platform_stat.h> as platform_stat;
+
+fn print_help() = {
+    c::fputs("Usage: install [OPTION]... [-T] SOURCE DEST\n", c::stdout);
+    c::fputs("  or:  install [OPTION]... SOURCE... DIRECTORY\n", c::stdout);
+    c::fputs("  or:  install [OPTION]... -t DIRECTORY SOURCE...\n", c::stdout);
+    c::fputs("  or:  install [OPTION]... -d DIRECTORY...\n", c::stdout);
+    c::fputs("Copy files and set attributes.\n", c::stdout);
+    c::fputs("  -d, --directory        create directories\n", c::stdout);
+    c::fputs("  -D                      create all leading components of DEST\n", c::stdout);
+    c::fputs("  -m, --mode=MODE        set permission mode\n", c::stdout);
+    c::fputs("  -p, --preserve-timestamps\n", c::stdout);
+    c::fputs("      --help              display this help and exit\n", c::stdout);
+    c::fputs("      --version           output version information and exit\n", c::stdout);
+};
+
+fn if_str(cond: bool, a: str, b: str) str = {
+    if (cond) { return a; };
+    return b;
+};
+
+fn if_usize(cond: bool, a: usize, b: usize) usize = {
+    if (cond) { return a; };
+    return b;
+};
+
+fn parse_octal_mode(s: str, out: &mut u32) bool = {
+    if (s.len == 0usize) { return false; };
+    let mut val: u32 = 0u32;
+    for (let i in 0usize..s.len) {
+        let b: u8 = s.data[i];
+        if (b < 48u8 || b > 55u8) { return false; };
+        val = val * 8u32 + ((b - 48u8) as u32);
+        if (val > 0o7777u32) { return false; };
+    };
+    *out = val;
+    return true;
+};
+
+fn get_basename(path: str) str = {
+    let mut last_slash: usize = 0usize;
+    let mut has_slash: bool = false;
+    for (let i in 0usize..path.len) {
+        if (path.data[i] == 47u8) {
+            last_slash = i;
+            has_slash = true;
+        };
+    };
+    if (has_slash) {
+        return path[last_slash + 1usize..path.len];
+    };
+    return path;
+};
+
+fn join_path(dir: str, file: str) String = {
+    if (dir.len == 0usize) { return String::from(file); };
+    let mut res: String = String::from(dir);
+    if (dir[dir.len - 1usize] != 47u8) {
+        res = res + "/";
+    };
+    return res + file;
+};
+
+fn copy_install_file(src: str, dest: str, mode: u32, preserve: bool, verbose: bool, make_parents: bool) i32 = {
+    let mut atime_val: i64 = 0i64;
+    let mut mtime_val: i64 = 0i64;
+    let stat_rc: i32 = platform_stat::zov_stat_mtime(src.data as *i8, &mut atime_val, &mut mtime_val);
+    if (stat_rc != 0i32) {
+        c::fprintf(c::stderr, "install: cannot stat '%s': %s\n", src.data as *i8, strc::strerror(stat_rc));
+        return 1;
+    };
+
+    if (make_parents) {
+        let mut last_slash: usize = 0usize;
+        let mut has_slash: bool = false;
+        for (let i in 0usize..dest.len) {
+            if (dest.data[i] == 47u8) {
+                last_slash = i;
+                has_slash = true;
+            };
+        };
+        if (has_slash) {
+            let parent_dir: str = dest[0usize..last_slash];
+            let mut parent_path: str = parent_dir;
+            if (parent_path.len == 0usize) {
+                parent_path = "/";
+            };
+            let owned_parent: String = String::from(parent_path);
+            if (platform_stat::zov_mkdirs(owned_parent.view().data as *i8, 0o755u32) == 0i32) {
+                let err: i32 = platform_errno::zov_errno_value();
+                c::fprintf(c::stderr, "install: cannot create directory '%s': %s\n", dest.data as *i8, strc::strerror(err));
+                return 1;
+            };
+        };
+    };
+
+    let owned_src: String = String::from(src);
+    let owned_dest: String = String::from(dest);
+    let in_fp: nullable *c::FILE = c::fopen(owned_src.view().data as *i8, "rb".data as *i8);
+    let out_fp: nullable *c::FILE = c::fopen(owned_dest.view().data as *i8, "wb".data as *i8);
+    if (in_fp == null || out_fp == null) {
+        let err: i32 = platform_errno::zov_errno_value();
+        c::fprintf(c::stderr, "install: cannot create regular file '%s': %s\n", dest.data as *i8, strc::strerror(err));
+        if (in_fp != null) { c::fclose(in_fp!); };
+        if (out_fp != null) { c::fclose(out_fp!); };
+        return 1;
+    };
+
+    let in_f: *c::FILE = in_fp!;
+    let out_f: *c::FILE = out_fp!;
+    let mut buf: [16384]u8;
+    let mut status: i32 = 0i32;
+
+    while (true) {
+        let n: usize = c::fread((&mut buf[0usize]) as *void, 1usize, 16384usize, in_f);
+        if (n == 0usize) { break; };
+        let w: usize = c::fwrite((&mut buf[0usize]) as *void, 1usize, n, out_f);
+        if (w != n) {
+            status = 1i32;
+            break;
+        };
+    };
+    if (c::ferror(in_f) != 0i32) {
+        status = 1i32;
+    };
+    c::fclose(in_f);
+    c::fclose(out_f);
+
+    if (platform_stat::zov_chmod(owned_dest.view().data as *i8, mode) != 0i32) {
+        status = 1i32;
+    };
+
+    if (preserve) {
+        platform_stat::zov_set_file_times_sec(owned_dest.view().data as *i8, atime_val, mtime_val);
+    };
+
+    if (verbose) {
+        c::printf("'%s' -> '%s'\n", src.data as *i8, dest.data as *i8);
+    };
+
+    return status;
+};
+
 export fn run(start: usize, argc: usize) i32 = {
-    let count: usize = argc - start;
-    if (count > 4096usize) { return 1; };
-    let mut argv: [4096]*i8;
-    for (let i in 0usize..count) { argv[i] = args::argat(start + i).data as *i8; };
-    return backend::zov_install_run(count as i32, (&argv[0usize]) as **i8);
+    let mut mode: u32 = 0o755u32;
+    let mut have_mode: bool = false;
+    let mut dirs: bool = false;
+    let mut make_parents: bool = false;
+    let mut preserve: bool = false;
+    let mut verbose: bool = false;
+    let mut target_dir: str = "";
+    let mut ops: vec::Vec<str> = vec::new<str>();
+
+    let mut i: usize = start;
+    while (i < argc) {
+        let a: str = args::argat(i).view();
+        if (a == "--help") {
+            print_help();
+            return 0;
+        };
+        if (a == "--version") {
+            c::fputs("install (zovutils) 0.10.61\n", c::stdout);
+            return 0;
+        };
+        if (a == "-d" || a == "--directory") {
+            dirs = true;
+            i += 1usize;
+            continue;
+        };
+        if (a == "-D") {
+            make_parents = true;
+            i += 1usize;
+            continue;
+        };
+        if (a == "-p" || a == "--preserve-timestamps") {
+            preserve = true;
+            i += 1usize;
+            continue;
+        };
+        if (a == "-v" || a == "--verbose") {
+            verbose = true;
+            i += 1usize;
+            continue;
+        };
+        if (a == "-t" || a == "--target-directory") {
+            if (i + 1usize >= argc) { return 1; };
+            i += 1usize;
+            target_dir = args::argat(i).view();
+            i += 1usize;
+            continue;
+        };
+        if (a.len >= 19usize && a[0usize..19usize] == "--target-directory=") {
+            target_dir = a[19usize..a.len];
+            i += 1usize;
+            continue;
+        };
+        if (a == "-m" || a == "--mode") {
+            if (i + 1usize >= argc) { return 1; };
+            i += 1usize;
+            let m_str: str = args::argat(i).view();
+            if (!parse_octal_mode(m_str, &mut mode)) {
+                c::fprintf(c::stderr, "install: invalid mode '%s'\n", m_str.data as *i8);
+                return 1;
+            };
+            have_mode = true;
+            i += 1usize;
+            continue;
+        };
+        if (a.len >= 7usize && a[0usize..7usize] == "--mode=") {
+            let m_str: str = a[7usize..a.len];
+            if (!parse_octal_mode(m_str, &mut mode)) {
+                c::fprintf(c::stderr, "install: invalid mode '%s'\n", m_str.data as *i8);
+                return 1;
+            };
+            have_mode = true;
+            i += 1usize;
+            continue;
+        };
+        if (a.len > 0usize && a[0usize] == 45u8 && a != "-") {
+            c::fprintf(c::stderr, "install: unrecognized option '%s'\nTry 'install --help' for more information.\n", a.data as *i8);
+            return 1;
+        };
+        ops.push(a);
+        i += 1usize;
+    };
+
+    let mut status: i32 = 0i32;
+
+    if (dirs) {
+        if (ops.len() == 0usize) {
+            c::fprintf(c::stderr, "install: missing operand\nTry 'install --help' for more information.\n");
+            return 1;
+        };
+        for (let idx in 0usize..ops.len()) {
+            let op_str: str = ops.get(idx);
+            let owned_op: String = String::from(op_str);
+            if (platform_stat::zov_mkdirs(owned_op.view().data as *i8, mode) == 0i32) {
+                let err: i32 = platform_errno::zov_errno_value();
+                c::fprintf(c::stderr, "install: cannot create directory '%s': %s\n", op_str.data as *i8, strc::strerror(err));
+                status = 1i32;
+            };
+        };
+        return status;
+    };
+
+    if (target_dir.len > 0usize) {
+        let mut st_mode: u32 = 0u32;
+        let rc: i32 = platform_stat::zov_stat_mode(target_dir.data as *i8, &mut st_mode);
+        if (rc != 0i32 || (st_mode & 0o170000u32) != 0o040000u32) {
+            c::fprintf(c::stderr, "install: target directory '%s' does not exist\n", target_dir.data as *i8);
+            return 1;
+        };
+    };
+
+    if (ops.len() < 2usize && target_dir.len == 0usize) {
+        c::fprintf(c::stderr, "install: missing destination file operand\nTry 'install --help' for more information.\n");
+        return 1;
+    };
+
+    let dest: str = if_str(target_dir.len > 0usize, target_dir, ops.get(ops.len() - 1usize));
+    let sources_count: usize = if_usize(target_dir.len > 0usize, ops.len(), ops.len() - 1usize);
+
+    let mut dest_mode: u32 = 0u32;
+    let mut dest_is_dir: bool = target_dir.len > 0usize;
+    if (!dest_is_dir && platform_stat::zov_stat_mode(dest.data as *i8, &mut dest_mode) == 0i32) {
+        if ((dest_mode & 0o170000u32) == 0o040000u32) {
+            dest_is_dir = true;
+        };
+    };
+
+    if (sources_count > 1usize && !dest_is_dir) {
+        c::fprintf(c::stderr, "install: target '%s' is not a directory\n", dest.data as *i8);
+        return 1;
+    };
+
+    for (let s_idx in 0usize..sources_count) {
+        let src: str = ops.get(s_idx);
+        let mut outname_str: String = String::from("");
+        if (dest_is_dir) {
+            outname_str = join_path(dest, get_basename(src));
+        } else {
+            outname_str = String::from(dest);
+        };
+        let rc: i32 = copy_install_file(src, outname_str.view(), mode, preserve, verbose, make_parents);
+        if (rc != 0i32) {
+            status = 1i32;
+        };
+    };
+
+    return status;
 };

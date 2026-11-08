@@ -225,6 +225,45 @@ static inline int zov_touch_apply(const char *path, int64_t atime_sec, int64_t a
     return 0;
 }
 
+static inline int zov_set_file_times_sec(const char *path, int64_t atime, int64_t mtime) {
+    struct timespec times[2];
+    times[0].tv_sec = (time_t)atime;
+    times[0].tv_nsec = 0;
+    times[1].tv_sec = (time_t)mtime;
+    times[1].tv_nsec = 0;
+    return utimensat(AT_FDCWD, path, times, 0) == 0 ? 0 : errno;
+}
+
+static inline int zov_mkdirs(const char *p, uint32_t mode) {
+    if (!p || !*p) return 0;
+    char *b = strdup(p);
+    if (!b) return 0;
+    for (char *q = b + 1; *q; q++) {
+        if (*q == '/') {
+            *q = '\0';
+            if (*b && strcmp(b, ".") != 0 && strcmp(b, "..") != 0) {
+                if (mkdir(b, (mode_t)mode) != 0) {
+                    struct stat st;
+                    if (errno != EEXIST || stat(b, &st) != 0 || !S_ISDIR(st.st_mode)) {
+                        free(b);
+                        return 0;
+                    }
+                }
+            }
+            *q = '/';
+        }
+    }
+    if (mkdir(b, (mode_t)mode) != 0) {
+        struct stat st;
+        if (errno != EEXIST || stat(b, &st) != 0 || !S_ISDIR(st.st_mode)) {
+            free(b);
+            return 0;
+        }
+    }
+    free(b);
+    return 1;
+}
+
 static inline int64_t zov_time_now_sec(void) {
     return (int64_t)time(NULL);
 }
