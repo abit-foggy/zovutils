@@ -17,12 +17,16 @@ static inline const char *zov_uname_processor(void) {
     size_t size = sizeof(cputype);
     if (sysctlbyname("hw.cputype", &cputype, &size, NULL, 0) == 0) {
         const NXArchInfo *ai = NXGetArchInfoFromCpuType(cputype, CPU_SUBTYPE_MULTIPLE);
-        if (ai && ai->name) return ai->name;
+        if (ai && ai->name) {
+            if (strncmp(ai->name, "arm", 3) == 0) return "arm";
+            if (strncmp(ai->name, "x86", 3) == 0 || strncmp(ai->name, "i386", 4) == 0) return "i386";
+            return ai->name;
+        }
     }
-#if defined(__x86_64__) || defined(__i386__)
-    return "i386";
-#elif defined(__aarch64__) || defined(__arm64__) || defined(__arm__)
+#if defined(__aarch64__) || defined(__arm64__) || defined(__arm__)
     return "arm";
+#elif defined(__x86_64__) || defined(__i386__)
+    return "i386";
 #else
     return "unknown";
 #endif
