@@ -460,7 +460,7 @@ static inline int zov_od_run(int argc, int8_t **argv) {
                     return 1;
                 }
                 if (strcmp(name, "--help") == 0) { zov_od_help(); free(files); return 0; }
-                if (strcmp(name, "--version") == 0) { puts("od (zovutils) 0.10.48"); free(files); return 0; }
+                if (strcmp(name, "--version") == 0) { puts("od (zovutils) 0.10.49"); free(files); return 0; }
                 if (strcmp(name, "--output-duplicates") == 0) { show_duplicates = 1; continue; }
                 continue;
             }

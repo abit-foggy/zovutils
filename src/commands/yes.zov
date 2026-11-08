@@ -49,7 +49,7 @@ export fn run(start: usize, argc: usize) i32 = {
                 if (arg.len != key.len) {
                     io::eprintln("yes: option '--version' doesn't allow an argument"); usage_error(); return 1;
                 };
-                io::println("yes (zovutils) 0.10.48"); stream::finishoutput("yes"); return 0;
+                io::println("yes (zovutils) 0.10.49"); stream::finishoutput("yes"); return 0;
             };
             io::eprintln("yes: unrecognized option '" + arg + "'"); usage_error(); return 1;
         };
