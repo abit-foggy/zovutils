@@ -9,6 +9,8 @@
 #include <string.h>
 #include <time.h>
 #include <sys/time.h>
+#include <pwd.h>
+#include <grp.h>
 #if defined(__linux__)
 #include <sys/sysmacros.h>
 #endif
@@ -268,6 +270,60 @@ static inline int zov_time_make_tm(int32_t year, int32_t mon, int32_t mday, int3
     }
     *sec_out = (int64_t)result;
     return 1;
+}
+
+struct ZovStatInfo {
+    int64_t size;
+    int64_t blocks;
+    int64_t blksize;
+    uint64_t ino;
+    uint64_t nlink;
+    uint32_t uid;
+    uint32_t gid;
+    uint32_t mode;
+    uint64_t dev;
+    int64_t atime;
+    int64_t mtime;
+    int64_t ctime;
+};
+
+static inline int zov_stat_info(const char *path, int follow, void *out_ptr) {
+    struct ZovStatInfo *out = (struct ZovStatInfo *)out_ptr;
+    struct stat st;
+    int rc = follow ? stat(path, &st) : lstat(path, &st);
+    if (rc != 0) return errno;
+    out->size = (int64_t)st.st_size;
+    out->blocks = (int64_t)st.st_blocks;
+    out->blksize = (int64_t)st.st_blksize;
+    out->ino = (uint64_t)st.st_ino;
+    out->nlink = (uint64_t)st.st_nlink;
+    out->uid = (uint32_t)st.st_uid;
+    out->gid = (uint32_t)st.st_gid;
+    out->mode = (uint32_t)st.st_mode;
+    out->dev = (uint64_t)st.st_dev;
+    out->atime = (int64_t)st.st_atime;
+    out->mtime = (int64_t)st.st_mtime;
+    out->ctime = (int64_t)st.st_ctime;
+    return 0;
+}
+
+static inline const char *zov_get_username(uint32_t uid) {
+    struct passwd *pw = getpwuid((uid_t)uid);
+    return pw ? pw->pw_name : NULL;
+}
+
+static inline const char *zov_get_groupname(uint32_t gid) {
+    struct group *gr = getgrgid((gid_t)gid);
+    return gr ? gr->gr_name : NULL;
+}
+
+static inline void zov_format_time(int64_t t, char *buf, size_t buflen) {
+    time_t sec = (time_t)t;
+    struct tm tmv;
+    localtime_r(&sec, &tmv);
+    char b[64];
+    strftime(b, sizeof(b), "%Y-%m-%d %H:%M:%S", &tmv);
+    snprintf(buf, buflen, "%s.000000000 +0000", b);
 }
 
 #endif

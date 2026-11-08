@@ -1,9 +1,251 @@
 use std::env as args;
-use <stat_backend.h> as backend;
+use std::io as io;
+use std::vec as vec;
+use <stdio.h> as c;
+use <string.h> as strc;
+use <platform_stat.h> as platform_stat;
+
+fn print_help() = {
+    c::fputs("Usage: stat [OPTION]... FILE...\n", c::stdout);
+    c::fputs("Display file or file system status.\n", c::stdout);
+    c::fputs("  -L, --dereference     follow links\n", c::stdout);
+    c::fputs("  -c, --format=FORMAT   use the specified FORMAT instead of the default\n", c::stdout);
+    c::fputs("  --printf=FORMAT       like --format, but interpret backslash escapes and\n", c::stdout);
+    c::fputs("                          do not output a mandatory trailing newline\n", c::stdout);
+    c::fputs("      --help            display this help and exit\n", c::stdout);
+    c::fputs("      --version         output version information and exit\n", c::stdout);
+};
+
+fn stat_type(mode: u32) str = {
+    let kind: u32 = mode & 0xf000u32;
+    if (kind == 0x8000u32) { return "regular file"; };
+    if (kind == 0x4000u32) { return "directory"; };
+    if (kind == 0xa000u32) { return "symbolic link"; };
+    if (kind == 0x1000u32) { return "fifo"; };
+    if (kind == 0xc000u32) { return "socket"; };
+    if (kind == 0x2000u32) { return "character special file"; };
+    if (kind == 0x6000u32) { return "block special file"; };
+    return "unknown file type";
+};
+
+fn print_perms(mode: u32) = {
+    let q: str = "rwxrwxrwx";
+    for (let j in 0usize..9usize) {
+        let bit: u32 = 1u32 << ((8usize - j) as u32);
+        if ((mode & bit) != 0u32) {
+            c::putchar(q[j] as i32);
+        } else {
+            c::putchar(45i32);
+        };
+    };
+};
+
+type StatInfo = struct {
+    size: i64,
+    blocks: i64,
+    blksize: i64,
+    ino: u64,
+    nlink: u64,
+    uid: u32,
+    gid: u32,
+    mode: u32,
+    dev: u64,
+    atime: i64,
+    mtime: i64,
+    ctime: i64,
+};
+
+fn format_stat(f: str, name: str, s: &StatInfo, newline: bool) = {
+    let mut i: usize = 0usize;
+    while (i < f.len) {
+        if (f[i] == 92u8) { // '\\'
+            if (i + 1usize < f.len) {
+                i = i + 1usize;
+                let ch: u8 = f[i];
+                if (ch == 110u8) { // 'n'
+                    c::putchar(10i32);
+                } else if (ch == 116u8) { // 't'
+                    c::putchar(9i32);
+                } else if (ch == 92u8) { // '\\'
+                    c::putchar(92i32);
+                } else {
+                    c::putchar(92i32);
+                    c::putchar(ch as i32);
+                };
+                i = i + 1usize;
+                continue;
+            };
+        };
+        if (f[i] != 37u8) { // '%'
+            c::putchar(f[i] as i32);
+            i = i + 1usize;
+            continue;
+        };
+        i = i + 1usize;
+        if (i >= f.len) { break; };
+        let spec: u8 = f[i];
+        i = i + 1usize;
+        if (spec == 37u8) { // '%'
+            c::putchar(37i32);
+        } else if (spec == 110u8) { // 'n'
+            c::fputs(name.data as *i8, c::stdout);
+        } else if (spec == 78u8) { // 'N'
+            c::printf("'%s'", name.data as *i8);
+        } else if (spec == 115u8) { // 's'
+            c::printf("%lld", s.size);
+        } else if (spec == 98u8) { // 'b'
+            c::printf("%lld", s.blocks);
+        } else if (spec == 66u8) { // 'B'
+            c::printf("%ld", s.blksize);
+        } else if (spec == 105u8) { // 'i'
+            c::printf("%llu", s.ino);
+        } else if (spec == 104u8) { // 'h'
+            c::printf("%lu", s.nlink);
+        } else if (spec == 117u8) { // 'u'
+            c::printf("%lu", s.uid as u64);
+        } else if (spec == 103u8) { // 'g'
+            c::printf("%lu", s.gid as u64);
+        } else if (spec == 85u8) { // 'U'
+            let uname: nullable *i8 = platform_stat::zov_get_username(s.uid);
+            if (uname != null) {
+                c::fputs(uname!, c::stdout);
+            } else {
+                c::printf("%lu", s.uid as u64);
+            };
+        } else if (spec == 71u8) { // 'G'
+            let gname: nullable *i8 = platform_stat::zov_get_groupname(s.gid);
+            if (gname != null) {
+                c::fputs(gname!, c::stdout);
+            } else {
+                c::printf("%lu", s.gid as u64);
+            };
+        } else if (spec == 97u8) { // 'a'
+            c::printf("%o", (s.mode & 0xfffu32) as i32);
+        } else if (spec == 65u8) { // 'A'
+            print_perms(s.mode);
+        } else if (spec == 100u8) { // 'd'
+            c::printf("%llu", s.dev);
+        } else if (spec == 70u8) { // 'F'
+            let tstr: str = stat_type(s.mode);
+            c::fputs(tstr.data as *i8, c::stdout);
+        } else if (spec == 120u8 || spec == 121u8 || spec == 122u8) { // 'x', 'y', 'z'
+            let mut tval: i64 = s.atime;
+            if (spec == 121u8) {
+                tval = s.mtime;
+            } else if (spec == 122u8) {
+                tval = s.ctime;
+            };
+            let mut tbuf: [64]i8;
+            platform_stat::zov_format_time(tval, (&tbuf[0usize]) as *i8, 64usize);
+            c::fputs((&tbuf[0usize]) as *i8, c::stdout);
+        } else {
+            c::putchar(37i32);
+            c::putchar(spec as i32);
+        };
+    };
+    if (newline) {
+        c::putchar(10i32);
+    };
+};
+
 export fn run(start: usize, argc: usize) i32 = {
-    let count: usize = argc - start;
-    if (count > 4096usize) { return 1; };
-    let mut argv: [4096]*i8;
-    for (let i in 0usize..count) { argv[i] = args::argat(start + i).data as *i8; };
-    return backend::zov_stat_run(count as i32, (&argv[0usize]) as **i8);
+    let mut format: str = "";
+    let mut has_format: bool = false;
+    let mut follow: bool = false;
+    let mut printfmode: bool = false;
+    let mut files = vec::new[str]();
+
+    let mut i: usize = start;
+    while (i < argc) {
+        let a: str = args::argat(i);
+        if (a == "--help") {
+            print_help();
+            return 0;
+        };
+        if (a == "--version") {
+            io::println("stat (zovutils) 0.10.61");
+            return 0;
+        };
+        if (a == "-L" || a == "--dereference") {
+            follow = true;
+            i = i + 1usize;
+            continue;
+        };
+        if (a == "-c" || a == "--format" || a == "--printf") {
+            if (i + 1usize >= argc) {
+                c::fprintf(c::stderr, "stat: option requires an argument -- 'c'\n");
+                return 1;
+            };
+            i = i + 1usize;
+            format = args::argat(i);
+            has_format = true;
+            printfmode = a == "--printf";
+            i = i + 1usize;
+            continue;
+        };
+        if (a.len >= 9usize) {
+            if (a[0..9] == "--format=") {
+                format = a[9usize..a.len];
+                has_format = true;
+                i = i + 1usize;
+                continue;
+            };
+            if (a[0..9] == "--printf=") {
+                format = a[9usize..a.len];
+                has_format = true;
+                printfmode = true;
+                i = i + 1usize;
+                continue;
+            };
+        };
+        if (a.len > 0usize && a != "-") {
+            if (a[0usize] == 45u8) {
+                c::fprintf(c::stderr, "stat: unrecognized option '%s'\nTry 'stat --help' for more information.\n", a.data as *i8);
+                return 1;
+            };
+        };
+        files.push(a);
+        i = i + 1usize;
+    };
+
+    if (files.len() == 0usize) {
+        c::fprintf(c::stderr, "stat: missing operand\nTry 'stat --help' for more information.\n");
+        return 1;
+    };
+
+    if (!has_format) {
+        format = "  File: %N\n  Size: %s\tBlocks: %b\tIO Block: %B\t%F\nDevice: %d\tInode: %i\tLinks: %h\nAccess: (%a/%A)\tUid: (%u/%U)\tGid: (%g/%G)\nAccess: %x\nModify: %y\nChange: %z\n";
+    };
+
+    let mut status: i32 = 0i32;
+    let mut follow_val: i32 = 0i32;
+    if (follow) { follow_val = 1i32; };
+    let nl_val: bool = !printfmode;
+
+    for (let k in 0usize..files.len()) {
+        let fpath: str = files.get(k);
+        let mut st: StatInfo = StatInfo {
+            size = 0i64,
+            blocks = 0i64,
+            blksize = 0i64,
+            ino = 0u64,
+            nlink = 0u64,
+            uid = 0u32,
+            gid = 0u32,
+            mode = 0u32,
+            dev = 0u64,
+            atime = 0i64,
+            mtime = 0i64,
+            ctime = 0i64,
+        };
+        let rc: i32 = platform_stat::zov_stat_info(fpath.data as *i8, follow_val, (&mut st) as *void);
+        if (rc != 0i32) {
+            c::fprintf(c::stderr, "stat: cannot stat '%s': %s\n", fpath.data as *i8, strc::strerror(rc));
+            status = 1;
+            continue;
+        };
+        format_stat(format, fpath, &st, nl_val);
+    };
+
+    return status;
 };
