@@ -1,7 +1,11 @@
 use std::env as args;
 use std::io;
+use std::mem as mem;
+use <ctype.h> as ct;
 use <stdio.h> as c;
-use <uniq_backend.h> as backend;
+use <string.h> as strc;
+use <platform_errno.h> as platform_errno;
+use <platform_locale.h> as platform_locale;
 use shared::io as stream;
 
 fn usage_error() void = { io::eprintln("Try 'uniq --help' for more information."); };
@@ -16,7 +20,26 @@ fn is_prefix(value: str, full: str) bool = {
 };
 
 fn parse_count(value: str, out: &mut usize) bool = {
-    return backend::zov_uniq_parse_count(value.data as *i8, out) == 0i32;
+    if (value.len == 0usize) { return false; };
+    let mut start: usize = 0usize;
+    while (start < value.len && (value.data[start] == 32u8 || (value.data[start] >= 9u8 && value.data[start] <= 13u8))) {
+        start += 1usize;
+    };
+    if (start < value.len && value.data[start] == 43u8) {
+        start += 1usize;
+    };
+    if (start >= value.len) { return false; };
+    let mut n: usize = 0usize;
+    for (let i in start..value.len) {
+        let b: u8 = value.data[i];
+        if (b < 48u8 || b > 57u8) { return false; };
+        let digit: usize = (b - 48u8) as usize;
+        let max_val: usize = 18446744073709551615usize;
+        if (n > (max_val - digit) / 10usize) { return false; };
+        n = n * 10usize + digit;
+    };
+    *out = n;
+    return true;
 };
 
 fn help() void = {
@@ -48,6 +71,111 @@ fn help() void = {
     io::print("Report any translation bugs to <https://translationproject.org/team/>\n");
     io::print("Full documentation <https://www.gnu.org/software/coreutils/uniq>\n");
     io::print("or available locally via: info '(coreutils) uniq invocation'\n");
+};
+
+type UniqLine = struct {
+    data: *u8,
+    len: usize,
+    cap: usize,
+};
+
+fn line_init() UniqLine = {
+    return UniqLine { data = mem::alloc[u8](256usize), len = 0usize, cap = 256usize };
+};
+
+fn line_copy(dest: &mut UniqLine, src: &UniqLine) void = {
+    while (dest.cap < src.len) {
+        let new_cap: usize = dest.cap * 2usize;
+        dest.data = mem::reallocbuf[u8](dest.data, new_cap);
+        dest.cap = new_cap;
+    };
+    for (let i in 0usize..src.len) {
+        dest.data[i] = src.data[i];
+    };
+    dest.len = src.len;
+};
+
+fn read_line(fp: *c::FILE, term: u8, line: &mut UniqLine) i32 = {
+    line.len = 0usize;
+    while (true) {
+        let ch: i32 = c::fgetc(fp);
+        if (ch == -1i32) {
+            if (stream::readerror(fp)) { return -1i32; };
+            if (line.len == 0usize) { return 0i32; };
+            return 1i32;
+        };
+        if ((ch as u8) == term) {
+            return 1i32;
+        };
+        if (line.len == line.cap) {
+            let next: usize = line.cap * 2usize;
+            line.data = mem::reallocbuf[u8](line.data, next);
+            line.cap = next;
+        };
+        line.data[line.len] = ch as u8;
+        line.len += 1usize;
+    };
+    return 0i32;
+};
+
+fn get_offset(line: &UniqLine, fields: usize, chars: usize) usize = {
+    let mut i: usize = 0usize;
+    let mut f: usize = fields;
+    while (f > 0usize) {
+        while (i < line.len && (line.data[i] == 32u8 || line.data[i] == 9u8)) { i += 1usize; };
+        while (i < line.len && line.data[i] != 32u8 && line.data[i] != 9u8) { i += 1usize; };
+        f -= 1usize;
+    };
+    let remain: usize = line.len - i;
+    let mut skip: usize = remain;
+    if (chars < remain) { skip = chars; };
+    return i + skip;
+};
+
+fn lines_equal(a: &UniqLine, b: &UniqLine, ignore_case: bool,
+               skip_fields: usize, skip_chars: usize, check_chars: usize) bool = {
+    let ai: usize = get_offset(a, skip_fields, skip_chars);
+    let bi: usize = get_offset(b, skip_fields, skip_chars);
+    let mut an: usize = a.len - ai;
+    let mut bn: usize = b.len - bi;
+    if (check_chars != 0usize && check_chars < an) { an = check_chars; };
+    if (check_chars != 0usize && check_chars < bn) { bn = check_chars; };
+    let mut n: usize = an;
+    if (bn < n) { n = bn; };
+    for (let i in 0usize..n) {
+        let mut ac: u8 = a.data[ai + i];
+        let mut bc: u8 = b.data[bi + i];
+        if (ignore_case) {
+            ac = ct::tolower(ac as i32) as u8;
+            bc = ct::tolower(bc as i32) as u8;
+        };
+        if (ac != bc) { return false; };
+    };
+    return an == bn;
+};
+
+fn emit_line(out: *c::FILE, line: &UniqLine, term: u8, count: usize, count_mode: bool) bool = {
+    if (count_mode) {
+        if (c::fprintf(out, "%7zu ", count) < 0i32) { return false; };
+    };
+    if (line.len > 0usize && !stream::writebytes(out, line.data, line.len)) { return false; };
+    return stream::putbyte(out, term);
+};
+
+fn emit_group(out: *c::FILE, term: u8, line: &UniqLine, count: usize,
+              count_mode: bool, duplicates: bool, only_unique: bool) bool = {
+    let mut emit: bool = false;
+    if (duplicates && only_unique) {
+        emit = false;
+    } else if (duplicates) {
+        emit = count > 1usize;
+    } else if (only_unique) {
+        emit = count == 1usize;
+    } else {
+        emit = true;
+    };
+    if (!emit) { return true; };
+    return emit_line(out, line, term, count, count_mode);
 };
 
 export fn run(start: usize, argc: usize) i32 = {
@@ -120,15 +248,101 @@ export fn run(start: usize, argc: usize) i32 = {
         if (file_count >= 2usize) { io::eprintln("uniq: extra operand '" + arg + "'"); usage_error(); return 1; };
         files[file_count] = arg; file_count += 1usize; i += 1usize;
     };
+
+    platform_locale::zov_init_ctype_locale();
+
     let mut input: str = "-";
     let mut output: str = "";
     let mut has_output: bool = false;
     if (file_count > 0usize) { input = files[0usize]; };
     if (file_count > 1usize) { output = files[1usize]; has_output = true; };
-    let mut paths: [1]*i8;
-    paths[0usize] = input.data as *i8;
-    return backend::zov_uniq_run(1usize, ((&paths[0usize]) as **i8), output.data as *i8,
-        has_output as i32, count_mode as i32, duplicates as i32, only_unique as i32,
-        all_repeated as i32, ignore_case as i32, skip_fields, skip_chars,
-        check_chars, zero_terminated as i32);
+
+    let mut in_fp: *c::FILE = c::stdin;
+    let mut close_in: bool = false;
+    if (input != "-") {
+        let open_res: nullable *c::FILE = stream::openread(input);
+        match (open_res) {
+            case let opened: *c::FILE => { in_fp = opened; close_in = true; },
+            case null => {
+                let err: i32 = platform_errno::zov_errno_value();
+                c::fprintf(c::stderr, "uniq: %s: %s\n", input.data as *i8, strc::strerror(err));
+                return 1;
+            },
+        };
+    };
+
+    let mut out_fp: *c::FILE = c::stdout;
+    let mut close_out: bool = false;
+    if (has_output) {
+        let opened_out: nullable *c::FILE = c::fopen(output.data as *i8, "wb");
+        match (opened_out) {
+            case let opened: *c::FILE => { out_fp = opened; close_out = true; },
+            case null => {
+                let err: i32 = platform_errno::zov_errno_value();
+                c::fprintf(c::stderr, "uniq: %s: %s\n", output.data as *i8, strc::strerror(err));
+                if (close_in) { stream::closefile(in_fp); };
+                return 1;
+            },
+        };
+    };
+
+    let mut term: u8 = 10u8;
+    if (zero_terminated) { term = 0u8; };
+    let mut prev_line: UniqLine = line_init();
+    let mut curr_line: UniqLine = line_init();
+    let mut group_count: usize = 0usize;
+    let mut have_group: bool = false;
+    let mut status: i32 = 0;
+    let mut read_err: bool = false;
+
+    while (true) {
+        let rc: i32 = read_line(in_fp, term, &mut curr_line);
+        if (rc < 0i32) {
+            c::fprintf(c::stderr, "uniq: read error: %s\n", input.data as *i8);
+            status = 1;
+            read_err = true;
+            break;
+        };
+        if (rc == 0i32) {
+            break;
+        };
+        if (!have_group) {
+            line_copy(&mut prev_line, &curr_line);
+            group_count = 1usize;
+            have_group = true;
+            continue;
+        };
+        if (lines_equal(&prev_line, &curr_line, ignore_case, skip_fields, skip_chars, check_chars)) {
+            group_count += 1usize;
+            if (all_repeated) {
+                if (group_count == 2usize) {
+                    if (!emit_line(out_fp, &prev_line, term, 1usize, false)) { status = 1; break; };
+                };
+                if (!emit_line(out_fp, &curr_line, term, 1usize, false)) { status = 1; break; };
+            };
+        } else {
+            if (!all_repeated) {
+                if (!emit_group(out_fp, term, &prev_line, group_count, count_mode, duplicates, only_unique)) {
+                    status = 1;
+                    break;
+                };
+            };
+            line_copy(&mut prev_line, &curr_line);
+            group_count = 1usize;
+        };
+    };
+
+    if (status == 0 && !read_err && have_group && !all_repeated) {
+        if (!emit_group(out_fp, term, &prev_line, group_count, count_mode, duplicates, only_unique)) {
+            status = 1;
+        };
+    };
+
+    if (c::fflush(out_fp) != 0i32) { status = 1; };
+    if (close_out && c::fclose(out_fp) != 0i32) { status = 1; };
+    if (close_in) { stream::closefile(in_fp); };
+    mem::freeptr[u8](prev_line.data);
+    mem::freeptr[u8](curr_line.data);
+    if (!has_output && !stream::finishoutput("uniq")) { status = 1; };
+    return status;
 };
