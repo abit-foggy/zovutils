@@ -3,6 +3,11 @@
 
 #include <sys/stat.h>
 #include <fcntl.h>
+#include <stdint.h>
+#include <unistd.h>
+#if defined(__linux__)
+#include <sys/sysmacros.h>
+#endif
 
 static inline int zov_file_is_regular(int descriptor) {
     struct stat info;
@@ -85,6 +90,20 @@ static inline int zov_file_truncate(int fd, int64_t target) {
 
 static inline int zov_close_fd(int fd) {
     return close(fd);
+}
+
+static inline int zov_mkfifo(const char *path, uint32_t mode) {
+    return mkfifo(path, ((mode_t)mode) & 07777);
+}
+
+static inline int zov_mknod_device(const char *path, char type, uint32_t mode, uint32_t maj, uint32_t min) {
+#if defined(__linux__) || defined(__APPLE__)
+    mode_t kind = (type == 'b' ? S_IFBLK : S_IFCHR);
+    return mknod(path, kind | ((mode_t)mode & 07777), makedev(maj, min));
+#else
+    errno = ENOSYS;
+    return -1;
+#endif
 }
 
 #endif

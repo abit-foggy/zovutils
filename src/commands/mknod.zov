@@ -1,9 +1,150 @@
 use std::env as args;
-use <mknod_backend.h> as backend;
+use std::io as io;
+use <stdio.h> as c;
+use <string.h> as strc;
+use <platform_errno.h> as platform_errno;
+use <platform_stat.h> as platform_stat;
+
+type ModeParse = struct {
+    valid: bool,
+    mode: u32,
+};
+
+fn parse_octal_mode(s: str) ModeParse = {
+    if (s.len == 0usize) {
+        return ModeParse{ valid = false, mode = 0u32 };
+    };
+    let mut v: u32 = 0u32;
+    for (let i in 0usize..s.len) {
+        let ch: u8 = s.data[i];
+        if (ch < 48u8 || ch > 55u8) { // '0'..'7'
+            return ModeParse{ valid = false, mode = 0u32 };
+        };
+        let d: u32 = (ch - 48u8) as u32;
+        if (v > (0xfffu32 - d) / 8u32) {
+            return ModeParse{ valid = false, mode = 0u32 };
+        };
+        v = (v << 3u32) | d;
+    };
+    return ModeParse{ valid = true, mode = v };
+};
+
+type DevNum = struct {
+    valid: bool,
+    num: u32,
+};
+
+fn parse_dev_num(s: str) DevNum = {
+    if (s.len == 0usize) {
+        return DevNum{ valid = false, num = 0u32 };
+    };
+    let mut v: u64 = 0u64;
+    for (let i in 0usize..s.len) {
+        let ch: u8 = s.data[i];
+        if (ch < 48u8 || ch > 57u8) {
+            return DevNum{ valid = false, num = 0u32 };
+        };
+        v = v * 10u64 + ((ch - 48u8) as u64);
+        if (v > 0xffffffffu64) {
+            return DevNum{ valid = false, num = 0u32 };
+        };
+    };
+    return DevNum{ valid = true, num = v as u32 };
+};
+
 export fn run(start: usize, argc: usize) i32 = {
-    let count: usize = argc - start;
-    if (count > 4096usize) { return 1; };
-    let mut argv: [4096]*i8;
-    for (let i in 0usize..count) { argv[i] = args::argat(start + i).data as *i8; };
-    return backend::zov_mknod_run(count as i32, (&argv[0usize]) as **i8);
+    let mut mode: u32 = 0x1b6u32;
+    let mut i: usize = start;
+
+    while (i < argc) {
+        let a: str = args::argat(i);
+        if (a == "--help") {
+            c::fputs("Usage: mknod [OPTION]... NAME TYPE [MAJOR MINOR]\nCreate the special file NAME of the given TYPE.\n  -m, --mode=MODE  set file permission bits to MODE, not a=rw - umask\n  TYPE: b block device, c or u character device, p FIFO\n      --help       display this help and exit\n      --version    output version information and exit\n", c::stdout);
+            return 0i32;
+        };
+        if (a == "--version") {
+            io::println("mknod (zovutils) 0.10.61");
+            return 0i32;
+        };
+        if (a == "-m" || a == "--mode") {
+            if (i + 1usize >= argc) {
+                c::fputs("mknod: option requires an argument -- 'm'\n", c::stderr);
+                return 1i32;
+            };
+            let m_arg: str = args::argat(i + 1usize);
+            let res: ModeParse = parse_octal_mode(m_arg);
+            if (!res.valid) {
+                c::fprintf(c::stderr, "mknod: invalid mode: '%s'\n", m_arg.data as *i8);
+                return 1i32;
+            };
+            mode = res.mode;
+            i += 2usize;
+            continue;
+        };
+        if (a.len >= 7usize && a[0..7] == "--mode=") {
+            let m_arg: str = a[7..a.len];
+            let res: ModeParse = parse_octal_mode(m_arg);
+            if (!res.valid) {
+                c::fprintf(c::stderr, "mknod: invalid mode: '%s'\n", m_arg.data as *i8);
+                return 1i32;
+            };
+            mode = res.mode;
+            i += 1usize;
+            continue;
+        };
+        if (a.len > 0usize && a.data[0usize] == 45u8 && a != "-") {
+            c::fprintf(c::stderr, "mknod: unrecognized option '%s'\nTry 'mknod --help' for more information.\n", a.data as *i8);
+            return 1i32;
+        };
+        break;
+    };
+
+    let left: usize = argc - i;
+    if (left < 2usize) {
+        c::fputs("mknod: missing operand\nTry 'mknod --help' for more information.\n", c::stderr);
+        return 1i32;
+    };
+
+    let name: str = args::argat(i);
+    let type_str: str = args::argat(i + 1usize);
+    if (type_str.len != 1usize || (type_str.data[0usize] != 98u8 && type_str.data[0usize] != 99u8 && type_str.data[0usize] != 117u8 && type_str.data[0usize] != 112u8)) { // 'b', 'c', 'u', 'p'
+        c::fprintf(c::stderr, "mknod: invalid device type '%s'\n", type_str.data as *i8);
+        return 1i32;
+    };
+
+    let t: u8 = type_str.data[0usize];
+    if (t == 112u8) { // 'p'
+        if (left != 2usize) {
+            let extra: str = args::argat(i + 2usize);
+            c::fprintf(c::stderr, "mknod: extra operand '%s'\nTry 'mknod --help' for more information.\n", extra.data as *i8);
+            return 1i32;
+        };
+        platform_errno::zov_errno_set(0i32);
+        if (platform_stat::zov_mkfifo(name.data as *i8, mode & 0xfffu32) < 0i32) {
+            let err: i32 = platform_errno::zov_errno_value();
+            c::fprintf(c::stderr, "mknod: failed to create FIFO '%s': %s\n", name.data as *i8, strc::strerror(err));
+            return 1i32;
+        };
+        return 0i32;
+    };
+
+    if (left != 4usize) {
+        c::fputs("mknod: missing operand\nTry 'mknod --help' for more information.\n", c::stderr);
+        return 1i32;
+    };
+
+    let maj_res: DevNum = parse_dev_num(args::argat(i + 2usize));
+    let min_res: DevNum = parse_dev_num(args::argat(i + 3usize));
+    if (!maj_res.valid || !min_res.valid) {
+        c::fputs("mknod: invalid major/minor device number\n", c::stderr);
+        return 1i32;
+    };
+
+    platform_errno::zov_errno_set(0i32);
+    if (platform_stat::zov_mknod_device(name.data as *i8, t as i8, mode, maj_res.num, min_res.num) < 0i32) {
+        let err: i32 = platform_errno::zov_errno_value();
+        c::fprintf(c::stderr, "mknod: failed to create device '%s': %s\n", name.data as *i8, strc::strerror(err));
+        return 1i32;
+    };
+    return 0i32;
 };
