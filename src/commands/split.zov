@@ -51,27 +51,29 @@ fn help() void = {
     io::print("Usage: split [OPTION]... [FILE [PREFIX]]\nOutput pieces of FILE to PREFIXaa, PREFIXab, ...;\ndefault size is 1000 lines, and default PREFIX is 'x'.\n\nWith no FILE, or when FILE is -, read standard input.\n\nMandatory arguments to long options are mandatory for short options too.\n  -a, --suffix-length=N\n         generate suffixes of length N (default 2)\n      --additional-suffix=SUFFIX\n         append an additional SUFFIX to file names\n  -b, --bytes=SIZE\n         put SIZE bytes per output file\n  -C, --line-bytes=SIZE\n         put at most SIZE bytes of records per output file\n  -d\n         use numeric suffixes starting at 0, not alphabetic\n      --numeric-suffixes[=FROM]\n         same as -d, but allow setting the start value\n  -x\n         use hex suffixes starting at 0, not alphabetic\n      --hex-suffixes[=FROM]\n         same as -x, but allow setting the start value\n  -e, --elide-empty-files\n         do not generate empty output files with '-n'\n      --filter=COMMAND\n         write to shell COMMAND; file name is $FILE\n  -l, --lines=NUMBER\n         put NUMBER lines/records per output file\n  -n, --number=CHUNKS\n         generate CHUNKS output files; see explanation below\n  -t, --separator=SEP\n         use SEP instead of newline as the record separator;\n         '"); c::putchar(92); io::print("0' (zero) specifies the NUL character\n  -u, --unbuffered\n         immediately copy input to output with '-n r/...'\n      --verbose\n         print a diagnostic just before each output file is opened\n      --help\n         display this help and exit\n      --version\n         output version information and exit\n\nThe SIZE argument is an integer and optional unit (example: 10K is 10*1024).\nUnits are K,M,G,T,P,E,Z,Y,R,Q (powers of 1024) or KB,MB,... (powers of 1000).\nBinary prefixes can be used, too: KiB=K, MiB=M, and so on.\n\nCHUNKS may be:\n  N       split into N files based on size of input\n  K/N     output Kth of N to standard output\n  l/N     split into N files without splitting lines/records\n  l/K/N   output Kth of N to standard output without splitting lines/records\n  r/N     like 'l' but use round robin distribution\n  r/K/N   likewise but only output Kth of N to standard output\n\n-n (except -nr) will buffer to $TMPDIR, defaulting to /tmp,\nif the input size cannot easily be determined.\n\nReport bugs to: bug-coreutils@gnu.org\nGNU coreutils home page: <https://www.gnu.org/software/coreutils/>\nGeneral help using GNU software: <https://www.gnu.org/gethelp/>\nReport any translation bugs to <https://translationproject.org/team/>\nFull documentation <https://www.gnu.org/software/coreutils/split>\nor available locally via: info '(coreutils) split invocation'\n");
 };
 
-type LineRecord = struct {
+type SplitLineRecord = struct {
     offset: usize,
     length: usize,
 };
 
-fn split_suffix(index: usize, width: usize, mode: i32, from: u64) nullable String = {
+fn split_suffix(index: usize, width: usize, mode: i32, from: u64, out: &mut String) bool = {
     let mut buf: [64]u8;
     if (mode == 1i32) {
         let val: u64 = from + (index as u64);
         c::snprintf((&mut buf[0usize]) as *i8, 64usize, "%0*llu\0".data as *i8, width as i32, val);
         let slen: usize = strc::strlen((&buf[0usize]) as *i8);
-        return String::from(zov_str_from_raw((&buf[0usize]) as *u8, slen));
+        *out = String::from(zov_str_from_raw((&buf[0usize]) as *u8, slen));
+        return true;
     };
     if (mode == 2i32) {
         let val: u64 = from + (index as u64);
         c::snprintf((&mut buf[0usize]) as *i8, 64usize, "%0*llx\0".data as *i8, width as i32, val);
         let slen: usize = strc::strlen((&buf[0usize]) as *i8);
-        return String::from(zov_str_from_raw((&buf[0usize]) as *u8, slen));
+        *out = String::from(zov_str_from_raw((&buf[0usize]) as *u8, slen));
+        return true;
     };
     if (width == 0usize || width > 32usize) {
-        return null;
+        return false;
     };
     let mut limit: usize = 1usize;
     for (let _i in 0usize..width) {
@@ -82,7 +84,7 @@ fn split_suffix(index: usize, width: usize, mode: i32, from: u64) nullable Strin
         limit *= 26usize;
     };
     if (index >= limit) {
-        return null;
+        return false;
     };
     let mut cur: usize = index;
     for (let i in 0usize..width) {
@@ -90,7 +92,8 @@ fn split_suffix(index: usize, width: usize, mode: i32, from: u64) nullable Strin
         cur = cur / 26usize;
     };
     buf[width] = 0u8;
-    return String::from(zov_str_from_raw((&buf[0usize]) as *u8, width));
+    *out = String::from(zov_str_from_raw((&buf[0usize]) as *u8, width));
+    return true;
 };
 
 fn split_write_file(
@@ -105,12 +108,11 @@ fn split_write_file(
     verbose: bool,
     filter: str
 ) bool = {
-    let suffix_opt: nullable String = split_suffix(index, width, suffix_mode, from);
-    if (suffix_opt == null) {
+    let mut suffix: String = String::new();
+    if (!split_suffix(index, width, suffix_mode, from, &mut suffix)) {
         c::fprintf(c::stderr, "split: output file suffixes exhausted\n");
         return false;
     };
-    let suffix: String = suffix_opt!;
     let filename_str: String = String::from(prefix) + suffix.view() + additional;
     let name: str = filename_str.view();
 
@@ -164,13 +166,13 @@ fn split_write_file(
     return ok;
 };
 
-fn if_fp(cond: bool, a: *c::FILE, b: nullable *c::FILE) nullable *c::FILE = {
-    if (cond) { return a; };
-    return b;
-};
-
-fn load_input(path: str, buf: &mut vec::Vec<u8>) bool = {
-    let fp: nullable *c::FILE = if_fp(path == "-", c::stdin, c::fopen(path.data as *i8, "rb".data as *i8));
+fn load_input(path: str, buf: &mut vec::Vec[u8]) bool = {
+    let mut fp: nullable *c::FILE = null;
+    if (path == "-") {
+        fp = c::stdin;
+    } else {
+        fp = c::fopen(path.data as *i8, "rb".data as *i8);
+    };
     if (fp == null) {
         let err: i32 = platform_errno::zov_errno_value();
         c::fprintf(c::stderr, "split: %s: %s\n", path.data as *i8, strc::strerror(err));
@@ -198,12 +200,12 @@ fn load_input(path: str, buf: &mut vec::Vec<u8>) bool = {
     return true;
 };
 
-fn scan_records(data: *u8, len: usize, separator: u8, records: &mut vec::Vec<LineRecord>) = {
+fn scan_records(data: *u8, len: usize, separator: u8, records: &mut vec::Vec[SplitLineRecord]) = {
     let mut start: usize = 0usize;
     for (let i in 0usize..len) {
         let b: u8 = data[i];
         if (b == separator) {
-            records.push(LineRecord {
+            records.push(SplitLineRecord {
                 offset = start,
                 length = i + 1usize - start,
             });
@@ -211,7 +213,7 @@ fn scan_records(data: *u8, len: usize, separator: u8, records: &mut vec::Vec<Lin
         };
     };
     if (start < len) {
-        records.push(LineRecord {
+        records.push(SplitLineRecord {
             offset = start,
             length = len - start,
         });
@@ -328,11 +330,11 @@ export fn run(start: usize, argc: usize) i32 = {
     if (operand_count == 2usize) { input = operands[0usize]; prefix_value = operands[1usize]; };
     if (amount == 0u64) { io::eprintln("split: invalid number or size"); return 1; };
 
-    let mut buf: vec::Vec<u8> = vec::new<u8>();
+    let mut buf: vec::Vec[u8] = vec::new[u8]();
     if (!load_input(input, &mut buf)) {
         return 1;
     };
-    let buf_data: *u8 = buf.as_slice().data;
+    let buf_data: *u8 = buf.data!;
     let buf_len: usize = buf.len();
 
     let mut status: i32 = 0i32;
@@ -352,7 +354,7 @@ export fn run(start: usize, argc: usize) i32 = {
                     n = buf_len - start_b;
                 };
                 if (n > chunk) { n = chunk; };
-                if (n != 0usize && c::fwrite((buf_data + start_b) as *void, 1usize, n, c::stdout) != n) {
+                if (n != 0usize && c::fwrite((&buf_data[start_b]) as *void, 1usize, n, c::stdout) != n) {
                     status = 1i32;
                 };
             };
@@ -364,7 +366,7 @@ export fn run(start: usize, argc: usize) i32 = {
                     n = buf_len - start_b;
                 };
                 if (n > chunk) { n = chunk; };
-                let part: *u8 = buf_data + start_b;
+                let part: *u8 = (&buf_data[start_b]) as *u8;
                 if (!split_write_file(prefix_value, additional, width, suffix_mode, from, f, part, n, verbose, filter_command)) {
                     status = 1i32;
                     break;
@@ -383,18 +385,18 @@ export fn run(start: usize, argc: usize) i32 = {
             let end: usize = (buf_len * (f + 1usize) + chunks - 1usize) / chunks;
             let n: usize = end - begin;
             if (selector != 0u64) {
-                if (n != 0usize && c::fwrite((buf_data + begin) as *void, 1usize, n, c::stdout) != n) {
+                if (n != 0usize && c::fwrite((&buf_data[begin]) as *void, 1usize, n, c::stdout) != n) {
                     status = 1i32;
                 };
             } else if (!(elide_empty && n == 0usize)) {
-                let part: *u8 = buf_data + begin;
+                let part: *u8 = (&buf_data[begin]) as *u8;
                 if (!split_write_file(prefix_value, additional, width, suffix_mode, from, f, part, n, verbose, filter_command)) {
                     status = 1i32;
                 };
             };
         };
     } else {
-        let mut records: vec::Vec<LineRecord> = vec::new<LineRecord>();
+        let mut records: vec::Vec[SplitLineRecord] = vec::new[SplitLineRecord]();
         scan_records(buf_data, buf_len, separator, &mut records);
         let rec_count: usize = records.len();
 
@@ -410,8 +412,8 @@ export fn run(start: usize, argc: usize) i32 = {
                 let mut end_r: usize = start_r + per;
                 if (end_r > rec_count) { end_r = rec_count; };
                 for (let r in start_r..end_r) {
-                    let rec: LineRecord = records.get(r);
-                    if (c::fwrite((buf_data + rec.offset) as *void, 1usize, rec.length, c::stdout) != rec.length) {
+                    let rec: SplitLineRecord = records.get(r);
+                    if (c::fwrite((&buf_data[rec.offset]) as *void, 1usize, rec.length, c::stdout) != rec.length) {
                         status = 1i32;
                     };
                 };
@@ -426,10 +428,10 @@ export fn run(start: usize, argc: usize) i32 = {
                     };
                     let mut end_byte: usize = begin_byte;
                     if (end_r > start_r) {
-                        let last_rec: LineRecord = records.get(end_r - 1usize);
+                        let last_rec: SplitLineRecord = records.get(end_r - 1usize);
                         end_byte = last_rec.offset + last_rec.length;
                     };
-                    let part: *u8 = buf_data + begin_byte;
+                    let part: *u8 = (&buf_data[begin_byte]) as *u8;
                     if (!split_write_file(prefix_value, additional, width, suffix_mode, from, f, part, end_byte - begin_byte, verbose, filter_command)) {
                         status = 1i32;
                         break;
@@ -443,17 +445,17 @@ export fn run(start: usize, argc: usize) i32 = {
                 if (selector != 0u64 && selector != ((f + 1usize) as u64)) {
                     continue;
                 };
-                let mut chunk_buf: vec::Vec<u8> = vec::new<u8>();
+                let mut chunk_buf: vec::Vec[u8] = vec::new[u8]();
                 let mut r: usize = f;
                 while (r < rec_count) {
-                    let rec: LineRecord = records.get(r);
+                    let rec: SplitLineRecord = records.get(r);
                     for (let j in 0usize..rec.length) {
-                        chunk_buf.push((buf_data + rec.offset)[j]);
+                        chunk_buf.push(buf_data[rec.offset + j]);
                     };
                     r += chunks;
                 };
                 let used: usize = chunk_buf.len();
-                let chunk_ptr: *u8 = chunk_buf.as_slice().data;
+                let chunk_ptr: *u8 = chunk_buf.data!;
                 if (selector != 0u64) {
                     if (used != 0usize && c::fwrite(chunk_ptr as *void, 1usize, used, c::stdout) != used) {
                         status = 1i32;
@@ -479,16 +481,16 @@ export fn run(start: usize, argc: usize) i32 = {
                 };
                 let mut end_byte: usize = begin_byte;
                 if (end_r > start_r) {
-                    let last_rec: LineRecord = records.get(end_r - 1usize);
+                    let last_rec: SplitLineRecord = records.get(end_r - 1usize);
                     end_byte = last_rec.offset + last_rec.length;
                 };
                 let n: usize = end_byte - begin_byte;
                 if (selector != 0u64) {
-                    if (n != 0usize && c::fwrite((buf_data + begin_byte) as *void, 1usize, n, c::stdout) != n) {
+                    if (n != 0usize && c::fwrite((&buf_data[begin_byte]) as *void, 1usize, n, c::stdout) != n) {
                         status = 1i32;
                     };
                 } else if (!(elide_empty && n == 0usize)) {
-                    let part: *u8 = buf_data + begin_byte;
+                    let part: *u8 = (&buf_data[begin_byte]) as *u8;
                     if (!split_write_file(prefix_value, additional, width, suffix_mode, from, f, part, n, verbose, filter_command)) {
                         status = 1i32;
                         break;
@@ -503,7 +505,7 @@ export fn run(start: usize, argc: usize) i32 = {
                 let mut end_r: usize = start_r;
                 let mut bytes_acc: usize = 0usize;
                 while (end_r < rec_count) {
-                    let rec: LineRecord = records.get(end_r);
+                    let rec: SplitLineRecord = records.get(end_r);
                     if (bytes_acc != 0usize && bytes_acc + rec.length > max_bytes) {
                         break;
                     };
@@ -519,10 +521,10 @@ export fn run(start: usize, argc: usize) i32 = {
                 };
                 let mut end_byte: usize = begin_byte;
                 if (end_r > start_r) {
-                    let last_rec: LineRecord = records.get(end_r - 1usize);
+                    let last_rec: SplitLineRecord = records.get(end_r - 1usize);
                     end_byte = last_rec.offset + last_rec.length;
                 };
-                let part: *u8 = buf_data + begin_byte;
+                let part: *u8 = (&buf_data[begin_byte]) as *u8;
                 if (!split_write_file(prefix_value, additional, width, suffix_mode, from, file_idx, part, end_byte - begin_byte, verbose, filter_command)) {
                     status = 1i32;
                     break;

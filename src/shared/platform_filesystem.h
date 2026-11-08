@@ -28,12 +28,13 @@ typedef struct {
     uint64_t f_ffree;
 } ZovStatvfs;
 
-static inline int zov_statvfs(const char *path, ZovStatvfs *out) {
+static inline int zov_statvfs(const char *path, void *out_ptr) {
     struct statvfs v;
     if (statvfs(path, &v) < 0) {
         return errno;
     }
-    if (out) {
+    if (out_ptr) {
+        ZovStatvfs *out = (ZovStatvfs *)out_ptr;
         out->f_bsize = (uint64_t)v.f_bsize;
         out->f_frsize = (uint64_t)(v.f_frsize ? v.f_frsize : v.f_bsize);
         out->f_blocks = (uint64_t)v.f_blocks;

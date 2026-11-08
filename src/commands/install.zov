@@ -69,7 +69,7 @@ fn join_path(dir: str, file: str) String = {
 fn copy_install_file(src: str, dest: str, mode: u32, preserve: bool, verbose: bool, make_parents: bool) i32 = {
     let mut atime_val: i64 = 0i64;
     let mut mtime_val: i64 = 0i64;
-    let stat_rc: i32 = platform_stat::zov_stat_mtime(src.data as *i8, &mut atime_val, &mut mtime_val);
+    let stat_rc: i32 = platform_stat::zov_stat_file_times_sec(src.data as *i8, &mut atime_val, &mut mtime_val);
     if (stat_rc != 0i32) {
         c::fprintf(c::stderr, "install: cannot stat '%s': %s\n", src.data as *i8, strc::strerror(stat_rc));
         return 1;
@@ -148,17 +148,17 @@ fn copy_install_file(src: str, dest: str, mode: u32, preserve: bool, verbose: bo
 
 export fn run(start: usize, argc: usize) i32 = {
     let mut mode: u32 = 0o755u32;
-    let mut have_mode: bool = false;
+    let mut _have_mode: bool = false;
     let mut dirs: bool = false;
     let mut make_parents: bool = false;
     let mut preserve: bool = false;
     let mut verbose: bool = false;
     let mut target_dir: str = "";
-    let mut ops: vec::Vec<str> = vec::new<str>();
+    let mut ops: vec::Vec[str] = vec::new[str]();
 
     let mut i: usize = start;
     while (i < argc) {
-        let a: str = args::argat(i).view();
+        let a: str = args::argat(i);
         if (a == "--help") {
             print_help();
             return 0;
@@ -190,7 +190,7 @@ export fn run(start: usize, argc: usize) i32 = {
         if (a == "-t" || a == "--target-directory") {
             if (i + 1usize >= argc) { return 1; };
             i += 1usize;
-            target_dir = args::argat(i).view();
+            target_dir = args::argat(i);
             i += 1usize;
             continue;
         };
@@ -202,12 +202,12 @@ export fn run(start: usize, argc: usize) i32 = {
         if (a == "-m" || a == "--mode") {
             if (i + 1usize >= argc) { return 1; };
             i += 1usize;
-            let m_str: str = args::argat(i).view();
+            let m_str: str = args::argat(i);
             if (!parse_octal_mode(m_str, &mut mode)) {
                 c::fprintf(c::stderr, "install: invalid mode '%s'\n", m_str.data as *i8);
                 return 1;
             };
-            have_mode = true;
+            _have_mode = true;
             i += 1usize;
             continue;
         };
@@ -217,11 +217,11 @@ export fn run(start: usize, argc: usize) i32 = {
                 c::fprintf(c::stderr, "install: invalid mode '%s'\n", m_str.data as *i8);
                 return 1;
             };
-            have_mode = true;
+            _have_mode = true;
             i += 1usize;
             continue;
         };
-        if (a.len > 0usize && a[0usize] == 45u8 && a != "-") {
+        if (a.len > 0usize && a.data[0usize] == 45u8 && a != "-") {
             c::fprintf(c::stderr, "install: unrecognized option '%s'\nTry 'install --help' for more information.\n", a.data as *i8);
             return 1;
         };
@@ -250,7 +250,7 @@ export fn run(start: usize, argc: usize) i32 = {
 
     if (target_dir.len > 0usize) {
         let mut st_mode: u32 = 0u32;
-        let rc: i32 = platform_stat::zov_stat_mode(target_dir.data as *i8, &mut st_mode);
+        let rc: i32 = platform_stat::zov_stat_mode(target_dir.data as *i8, 1i32, &mut st_mode);
         if (rc != 0i32 || (st_mode & 0o170000u32) != 0o040000u32) {
             c::fprintf(c::stderr, "install: target directory '%s' does not exist\n", target_dir.data as *i8);
             return 1;
@@ -267,7 +267,7 @@ export fn run(start: usize, argc: usize) i32 = {
 
     let mut dest_mode: u32 = 0u32;
     let mut dest_is_dir: bool = target_dir.len > 0usize;
-    if (!dest_is_dir && platform_stat::zov_stat_mode(dest.data as *i8, &mut dest_mode) == 0i32) {
+    if (!dest_is_dir && platform_stat::zov_stat_mode(dest.data as *i8, 1i32, &mut dest_mode) == 0i32) {
         if ((dest_mode & 0o170000u32) == 0o040000u32) {
             dest_is_dir = true;
         };

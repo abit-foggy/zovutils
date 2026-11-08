@@ -234,6 +234,14 @@ static inline int zov_set_file_times_sec(const char *path, int64_t atime, int64_
     return utimensat(AT_FDCWD, path, times, 0) == 0 ? 0 : errno;
 }
 
+static inline int zov_stat_file_times_sec(const char *path, int64_t *atime_out, int64_t *mtime_out) {
+    struct stat st;
+    if (stat(path, &st) != 0) return errno;
+    if (atime_out) *atime_out = (int64_t)st.st_atime;
+    if (mtime_out) *mtime_out = (int64_t)st.st_mtime;
+    return 0;
+}
+
 static inline int zov_mkdirs(const char *p, uint32_t mode) {
     if (!p || !*p) return 0;
     char *b = strdup(p);

@@ -1,5 +1,6 @@
 use std::env as args;
 use std::vec as vec;
+use <stdlib.h> as stdlib;
 use <stdio.h> as c;
 use <string.h> as strc;
 use <fnmatch.h> as fnmatch;
@@ -37,23 +38,31 @@ fn map_key(s: str) str = {
     if (s == "OTHER_WRITABLE") { return "ow"; };
     if (s == "STICKY_OTHER_WRITABLE") { return "tw"; };
     if (s == "EXEC") { return "ex"; };
-    if (s.len > 0usize && s[0usize] == 42u8) { return s; };
+    if (s.len > 0usize && s.data[0usize] == 42u8) { return s; };
     return "";
 };
 
 fn trim_slice(s: str) str = {
     let mut start: usize = 0usize;
-    while (start < s.len && (s[start] == 32u8 || s[start] == 9u8 || s[start] == 10u8 || s[start] == 13u8)) {
+    while (start < s.len) {
+        let ch: u8 = s.data[start];
+        if (ch != 32u8 && ch != 9u8 && ch != 10u8 && ch != 13u8) {
+            break;
+        };
         start = start + 1usize;
     };
     let mut end: usize = s.len;
-    while (end > start && (s[end - 1usize] == 32u8 || s[end - 1usize] == 9u8 || s[end - 1usize] == 10u8 || s[end - 1usize] == 13u8)) {
+    while (end > start) {
+        let ch: u8 = s.data[end - 1usize];
+        if (ch != 32u8 && ch != 9u8 && ch != 10u8 && ch != 13u8) {
+            break;
+        };
         end = end - 1usize;
     };
     return s[start..end];
 };
 
-fn read_line(fp: *c::FILE, buf: &mut [4096]u8, len_out: &mut usize) bool = {
+fn read_line(fp: *c::FILE, buf: *u8, len_out: &mut usize) bool = {
     let mut i: usize = 0usize;
     while (i < 4095usize) {
         let ch: i32 = c::fgetc(fp);
@@ -87,7 +96,7 @@ export fn run(start: usize, argc: usize) i32 = {
 
     let mut i: usize = start;
     while (i < argc) {
-        let a: str = args::argat(i).view();
+        let a: str = args::argat(i);
         if (a == "--help") {
             print_help();
             return 0;
@@ -118,7 +127,7 @@ export fn run(start: usize, argc: usize) i32 = {
             i = i + 1usize;
             continue;
         };
-        if (a.len > 0usize && a[0usize] == 45u8 && a != "-") {
+        if (a.len > 0usize && a.data[0usize] == 45u8 && a != "-") {
             c::fprintf(c::stderr, "dircolors: unrecognized option '%s'\nTry 'dircolors --help' for more information.\n", a.data as *i8);
             return 1;
         };
@@ -141,12 +150,12 @@ export fn run(start: usize, argc: usize) i32 = {
     };
 
     if (print_database) {
-        c::fputs(dircolors_db::zov_get_dircolors_database(), c::stdout);
+        c::fputs(dircolors_db::zov_get_dircolors_database()!, c::stdout);
         return 0;
     };
 
-    let mut keys: vec::Vec<String> = vec::new<String>();
-    let mut values: vec::Vec<String> = vec::new<String>();
+    let mut keys: vec::Vec[String] = vec::new[String]();
+    let mut values: vec::Vec[String] = vec::new[String]();
     let mut term_seen: bool = false;
     let mut term_matches: bool = false;
 
@@ -164,16 +173,20 @@ export fn run(start: usize, argc: usize) i32 = {
         let mut lineno: u64 = 0u64;
 
         let mut failed: bool = false;
-        while (read_line(file_ptr, &mut line_buf, &mut line_len)) {
+        while (read_line(file_ptr, (&mut line_buf[0usize]) as *u8, &mut line_len)) {
             lineno = lineno + 1u64;
             let raw_line: str = zov_str_from_raw((&mut line_buf[0usize]) as *u8, line_len);
             let line: str = trim_slice(raw_line);
-            if (line.len == 0usize || line[0usize] == 35u8) {
+            if (line.len == 0usize || line.data[0usize] == 35u8) {
                 continue;
             };
 
             let mut split_pos: usize = 0usize;
-            while (split_pos < line.len && line[split_pos] != 32u8 && line[split_pos] != 9u8) {
+            while (split_pos < line.len) {
+                let ch: u8 = line.data[split_pos];
+                if (ch == 32u8 || ch == 9u8) {
+                    break;
+                };
                 split_pos = split_pos + 1usize;
             };
             if (split_pos >= line.len) {
@@ -192,7 +205,7 @@ export fn run(start: usize, argc: usize) i32 = {
 
             if (key == "TERM") {
                 term_seen = true;
-                let term_env: nullable *i8 = c::getenv("TERM".data as *i8);
+                let term_env: nullable *i8 = stdlib::getenv("TERM".data as *i8);
                 if (term_env != null) {
                     let owned_val: String = String::from(value);
                     let rc: i32 = fnmatch::fnmatch(owned_val.view().data as *i8, term_env!, 0i32);
@@ -227,8 +240,8 @@ export fn run(start: usize, argc: usize) i32 = {
 
     if (print_colors) {
         for (let idx in 0usize..keys.len()) {
-            let k: String = keys.get(idx);
-            let v: String = values.get(idx);
+            let k: &String = keys.getref(idx);
+            let v: &String = values.getref(idx);
             c::printf("\033[%sm%s\t%s\033[0m\n", v.view().data as *i8, k.view().data as *i8, v.view().data as *i8);
         };
         return 0;
@@ -240,8 +253,8 @@ export fn run(start: usize, argc: usize) i32 = {
         if (used) {
             colors = colors + ":";
         };
-        let k: String = keys.get(idx);
-        let v: String = values.get(idx);
+        let k: &String = keys.getref(idx);
+        let v: &String = values.getref(idx);
         colors = colors + k.view() + "=" + v.view();
         used = true;
     };

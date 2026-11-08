@@ -31,8 +31,18 @@ fn num_digits(n: u64) i32 = {
     return width;
 };
 
+type ZovStatvfs = struct {
+    f_bsize: u64,
+    f_frsize: u64,
+    f_blocks: u64,
+    f_bfree: u64,
+    f_bavail: u64,
+    f_files: u64,
+    f_ffree: u64,
+};
+
 fn get_used_width(path: str) i32 = {
-    let mut v: platform_filesystem::ZovStatvfs = platform_filesystem::ZovStatvfs {
+    let mut v: ZovStatvfs = ZovStatvfs {
         f_bsize = 0u64,
         f_frsize = 0u64,
         f_blocks = 0u64,
@@ -41,7 +51,7 @@ fn get_used_width(path: str) i32 = {
         f_files = 0u64,
         f_ffree = 0u64,
     };
-    let rc: i32 = platform_filesystem::zov_statvfs(path.data as *i8, &mut v);
+    let rc: i32 = platform_filesystem::zov_statvfs(path.data as *i8, (&mut v) as *void);
     if (rc != 0i32) {
         return 5i32;
     };
@@ -69,7 +79,7 @@ fn df_one(
     block_used_width: i32,
     block_free_width: i32
 ) i32 = {
-    let mut v: platform_filesystem::ZovStatvfs = platform_filesystem::ZovStatvfs {
+    let mut v: ZovStatvfs = ZovStatvfs {
         f_bsize = 0u64,
         f_frsize = 0u64,
         f_blocks = 0u64,
@@ -78,7 +88,7 @@ fn df_one(
         f_files = 0u64,
         f_ffree = 0u64,
     };
-    let rc: i32 = platform_filesystem::zov_statvfs(path.data as *i8, &mut v);
+    let rc: i32 = platform_filesystem::zov_statvfs(path.data as *i8, (&mut v) as *void);
     if (rc != 0i32) {
         c::fprintf(c::stderr, "df: %s: %s\n", path.data as *i8, strc::strerror(rc));
         return 1;
@@ -146,11 +156,11 @@ export fn run(start: usize, argc: usize) i32 = {
     let mut human: bool = false;
     let mut si: bool = false;
 
-    let mut paths: vec::Vec<str> = vec::new<str>();
+    let mut paths: vec::Vec[str] = vec::new[str]();
 
     let mut i: usize = start;
     while (i < argc) {
-        let a: str = args::argat(i).view();
+        let a: str = args::argat(i);
         if (a == "--help") {
             print_help();
             return 0;
@@ -184,7 +194,7 @@ export fn run(start: usize, argc: usize) i32 = {
             i += 1usize;
             continue;
         };
-        if (a.len > 0usize && a[0usize] == 45u8 && a != "-") {
+        if (a.len > 0usize && a.data[0usize] == 45u8 && a != "-") {
             c::fprintf(c::stderr, "df: unrecognized option '%s'\nTry 'df --help' for more information.\n", a.data as *i8);
             return 1;
         };
@@ -225,7 +235,7 @@ export fn run(start: usize, argc: usize) i32 = {
             if (a_len > source_width) { source_width = a_len; };
             if (b_len > type_width) { type_width = b_len; };
 
-            let mut tv: platform_filesystem::ZovStatvfs = platform_filesystem::ZovStatvfs {
+            let mut tv: ZovStatvfs = ZovStatvfs {
                 f_bsize = 0u64,
                 f_frsize = 0u64,
                 f_blocks = 0u64,
@@ -234,7 +244,7 @@ export fn run(start: usize, argc: usize) i32 = {
                 f_files = 0u64,
                 f_ffree = 0u64,
             };
-            if (platform_filesystem::zov_statvfs(p.data as *i8, &mut tv) == 0i32) {
+            if (platform_filesystem::zov_statvfs(p.data as *i8, (&mut tv) as *void) == 0i32) {
                 let size: u64 = if_u64(tv.f_frsize != 0u64, tv.f_frsize, tv.f_bsize);
                 let tb: u64 = tv.f_blocks * size / 1024u64;
                 let tu: u64 = (tv.f_blocks - tv.f_bfree) * size / 1024u64;
@@ -249,7 +259,7 @@ export fn run(start: usize, argc: usize) i32 = {
         };
 
         if (inodes) {
-            let mut v: platform_filesystem::ZovStatvfs = platform_filesystem::ZovStatvfs {
+            let mut v: ZovStatvfs = ZovStatvfs {
                 f_bsize = 0u64,
                 f_frsize = 0u64,
                 f_blocks = 0u64,
@@ -258,7 +268,7 @@ export fn run(start: usize, argc: usize) i32 = {
                 f_files = 0u64,
                 f_ffree = 0u64,
             };
-            if (platform_filesystem::zov_statvfs(p.data as *i8, &mut v) == 0i32) {
+            if (platform_filesystem::zov_statvfs(p.data as *i8, (&mut v) as *void) == 0i32) {
                 let total: u64 = v.f_files;
                 let free_count: u64 = v.f_ffree;
                 let mut used_count: u64 = 0u64;
@@ -284,7 +294,7 @@ export fn run(start: usize, argc: usize) i32 = {
     } else {
         c::printf("Filesystem     1024-blocks");
         let limit: i32 = used_width - 3i32;
-        for (let s in 0i32..limit) {
+        for (let _s in 0i32..limit) {
             c::putchar(32i32);
         };
         c::puts("Used Available Capacity Mounted on");

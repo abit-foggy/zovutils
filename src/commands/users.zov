@@ -12,7 +12,7 @@ fn print_help() = {
 export fn run(start: usize, argc: usize) i32 = {
     let mut i: usize = start;
     while (i < argc) {
-        let a: str = args::argat(i).view();
+        let a: str = args::argat(i);
         if (a == "--help") {
             print_help();
             return 0;

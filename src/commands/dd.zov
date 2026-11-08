@@ -82,7 +82,7 @@ export fn run(start: usize, argc: usize) i32 = {
     let mut append: bool = false;
 
     for (let i in 0usize..count_args) {
-        let a: str = args::argat(start + i).view();
+        let a: str = args::argat(start + i);
         if (a == "--help") {
             print_help();
             return 0;
@@ -224,16 +224,16 @@ export fn run(start: usize, argc: usize) i32 = {
         };
     };
 
-    let buf_ptr: *void = stdlib::malloc(bs as usize);
+    let buf_ptr: nullable *void = stdlib::malloc(bs as usize);
     if (buf_ptr == null) {
         if (in_fp != c::stdin) { c::fclose(in_fp); };
         if (out_fp != c::stdout) { c::fclose(out_fp); };
         return 1;
     };
-    let buf: *u8 = buf_ptr as *u8;
+    let buf: *u8 = (buf_ptr!) as *u8;
 
     let mut records: u64 = 0u64;
-    let mut bytes: u64 = 0u64;
+    let mut _bytes: u64 = 0u64;
     let mut status: i32 = 0i32;
 
     while (records < count) {
@@ -246,7 +246,7 @@ export fn run(start: usize, argc: usize) i32 = {
             status = 1i32;
             break;
         };
-        bytes += n as u64;
+        _bytes += n as u64;
         records += 1u64;
         if (n < (bs as usize)) {
             break;

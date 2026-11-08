@@ -42,7 +42,7 @@ fn parse_i64(s: str, out: &mut i64) bool = {
 
 fn parse_or(start: usize, count: usize, pos: &mut usize, invalid: &mut bool) String = {
     let mut a: String = parse_and(start, count, pos, invalid);
-    while (*pos < count && args::argat(start + *pos).view() == "|") {
+    while (*pos < count && args::argat(start + *pos) == "|") {
         *pos += 1usize;
         let b: String = parse_and(start, count, pos, invalid);
         if (is_truth(a.view())) {
@@ -55,7 +55,7 @@ fn parse_or(start: usize, count: usize, pos: &mut usize, invalid: &mut bool) Str
 
 fn parse_and(start: usize, count: usize, pos: &mut usize, invalid: &mut bool) String = {
     let mut a: String = parse_cmp(start, count, pos, invalid);
-    while (*pos < count && args::argat(start + *pos).view() == "&") {
+    while (*pos < count && args::argat(start + *pos) == "&") {
         *pos += 1usize;
         let b: String = parse_cmp(start, count, pos, invalid);
         if (is_truth(a.view()) && is_truth(b.view())) {
@@ -69,7 +69,7 @@ fn parse_and(start: usize, count: usize, pos: &mut usize, invalid: &mut bool) St
 fn parse_cmp(start: usize, count: usize, pos: &mut usize, invalid: &mut bool) String = {
     let mut a: String = parse_add(start, count, pos, invalid);
     while (*pos < count) {
-        let op: str = args::argat(start + *pos).view();
+        let op: str = args::argat(start + *pos);
         if (op != "=" && op != "!=" && op != "<" && op != "<=" && op != ">" && op != ">=") {
             break;
         };
@@ -117,7 +117,7 @@ fn parse_cmp(start: usize, count: usize, pos: &mut usize, invalid: &mut bool) St
 fn parse_add(start: usize, count: usize, pos: &mut usize, invalid: &mut bool) String = {
     let mut a: String = parse_mul(start, count, pos, invalid);
     while (*pos < count) {
-        let op: str = args::argat(start + *pos).view();
+        let op: str = args::argat(start + *pos);
         if (op != "+" && op != "-") {
             break;
         };
@@ -143,7 +143,7 @@ fn parse_add(start: usize, count: usize, pos: &mut usize, invalid: &mut bool) St
 fn parse_mul(start: usize, count: usize, pos: &mut usize, invalid: &mut bool) String = {
     let mut a: String = parse_match(start, count, pos, invalid);
     while (*pos < count) {
-        let op: str = args::argat(start + *pos).view();
+        let op: str = args::argat(start + *pos);
         if (op != "*" && op != "/" && op != "%") {
             break;
         };
@@ -170,13 +170,13 @@ fn parse_mul(start: usize, count: usize, pos: &mut usize, invalid: &mut bool) St
 
 fn parse_match(start: usize, count: usize, pos: &mut usize, invalid: &mut bool) String = {
     let mut a: String = parse_primary(start, count, pos, invalid);
-    while (*pos < count && args::argat(start + *pos).view() == ":") {
+    while (*pos < count && args::argat(start + *pos) == ":") {
         *pos += 1usize;
         if (*pos >= count) {
             *invalid = true;
             return a;
         };
-        let pat: str = args::argat(start + *pos).view();
+        let pat: str = args::argat(start + *pos);
         *pos += 1usize;
 
         let mut matched_len: i64 = 0i64;
@@ -210,12 +210,12 @@ fn parse_primary(start: usize, count: usize, pos: &mut usize, invalid: &mut bool
         *invalid = true;
         return String::from("");
     };
-    let t: str = args::argat(start + *pos).view();
+    let t: str = args::argat(start + *pos);
     *pos += 1usize;
 
     if (t == "(") {
         let x: String = parse_or(start, count, pos, invalid);
-        if (*pos >= count || args::argat(start + *pos).view() != ")") {
+        if (*pos >= count || args::argat(start + *pos) != ")") {
             *invalid = true;
         } else {
             *pos += 1usize;
@@ -228,7 +228,7 @@ fn parse_primary(start: usize, count: usize, pos: &mut usize, invalid: &mut bool
             *invalid = true;
             return String::from("");
         };
-        let s: str = args::argat(start + *pos).view();
+        let s: str = args::argat(start + *pos);
         *pos += 1usize;
         if (t == "quote") {
             return String::from(s);
@@ -241,9 +241,9 @@ fn parse_primary(start: usize, count: usize, pos: &mut usize, invalid: &mut bool
             *invalid = true;
             return String::from("");
         };
-        let a: str = args::argat(start + *pos).view();
-        let b_str: str = args::argat(start + *pos + 1usize).view();
-        let c_str: str = args::argat(start + *pos + 2usize).view();
+        let a: str = args::argat(start + *pos);
+        let b_str: str = args::argat(start + *pos + 1usize);
+        let c_str: str = args::argat(start + *pos + 2usize);
         *pos += 3usize;
 
         let mut p: i64 = 0i64;
@@ -271,8 +271,8 @@ fn parse_primary(start: usize, count: usize, pos: &mut usize, invalid: &mut bool
             *invalid = true;
             return String::from("");
         };
-        let a: str = args::argat(start + *pos).view();
-        let b: str = args::argat(start + *pos + 1usize).view();
+        let a: str = args::argat(start + *pos);
+        let b: str = args::argat(start + *pos + 1usize);
         *pos += 2usize;
 
         let mut found_pos: i64 = 0i64;
@@ -295,8 +295,8 @@ fn parse_primary(start: usize, count: usize, pos: &mut usize, invalid: &mut bool
             *invalid = true;
             return String::from("");
         };
-        let a: str = args::argat(start + *pos).view();
-        let b: str = args::argat(start + *pos + 1usize).view();
+        let a: str = args::argat(start + *pos);
+        let b: str = args::argat(start + *pos + 1usize);
         *pos += 2usize;
 
         let mut matched_len: i64 = 0i64;
@@ -334,7 +334,7 @@ export fn run(start: usize, argc: usize) i32 = {
         return 2;
     };
     if (count == 1usize) {
-        let first: str = args::argat(start).view();
+        let first: str = args::argat(start);
         if (first == "--help") {
             c::fputs("Usage: expr EXPRESSION\n  --help     display this help and exit\n  --version  output version information and exit\n", c::stdout);
             return 0;
@@ -354,9 +354,9 @@ export fn run(start: usize, argc: usize) i32 = {
     if (invalid) {
         let mut err_tok: str = "";
         if (pos < count) {
-            err_tok = args::argat(start + pos).view();
+            err_tok = args::argat(start + pos);
         } else {
-            err_tok = args::argat(argc - 1usize).view();
+            err_tok = args::argat(argc - 1usize);
         };
         c::fprintf(c::stderr, "expr: syntax error: %s\n", err_tok.data as *i8);
         return 2;

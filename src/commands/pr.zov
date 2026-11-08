@@ -16,11 +16,11 @@ fn print_help() = {
 
 export fn run(start: usize, argc: usize) i32 = {
     let mut nohead: bool = false;
-    let mut files: vec::Vec<str> = vec::new<str>();
+    let mut files: vec::Vec[str] = vec::new[str]();
     let mut i: usize = start;
 
     while (i < argc) {
-        let a: str = args::argat(i).view();
+        let a: str = args::argat(i);
         if (a == "--help") {
             print_help();
             return 0;
@@ -41,15 +41,15 @@ export fn run(start: usize, argc: usize) i32 = {
             i = i + 1usize;
             continue;
         };
-        if (a.len > 1usize && a[0usize] == 45u8 && a[1usize] >= 48u8 && a[1usize] <= 57u8) {
+        if (a.len > 1usize && a.data[0usize] == 45u8 && a.data[1usize] >= 48u8 && a.data[1usize] <= 57u8) {
             i = i + 1usize;
             continue;
         };
-        if (a.len > 0usize && a[0usize] == 45u8 && a != "-") {
-            if (a.len > 1usize && a[1usize] == 45u8) {
+        if (a.len > 0usize && a.data[0usize] == 45u8 && a != "-") {
+            if (a.len > 1usize && a.data[1usize] == 45u8) {
                 c::fprintf(c::stderr, "pr: unrecognized option '%s'\nTry 'pr --help' for more information.\n", a.data as *i8);
             } else {
-                c::fprintf(c::stderr, "pr: invalid option -- '%c'\nTry 'pr --help' for more information.\n", a[1usize] as i32);
+                c::fprintf(c::stderr, "pr: invalid option -- '%c'\nTry 'pr --help' for more information.\n", a.data[1usize] as i32);
             };
             return 1;
         };

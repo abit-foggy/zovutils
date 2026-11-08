@@ -27,13 +27,13 @@ export fn run(start: usize, argc: usize) i32 = {
     let mut show_host: bool = true;
     let mut show_idle: bool = true;
     let mut omit_home: bool = false;
-    let mut omit_project: bool = false;
-    let mut omit_plan: bool = false;
-    let mut users: vec::Vec<str> = vec::new<str>();
+    let mut _omit_project: bool = false;
+    let mut _omit_plan: bool = false;
+    let mut users: vec::Vec[str] = vec::new[str]();
 
     let mut i: usize = start;
     while (i < argc) {
-        let a: str = args::argat(i).view();
+        let a: str = args::argat(i);
         if (a == "--help") {
             print_help();
             return 0;
@@ -46,11 +46,11 @@ export fn run(start: usize, argc: usize) i32 = {
             i = i + 1usize;
             continue;
         };
-        if (a.len > 1usize && a[0usize] == 45u8 && a[1usize] != 45u8) {
+        if (a.len > 1usize && a.data[0usize] == 45u8 && a.data[1usize] != 45u8) {
             let mut j: usize = 1usize;
             let mut valid: bool = true;
             while (j < a.len) {
-                let opt: u8 = a[j];
+                let opt: u8 = a.data[j];
                 if (opt == 115u8) { // 's'
                     shortfmt = true;
                 } else if (opt == 108u8) { // 'l'
@@ -69,9 +69,9 @@ export fn run(start: usize, argc: usize) i32 = {
                 } else if (opt == 98u8) { // 'b'
                     omit_home = true;
                 } else if (opt == 104u8) { // 'h'
-                    omit_project = true;
+                    _omit_project = true;
                 } else if (opt == 112u8) { // 'p'
-                    omit_plan = true;
+                    _omit_plan = true;
                 } else {
                     valid = false;
                     break;
@@ -83,7 +83,7 @@ export fn run(start: usize, argc: usize) i32 = {
                 continue;
             };
         };
-        if (a.len > 0usize && a[0usize] == 45u8) {
+        if (a.len > 0usize && a.data[0usize] == 45u8) {
             c::fprintf(c::stderr, "pinky: unrecognized option '%s'\nTry 'pinky --help' for more information.\n", a.data as *i8);
             return 1;
         };

@@ -115,7 +115,7 @@ fn du_walk(
                     continue;
                 };
                 let mut child_str: String = String::from(path);
-                if (path.len > 0usize && path[path.len - 1usize] != 47u8) {
+                if (path.len > 0usize && path.data[path.len - 1usize] != 47u8) {
                     child_str = child_str + "/";
                 };
                 child_str = child_str + ename;
@@ -150,11 +150,11 @@ export fn run(start: usize, argc: usize) i32 = {
     let mut depth_set: bool = false;
     let mut maxdepth_val: i64 = 0i64;
 
-    let mut paths: vec::Vec<str> = vec::new<str>();
+    let mut paths: vec::Vec[str] = vec::new[str]();
 
     let mut i: usize = start;
     while (i < argc) {
-        let a: str = args::argat(i).view();
+        let a: str = args::argat(i);
         if (a == "--help") {
             print_help();
             return 0;
@@ -193,7 +193,7 @@ export fn run(start: usize, argc: usize) i32 = {
                 return 1;
             };
             i += 1usize;
-            parse_i64_simple(args::argat(i).view(), &mut maxdepth_val);
+            parse_i64_simple(args::argat(i), &mut maxdepth_val);
             depth_set = true;
             i += 1usize;
             continue;
@@ -204,12 +204,12 @@ export fn run(start: usize, argc: usize) i32 = {
             i += 1usize;
             continue;
         };
-        if (a.len > 1usize && a[0usize] == 45u8 && a[1usize] != 45u8) {
+        if (a.len > 1usize && a.data[0usize] == 45u8 && a.data[1usize] != 45u8) {
             let mut j: usize = 1usize;
             let mut err: bool = false;
             let mut bad_opt: u8 = 0u8;
             while (j < a.len) {
-                let opt: u8 = a[j];
+                let opt: u8 = a.data[j];
                 if (opt == 97u8) { // 'a'
                     all = true;
                 } else if (opt == 115u8) { // 's'
@@ -234,7 +234,7 @@ export fn run(start: usize, argc: usize) i32 = {
             i += 1usize;
             continue;
         };
-        if (a.len > 1usize && a[0usize] == 45u8 && a[1usize] == 45u8) {
+        if (a.len > 1usize && a.data[0usize] == 45u8 && a.data[1usize] == 45u8) {
             c::fprintf(c::stderr, "du: unrecognized option '%s'\nTry 'du --help' for more information.\n", a.data as *i8);
             return 1;
         };

@@ -12,12 +12,12 @@ fn print_help() = {
 };
 
 export fn run(start: usize, argc: usize) i32 = {
-    let mut all: bool = false;
+    let mut _all: bool = false;
     let mut settings: bool = false;
     let mut i: usize = start;
 
     while (i < argc) {
-        let a: str = args::argat(i).view();
+        let a: str = args::argat(i);
         if (a == "--help") {
             print_help();
             return 0;
@@ -27,7 +27,7 @@ export fn run(start: usize, argc: usize) i32 = {
             return 0;
         };
         if (a == "-a" || a == "--all") {
-            all = true;
+            _all = true;
             i = i + 1usize;
             continue;
         };

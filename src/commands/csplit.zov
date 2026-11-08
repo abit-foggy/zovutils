@@ -1,7 +1,12 @@
 use std::env as args;
 use std::io;
+use std::vec as vec;
 use <stdio.h> as c;
-use <csplit_backend.h> as backend;
+use <stdlib.h> as stdlib;
+use <string.h> as strc;
+use <platform_errno.h> as platform_errno;
+use <platform_stat.h> as platform_stat;
+use <platform_regex.h> as platform_regex;
 use shared::io as stream;
 
 fn key(arg: str) str = {
@@ -20,14 +25,254 @@ fn decimal(value: str) usize = {
         let ch: u8 = value.data[i];
         if (ch < 48u8 || ch > 57u8) { return 0usize; };
         let d: usize = (ch - 48u8) as usize;
-        if (n > (18446744073709551615usize - d) / 10usize) { return 0usize; };
+        let max_usize: usize = 18446744073709551615usize;
+        if (n > (max_usize - d) / 10usize) { return 0usize; };
         n = n * 10usize + d;
     };
     return n;
 };
 
+fn parse_ulong(s: str, out: &mut u64) bool = {
+    if (s.len == 0usize) { return false; };
+    let mut n: u64 = 0u64;
+    for (let i in 0usize..s.len) {
+        let b: u8 = s.data[i];
+        if (b < 48u8 || b > 57u8) { return false; };
+        let d: u64 = (b - 48u8) as u64;
+        let max_u64: u64 = 18446744073709551615u64;
+        if (n > (max_u64 - d) / 10u64) { return false; };
+        n = n * 10u64 + d;
+    };
+    *out = n;
+    return true;
+};
+
 fn help() void = {
     io::print("Usage: csplit [OPTION]... FILE PATTERN...\nOutput pieces of FILE separated by PATTERN(s) to files 'xx00', 'xx01', ...,\nand output byte counts of each piece to standard output.\n\nRead standard input if FILE is -\n\nMandatory arguments to long options are mandatory for short options too.\n  -b, --suffix-format=FORMAT\n         use sprintf FORMAT instead of %02d\n  -f, --prefix=PREFIX\n         use PREFIX instead of 'xx'\n  -k, --keep-files\n         do not remove output files on errors\n      --suppress-matched\n         suppress the lines matching PATTERN\n  -n, --digits=DIGITS\n         use specified number of digits instead of 2\n  -s, --quiet, --silent\n         do not print counts of output file sizes\n  -z, --elide-empty-files\n         suppress empty output files\n      --help\n         display this help and exit\n      --version\n         output version information and exit\n\nEach PATTERN may be:\n  INTEGER            copy up to but not including specified line number\n  /REGEXP/[OFFSET]   copy up to but not including a matching line\n  %REGEXP%[OFFSET]   skip to, but not including a matching line\n  ") ; c::putchar(123); io::print("INTEGER"); c::putchar(125); io::print("          repeat the previous pattern specified number of times\n  "); c::putchar(123); c::putchar(42); c::putchar(125); io::print("                repeat the previous pattern as many times as possible\n\nA line OFFSET is an integer optionally preceded by '+' or '-'\n\nReport bugs to: bug-coreutils@gnu.org\nGNU coreutils home page: <https://www.gnu.org/software/coreutils/>\nGeneral help using GNU software: <https://www.gnu.org/gethelp/>\nReport any translation bugs to <https://translationproject.org/team/>\nFull documentation <https://www.gnu.org/software/coreutils/csplit>\nor available locally via: info '(coreutils) csplit invocation'\n");
+};
+
+type CsplitLineRecord = struct {
+    offset: usize,
+    length: usize,
+};
+
+type CsplitPattern = struct {
+    text: String,
+    expression: String,
+    delimiter: u8,
+    offset: i64,
+    numeric: bool,
+    number: u64,
+};
+
+fn parse_csplit_pattern(text: str, out: &mut CsplitPattern) bool = {
+    out.text = String::from(text);
+    out.numeric = false;
+    out.number = 0u64;
+    out.offset = 0i64;
+    out.delimiter = 0u8;
+    out.expression = String::from("");
+
+    if (text.len > 0usize && (text.data[0usize] == 47u8 || text.data[0usize] == 37u8)) {
+        let delim: u8 = text.data[0usize];
+        out.delimiter = delim;
+        let mut end: usize = 1usize;
+        while (end < text.len) {
+            if (text.data[end] == 92u8 && end + 1usize < text.len) {
+                end += 2usize;
+                continue;
+            };
+            if (text.data[end] == delim) {
+                break;
+            };
+            end += 1usize;
+        };
+        if (end >= text.len || text.data[end] != delim) {
+            return false;
+        };
+        out.expression = String::from(text[1usize..end]);
+        if (end + 1usize < text.len) {
+            let tail: str = text[end + 1usize..text.len];
+            let mut sign: i64 = 1i64;
+            let mut num_str: str = tail;
+            if (tail.data[0usize] == 43u8) {
+                num_str = tail[1usize..tail.len];
+            } else if (tail.data[0usize] == 45u8) {
+                sign = -1i64;
+                num_str = tail[1usize..tail.len];
+            };
+            let mut mag: u64 = 0u64;
+            if (!parse_ulong(num_str, &mut mag)) {
+                return false;
+            };
+            out.offset = sign * (mag as i64);
+        };
+        return true;
+    };
+
+    out.numeric = true;
+    return parse_ulong(text, &mut out.number);
+};
+
+fn load_input_and_lines(
+    path: str,
+    terminator: u8,
+    buf: &mut vec::Vec[u8],
+    lines: &mut vec::Vec[CsplitLineRecord]
+) bool = {
+    let mut fp: nullable *c::FILE = null;
+    if (path == "-") {
+        fp = c::stdin;
+    } else {
+        fp = c::fopen(path.data as *i8, "rb".data as *i8);
+    };
+    if (fp == null) {
+        let err: i32 = platform_errno::zov_errno_value();
+        c::fprintf(c::stderr, "csplit: %s: %s\n", path.data as *i8, strc::strerror(err));
+        return false;
+    };
+    let f: *c::FILE = fp!;
+    let mut chunk: [65536]u8;
+    let mut line_start: usize = 0usize;
+
+    while (true) {
+        let n: usize = c::fread((&mut chunk[0usize]) as *void, 1usize, 65536usize, f);
+        if (n == 0usize) {
+            break;
+        };
+        for (let j in 0usize..n) {
+            let ch: u8 = chunk[j];
+            buf.push(ch);
+            if (ch == terminator) {
+                let cur_len: usize = buf.len() - line_start;
+                lines.push(CsplitLineRecord {
+                    offset = line_start,
+                    length = cur_len,
+                });
+                line_start = buf.len();
+            };
+        };
+    };
+    let err: i32 = c::ferror(f);
+    if (path != "-") {
+        c::fclose(f);
+    };
+    if (err != 0i32) {
+        c::fprintf(c::stderr, "csplit: read error: %s\n", path.data as *i8);
+        return false;
+    };
+    if (buf.len() > line_start) {
+        lines.push(CsplitLineRecord {
+            offset = line_start,
+            length = buf.len() - line_start,
+        });
+    };
+    return true;
+};
+
+fn find_regex_match(
+    pat: &CsplitPattern,
+    bytes: *u8,
+    lines: &vec::Vec[CsplitLineRecord],
+    start: usize,
+    found_idx: &mut usize
+) i32 = {
+    for (let i in start..lines.len()) {
+        let rec: CsplitLineRecord = lines.get(i);
+        let mut n: usize = rec.length;
+        if (n > 0usize && bytes[rec.offset + n - 1usize] == 10u8) {
+            n -= 1usize;
+        };
+        let line_ptr: *i8 = (&bytes[rec.offset]) as *i8;
+        let rc: i32 = platform_regex::zov_regex_line_match(
+            pat.expression.view().data as *i8,
+            line_ptr,
+            n
+        );
+        if (rc < 0i32) {
+            return rc;
+        };
+        if (rc == 1i32) {
+            *found_idx = i;
+            return 1i32;
+        };
+    };
+    return 0i32;
+};
+
+fn write_csplit_piece(
+    prefix: str,
+    suffix_format: str,
+    digits: usize,
+    index: usize,
+    bytes: *u8,
+    lines: &vec::Vec[CsplitLineRecord],
+    first: usize,
+    end: usize,
+    suppressed: nullable *u8,
+    elide_empty: bool,
+    silent: bool,
+    created_paths: &mut vec::Vec[String]
+) bool = {
+    let mut length: usize = 0usize;
+    for (let i in first..end) {
+        if (suppressed == null || suppressed![i] == 0u8) {
+            length += lines.get(i).length;
+        };
+    };
+    if (length == 0usize && elide_empty) {
+        return true;
+    };
+
+    let mut suffix_buf: [256]u8;
+    let ok_suffix: i32 = platform_regex::zov_csplit_format_suffix(
+        suffix_format.data as *i8,
+        digits as u32,
+        index,
+        (&mut suffix_buf[0usize]) as *i8,
+        256usize
+    );
+    if (ok_suffix == 0i32) {
+        return false;
+    };
+
+    let suffix_len: usize = strc::strlen((&suffix_buf[0usize]) as *i8);
+    let suffix_str: str = zov_str_from_raw((&suffix_buf[0usize]) as *u8, suffix_len);
+    let path_str: String = String::from(prefix) + suffix_str;
+    let path: str = path_str.view();
+
+    let fp: nullable *c::FILE = c::fopen(path.data as *i8, "wb".data as *i8);
+    if (fp == null) {
+        let err: i32 = platform_errno::zov_errno_value();
+        c::fprintf(c::stderr, "csplit: %s: %s\n", path.data as *i8, strc::strerror(err));
+        return false;
+    };
+    let f: *c::FILE = fp!;
+    let mut ok: bool = true;
+    for (let i in first..end) {
+        if (suppressed == null || suppressed![i] == 0u8) {
+            let rec: CsplitLineRecord = lines.get(i);
+            if (rec.length != 0usize) {
+                let w: usize = c::fwrite((&bytes[rec.offset]) as *void, 1usize, rec.length, f);
+                if (w != rec.length) {
+                    ok = false;
+                    break;
+                };
+            };
+        };
+    };
+    if (c::fclose(f) != 0i32) {
+        ok = false;
+    };
+    created_paths.push(String::from(path));
+    if (!ok) {
+        c::fprintf(c::stderr, "csplit: write error\n");
+        return false;
+    };
+    if (!silent) {
+        c::printf("%zu\n", length);
+    };
+    return true;
 };
 
 export fn run(start: usize, argc: usize) i32 = {
@@ -92,10 +337,262 @@ export fn run(start: usize, argc: usize) i32 = {
         operands[count] = arg; count += 1usize; i += 1usize;
     };
     if (count < 2usize) { io::eprintln("csplit: missing operand\nTry 'csplit --help' for more information."); return 1; };
-    let mut patterns: [256]*i8;
-    for (let pi in 1usize..count) { patterns[pi - 1usize] = operands[pi].data as *i8; };
-    return backend::zov_csplit_run(operands[0usize].data as *i8, prefix_value.data as *i8,
-        suffix_format.data as *i8, digits as u32,
-        keep_files as i32, silent as i32, suppress_matched as i32, elide_empty as i32,
-        terminator, ((&patterns[0usize]) as *void), count - 1usize);
+
+    let input_path: str = operands[0usize];
+    let mut buf: vec::Vec[u8] = vec::new[u8]();
+    let mut lines: vec::Vec[CsplitLineRecord] = vec::new[CsplitLineRecord]();
+    if (!load_input_and_lines(input_path, terminator, &mut buf, &mut lines)) {
+        return 1;
+    };
+
+    let line_count: usize = lines.len();
+    let bytes_ptr: *u8 = buf.data!;
+
+    let mut suppressed: nullable *u8 = null;
+    if (line_count > 0usize) {
+        suppressed = stdlib::calloc(line_count, 1usize) as nullable *u8;
+        if (suppressed == null) {
+            c::fprintf(c::stderr, "csplit: memory exhausted\n");
+            return 1;
+        };
+    };
+
+    let mut created_paths: vec::Vec[String] = vec::new[String]();
+    let mut cursor: usize = 0usize;
+    let mut output_index: usize = 0usize;
+    let mut previous_number: i64 = 0i64;
+    let mut status: i32 = 0i32;
+
+    let mut previous: CsplitPattern = CsplitPattern {
+        text = String::from(""),
+        expression = String::from(""),
+        delimiter = 0u8,
+        offset = 0i64,
+        numeric = false,
+        number = 0u64,
+    };
+    let mut have_previous: bool = false;
+    let mut previous_search_start: usize = 0usize;
+    let mut previous_has_match: bool = false;
+    let mut next_pattern_search_start: usize = 0usize;
+    let mut use_next_pattern_search: bool = false;
+
+    let pattern_count: usize = count - 1usize;
+
+    for (let pi in 0usize..pattern_count) {
+        if (status != 0i32) { break; };
+        let arg: str = operands[pi + 1usize];
+
+        if (arg.len > 0usize && arg.data[0usize] == 123u8) { // '{'
+            let len: usize = arg.len;
+            let star: bool = len == 3usize && arg.data[1usize] == 42u8 && arg.data[2usize] == 125u8;
+            if (!have_previous || len < 3usize || arg.data[len - 1usize] != 125u8) {
+                c::fprintf(c::stderr, "csplit: invalid repeat count: '%s'\n", arg.data as *i8);
+                status = 1i32;
+                break;
+            };
+            let mut repeat: u64 = 0u64;
+            if (!star) {
+                let inner: str = arg[1usize..len - 1usize];
+                if (!parse_ulong(inner, &mut repeat)) {
+                    c::fprintf(c::stderr, "csplit: invalid repeat count: '%s'\n", arg.data as *i8);
+                    status = 1i32;
+                    break;
+                };
+            };
+            if (!star && repeat == 0u64) {
+                continue;
+            };
+
+            let mut done: u64 = 0u64;
+            let mut search_start: usize = cursor;
+            if (previous_has_match) {
+                search_start = previous_search_start;
+            };
+
+            while (star || done < repeat) {
+                let mut boundary: usize = cursor;
+                let mut matched: i64 = -1i64;
+
+                if (previous.numeric) {
+                    c::fprintf(c::stderr, "csplit: '%s': line number out of range on repetition 1\n", previous.text.view().data as *i8);
+                    status = 1i32;
+                    break;
+                } else {
+                    let mut found: usize = 0usize;
+                    let m_res: i32 = find_regex_match(&previous, bytes_ptr, &lines, search_start, &mut found);
+                    if (m_res == -2i32) {
+                        c::fprintf(c::stderr, "csplit: invalid regular expression: '%s'\n", previous.text.view().data as *i8);
+                        status = 1i32;
+                        break;
+                    };
+                    if (m_res < 0i32) {
+                        c::fprintf(c::stderr, "csplit: memory exhausted\n");
+                        status = 1i32;
+                        break;
+                    };
+                    if (m_res == 0i32) {
+                        if (star) {
+                            break;
+                        };
+                        let init_created: usize = created_paths.len();
+                        if (!write_csplit_piece(prefix_value, suffix_format, digits, output_index, bytes_ptr, &lines, cursor, line_count, suppressed, elide_empty, silent, &mut created_paths)) {
+                            status = 1i32;
+                            break;
+                        };
+                        if (created_paths.len() > init_created) {
+                            output_index += 1usize;
+                        };
+                        c::fprintf(c::stderr, "csplit: '%s': match not found on repetition %lu\n", previous.text.view().data as *i8, done + 1u64);
+                        status = 1i32;
+                        break;
+                    };
+
+                    let b_pos: i64 = (found as i64) + previous.offset;
+                    if (b_pos < 0i64 || (b_pos as usize) > line_count) {
+                        c::fprintf(c::stderr, "csplit: '%s': line number out of range\n", previous.text.view().data as *i8);
+                        status = 1i32;
+                        break;
+                    };
+                    boundary = b_pos as usize;
+                    matched = found as i64;
+                    search_start = found + 1usize;
+                    previous_search_start = search_start;
+                    previous_has_match = true;
+
+                    if (previous.delimiter == 37u8) { // '%'
+                        cursor = boundary;
+                        next_pattern_search_start = search_start;
+                        use_next_pattern_search = true;
+                        done += 1u64;
+                        continue;
+                    };
+                };
+
+                if (suppress_matched && matched >= 0i64) {
+                    suppressed![matched as usize] = 1u8;
+                };
+
+                let init_created: usize = created_paths.len();
+                if (!write_csplit_piece(prefix_value, suffix_format, digits, output_index, bytes_ptr, &lines, cursor, boundary, suppressed, elide_empty, silent, &mut created_paths)) {
+                    status = 1i32;
+                    break;
+                };
+                if (created_paths.len() > init_created) {
+                    output_index += 1usize;
+                };
+                cursor = boundary;
+                done += 1u64;
+            };
+
+            if (status != 0i32) {
+                break;
+            };
+            continue;
+        };
+
+        if (!parse_csplit_pattern(arg, &mut previous)) {
+            c::fprintf(c::stderr, "csplit: invalid pattern: '%s'\n", arg.data as *i8);
+            status = 1i32;
+            break;
+        };
+        have_previous = true;
+
+        let mut boundary: usize = cursor;
+        let mut matched: i64 = -1i64;
+
+        if (previous.numeric) {
+            let num: u64 = previous.number;
+            if (num == 0u64 || (num as usize) > line_count + 1usize) {
+                c::fprintf(c::stderr, "csplit: '%s': line number out of range\n", arg.data as *i8);
+                status = 1i32;
+                break;
+            };
+            if ((num as i64) < previous_number) {
+                c::fprintf(c::stderr, "csplit: line number '%s' is smaller than preceding line number, %ld\n", arg.data as *i8, previous_number);
+                status = 1i32;
+                break;
+            };
+            previous_number = num as i64;
+            boundary = (num as usize) - 1usize;
+        } else {
+            let mut search_from: usize = cursor;
+            if (use_next_pattern_search) {
+                search_from = next_pattern_search_start;
+            };
+            use_next_pattern_search = false;
+
+            let mut found: usize = 0usize;
+            let m_res: i32 = find_regex_match(&previous, bytes_ptr, &lines, search_from, &mut found);
+            if (m_res == -2i32) {
+                c::fprintf(c::stderr, "csplit: invalid regular expression: '%s'\n", arg.data as *i8);
+                status = 1i32;
+                break;
+            };
+            if (m_res < 0i32) {
+                c::fprintf(c::stderr, "csplit: memory exhausted\n");
+                status = 1i32;
+                break;
+            };
+            if (m_res == 0i32) {
+                c::fprintf(c::stderr, "csplit: '%s': match not found\n", arg.data as *i8);
+                status = 1i32;
+                break;
+            };
+            let b_pos: i64 = (found as i64) + previous.offset;
+            if (b_pos < 0i64 || (b_pos as usize) > line_count) {
+                c::fprintf(c::stderr, "csplit: '%s': line number out of range\n", arg.data as *i8);
+                status = 1i32;
+                break;
+            };
+            boundary = b_pos as usize;
+            matched = found as i64;
+            previous_search_start = found + 1usize;
+            previous_has_match = true;
+
+            if (previous.delimiter == 37u8) { // '%'
+                cursor = boundary;
+                next_pattern_search_start = found + 1usize;
+                use_next_pattern_search = true;
+                continue;
+            };
+        };
+
+        if (suppress_matched && matched >= 0i64) {
+            suppressed![matched as usize] = 1u8;
+        };
+
+        let init_created: usize = created_paths.len();
+        if (!write_csplit_piece(prefix_value, suffix_format, digits, output_index, bytes_ptr, &lines, cursor, boundary, suppressed, elide_empty, silent, &mut created_paths)) {
+            status = 1i32;
+            break;
+        };
+        if (created_paths.len() > init_created) {
+            output_index += 1usize;
+        };
+        cursor = boundary;
+    };
+
+    if (status == 0i32) {
+        if (!write_csplit_piece(prefix_value, suffix_format, digits, output_index, bytes_ptr, &lines, cursor, line_count, suppressed, elide_empty, silent, &mut created_paths)) {
+            status = 1i32;
+        };
+    };
+
+    if (status != 0i32 && !keep_files) {
+        for (let idx in 0usize..created_paths.len()) {
+            let cp: &String = created_paths.getref(idx);
+            platform_stat::zov_unlink(cp.view().data as *i8);
+        };
+    };
+
+    if (suppressed != null) {
+        stdlib::free(suppressed! as *void);
+    };
+
+    if (c::fflush(c::stdout) != 0i32) {
+        status = 1i32;
+    };
+
+    return status;
 };
