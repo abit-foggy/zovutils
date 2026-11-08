@@ -1,7 +1,12 @@
 use std::env as args;
 use std::io;
+use std::mem as mem;
+use std::vec as vec;
 use <stdio.h> as c;
-use <tac_backend.h> as backend;
+use <string.h> as strc;
+use <platform_errno.h> as platform_errno;
+use <platform_regex.h> as platform_regex;
+use shared::io as stream;
 
 fn key(arg: str) str = {
     for (let i in 0usize..arg.len) { if (arg.data[i] == 61u8) { return arg[0usize..i]; }; };
@@ -23,6 +28,192 @@ fn help() void = {
     io::print("Report bugs to: bug-coreutils@gnu.org\nGNU coreutils home page: <https://www.gnu.org/software/coreutils/>\n");
     io::print("General help using GNU software: <https://www.gnu.org/gethelp/>\nReport any translation bugs to <https://translationproject.org/team/>\n");
     io::print("Full documentation <https://www.gnu.org/software/coreutils/tac>\nor available locally via: info '(coreutils) tac invocation'\n");
+};
+
+type Span = struct {
+    start: usize,
+    length: usize,
+};
+
+type TacBuffer = struct {
+    data: *u8,
+    len: usize,
+    cap: usize,
+};
+
+fn buffer_init() TacBuffer = {
+    return TacBuffer { data = mem::alloc[u8](4096usize), len = 0usize, cap = 4096usize };
+};
+
+fn buffer_read_stream(fp: *c::FILE, b: &mut TacBuffer) bool = {
+    let chunk: [16384]u8;
+    while (true) {
+        let n: usize = stream::readbytes(fp, ((&chunk[0usize]) as *u8), 16384usize);
+        if (n == 0usize) { break; };
+        while (b.len + n > b.cap) {
+            let new_cap: usize = b.cap * 2usize;
+            b.data = mem::reallocbuf[u8](b.data, new_cap);
+            b.cap = new_cap;
+        };
+        for (let i in 0usize..n) {
+            b.data[b.len + i] = chunk[i];
+        };
+        b.len += n;
+    };
+    return !stream::readerror(fp);
+};
+
+fn buffer_free(b: &mut TacBuffer) void = {
+    if (b.cap > 0usize) {
+        mem::freeptr[u8](b.data);
+        b.cap = 0usize;
+        b.len = 0usize;
+    };
+};
+
+fn find_plain(buf: *u8, length: usize, start: usize, sep: str) usize = {
+    if (sep.len == 0usize || start > length || sep.len > length - start) { return length; };
+    let max_i: usize = length - sep.len;
+    let mut i: usize = start;
+    while (i <= max_i) {
+        let mut matched: bool = true;
+        for (let j in 0usize..sep.len) {
+            if (buf[i + j] != sep.data[j]) {
+                matched = false;
+                break;
+            };
+        };
+        if (matched) { return i; };
+        i += 1usize;
+    };
+    return length;
+};
+
+fn write_plain_reversed(fp: *c::FILE, buf: *u8, length: usize, sep: str, before: bool) bool = {
+    let mut spans = vec::new[Span]();
+    let mut cursor: usize = 0usize;
+    let mut segment_start: usize = 0usize;
+    while (cursor < length) {
+        let match_start: usize = find_plain(buf, length, cursor, sep);
+        if (match_start == length) { break; };
+        let match_end: usize = match_start + sep.len;
+        if (before) {
+            spans.push(Span { start = segment_start, length = match_start - segment_start });
+            segment_start = match_start;
+        } else {
+            spans.push(Span { start = segment_start, length = match_end - segment_start });
+            segment_start = match_end;
+        };
+        cursor = match_end;
+    };
+    if (segment_start < length || spans.len() == 0usize) {
+        spans.push(Span { start = segment_start, length = length - segment_start });
+    };
+    let mut span_idx: usize = spans.len();
+    while (span_idx > 0usize) {
+        span_idx -= 1usize;
+        let s: Span = spans.get(span_idx);
+        if (s.length > 0usize) {
+            if (!stream::writebytes(fp, ((&buf[s.start]) as *u8), s.length)) {
+                return false;
+            };
+        };
+    };
+    return !stream::outputfailed();
+};
+
+fn write_regex_reversed(fp: *c::FILE, buf: *u8, length: usize, before: bool, rx: *void) bool = {
+    if (length == 0usize) { return true; };
+    let candidate: *u8 = mem::alloc[u8](length + 1usize);
+    let max_span_limit: usize = platform_regex::zov_regex_max_span(rx);
+    let mut edge: usize = length;
+    let mut end: usize = length;
+    while (end > 0usize) {
+        let mut match_start: usize = end;
+        let mut match_end: usize = end;
+        let mut max_length: usize = max_span_limit;
+        if (end < max_length) { max_length = end; };
+        let mut span: usize = 1usize;
+        while (span <= max_length) {
+            let start: usize = end - span;
+            for (let i in 0usize..span) {
+                let byte: u8 = buf[start + i];
+                if (byte == 0u8) { candidate[i] = 1u8; }
+                else { candidate[i] = byte; };
+            };
+            candidate[span] = 0u8;
+            if (platform_regex::zov_regex_match_exact(rx, candidate as *i8, span) != 0i32) {
+                match_start = start;
+                match_end = end;
+                break;
+            };
+            span += 1usize;
+        };
+        if (match_start == end) {
+            end -= 1usize;
+            continue;
+        };
+        let mut seg_start: usize = match_end;
+        if (before) { seg_start = match_start; };
+        let seg_stop: usize = edge;
+        if (seg_stop > seg_start) {
+            let seg_len: usize = seg_stop - seg_start;
+            if (!stream::writebytes(fp, ((&buf[seg_start]) as *u8), seg_len)) {
+                mem::freeptr[u8](candidate);
+                return false;
+            };
+        };
+        if (before) { edge = match_start; } else { edge = match_end; };
+        end = match_start;
+    };
+    if (edge > 0usize) {
+        if (!stream::writebytes(fp, buf, edge)) {
+            mem::freeptr[u8](candidate);
+            return false;
+        };
+    };
+    mem::freeptr[u8](candidate);
+    return !stream::outputfailed();
+};
+
+fn process_file(path: str, separator: str, before: bool, use_regex: bool, rx: nullable *void) i32 = {
+    let is_stdin: bool = path == "-";
+    let mut fp: *c::FILE = c::stdin;
+    if (!is_stdin) {
+        let open_res: nullable *c::FILE = stream::openread(path);
+        match (open_res) {
+            case let opened: *c::FILE => { fp = opened; },
+            case null => {
+                let err: i32 = platform_errno::zov_errno_value();
+                c::fprintf(c::stderr, "tac: failed to open '%s' for reading: %s\n", path.data as *i8, strc::strerror(err));
+                return 1;
+            },
+        };
+    };
+
+    let mut buf: TacBuffer = buffer_init();
+    let read_ok: bool = buffer_read_stream(fp, &mut buf);
+    if (!is_stdin) {
+        stream::closefile(fp);
+    };
+    if (!read_ok) {
+        c::fprintf(c::stderr, "tac: read error: %s\n", path.data as *i8);
+        buffer_free(&mut buf);
+        return 1;
+    };
+
+    let mut write_ok: bool = false;
+    if (use_regex) {
+        write_ok = write_regex_reversed(c::stdout, buf.data, buf.len, before, rx!);
+    } else {
+        write_ok = write_plain_reversed(c::stdout, buf.data, buf.len, separator, before);
+    };
+    buffer_free(&mut buf);
+    if (!write_ok) {
+        c::fprintf(c::stderr, "tac: write error\n");
+        return 1;
+    };
+    return 0;
 };
 
 export fn run(start: usize, argc: usize) i32 = {
@@ -81,25 +272,26 @@ export fn run(start: usize, argc: usize) i32 = {
         if (operand_count >= 256usize) { io::eprintln("tac: too many operands"); return 1; };
         operands[operand_count] = arg; operand_count += 1usize; i += 1usize;
     };
+
     let mut regex: nullable *void = null;
     let mut regex_error: [256]u8;
     if (use_regex) {
         if (separator.len == 0usize) { io::eprintln("tac: separator cannot be empty"); return 1; };
-        regex = backend::zov_tac_regex_init(separator.data as *i8, (&regex_error[0usize]) as *i8, 256usize);
+        regex = platform_regex::zov_regex_compile(separator.data as *i8, 1i32, 1i32, (&regex_error[0usize]) as *i8, 256usize);
         if (regex == null) { io::eprintln("tac: Invalid regular expression"); return 1; };
     };
+
     let mut status: i32 = 0i32;
     if (operand_count == 0usize) {
-        if (use_regex) { status = backend::zov_tac_file_regex("-", separator.data as *u8, separator.len, before as i32, regex!); }
-        else { status = backend::zov_tac_file_plain("-", separator.data as *u8, separator.len, before as i32); };
+        status = process_file("-", separator, before, use_regex, regex);
     } else {
         for (let fi in 0usize..operand_count) {
-            let mut code: i32 = 0i32;
-            if (use_regex) { code = backend::zov_tac_file_regex(operands[fi].data as *i8, separator.data as *u8, separator.len, before as i32, regex!); }
-            else { code = backend::zov_tac_file_plain(operands[fi].data as *i8, separator.data as *u8, separator.len, before as i32); };
+            let code: i32 = process_file(operands[fi], separator, before, use_regex, regex);
             if (code != 0i32) { status = 1i32; };
         };
     };
-    if (use_regex) { backend::zov_tac_regex_free(regex!); };
+    if (use_regex) {
+        platform_regex::zov_regex_free(regex!);
+    };
     return status;
 };
