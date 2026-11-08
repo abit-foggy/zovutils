@@ -1,9 +1,88 @@
 use std::env as args;
-use <nohup_timeout_backend.h> as backend;
+use std::io;
+use <stdio.h> as c;
+use <string.h> as strc;
+use <stdlib.h> as stdlib;
+use <platform_errno.h> as platform_errno;
+use <platform_process.h> as platform_process;
+
 export fn run(start: usize, argc: usize) i32 = {
-    let count: usize = argc - start;
-    if (count > 4096usize) { return 1; };
-    let mut argv: [4096]*i8;
-    for (let i in 0usize..count) { argv[i] = args::argat(start + i).data as *i8; };
-    return backend::zov_nohup_run(count as i32, (&argv[0usize]) as **i8);
+    let mut i: usize = start;
+    while (i < argc) {
+        let a: str = args::argat(i);
+        if (a == "--help") {
+            io::println("Usage: nohup COMMAND [ARG]...\n" +
+                        "Run COMMAND, ignoring hangup signals.\n" +
+                        "      --help     display this help and exit\n" +
+                        "      --version  output version information and exit");
+            return 0i32;
+        };
+        if (a == "--version") {
+            io::println("nohup (zovutils) 0.10.61");
+            return 0i32;
+        };
+        if (a.len > 0usize && a.data[0usize] == 45u8 && a != "-") {
+            c::fprintf(c::stderr, "nohup: unrecognized option '%s'\nTry 'nohup --help' for more information.\n\0".data as *i8, a.data as *i8);
+            return 125i32;
+        };
+        break;
+    };
+
+    if (i >= argc) {
+        c::fputs("nohup: missing operand\nTry 'nohup --help' for more information.\n\0".data as *i8, c::stderr);
+        return 125i32;
+    };
+
+    platform_process::zov_nohup_ignore_signals();
+
+    if (platform_process::zov_isatty(0i32) != 0i32) {
+        let null_fd: i32 = platform_process::zov_open_devnull_ro();
+        if (null_fd >= 0i32) {
+            platform_process::zov_dup2(null_fd, 0i32);
+            platform_process::zov_close(null_fd);
+        };
+    };
+
+    if (platform_process::zov_isatty(1i32) != 0i32) {
+        let mut fd: i32 = platform_process::zov_open_nohup_out("nohup.out\0".data as *i8);
+        let mut out_name: String = String::from("nohup.out");
+        if (fd < 0i32) {
+            let home: nullable *i8 = stdlib::getenv("HOME\0".data as *i8);
+            if (home != null) {
+                let home_str: str = zov_str_from_raw(home! as *u8, strc::strlen(home!));
+                out_name = home_str + "/nohup.out";
+                fd = platform_process::zov_open_nohup_out(out_name.view().data as *i8);
+            };
+        };
+        if (fd < 0i32) {
+            c::fprintf(c::stderr, "nohup: failed to open 'nohup.out': %s\n\0".data as *i8, strc::strerror(platform_errno::zov_errno_value()));
+            return 125i32;
+        };
+        platform_process::zov_dup2(fd, 1i32);
+        if (platform_process::zov_isatty(2i32) != 0i32) {
+            platform_process::zov_dup2(fd, 2i32);
+        };
+        platform_process::zov_close(fd);
+        c::fprintf(c::stderr, "nohup: appending output to '%s'\n\0".data as *i8, out_name.view().data as *i8);
+    } else {
+        if (platform_process::zov_isatty(2i32) != 0i32) {
+            platform_process::zov_dup2(1i32, 2i32);
+        };
+    };
+
+    let cmd_count: usize = argc - i;
+    if (cmd_count > 4096usize) { return 125i32; };
+    let mut argv: [4097]*i8;
+    for (let j in 0usize..cmd_count) {
+        argv[j] = args::argat(i + j).data as *i8;
+    };
+    argv[cmd_count] = 0 as *i8;
+    let prog: str = args::argat(i);
+    platform_process::zov_exec_command(prog.data as *i8, (&mut argv[0usize]) as *void);
+    let err: i32 = platform_errno::zov_errno_value();
+    c::fprintf(c::stderr, "nohup: failed to run command '%s': %s\n\0".data as *i8, prog.data as *i8, strc::strerror(err));
+    if (platform_errno::zov_errno_is_enoent(err) != 0i32) {
+        return 127i32;
+    };
+    return 126i32;
 };

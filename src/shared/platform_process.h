@@ -11,6 +11,8 @@
 #include <unistd.h>
 #include <time.h>
 #include <sys/resource.h>
+#include <sys/wait.h>
+#include <fcntl.h>
 
 #ifndef NSIG
 #define NSIG 32
@@ -380,4 +382,111 @@ static inline uint64_t zov_random_seed(void) {
     return seed != 0 ? seed : 1;
 }
 
+static inline void zov_nohup_ignore_signals(void) {
+    signal(SIGHUP, SIG_IGN);
+    signal(SIGQUIT, SIG_IGN);
+}
+
+static inline int zov_isatty(int fd) {
+    return isatty(fd);
+}
+
+static inline int zov_open_devnull_ro(void) {
+    return open("/dev/null", O_RDONLY);
+}
+
+static inline int zov_open_nohup_out(const char *path) {
+    return open(path, O_WRONLY | O_CREAT | O_APPEND, 0600);
+}
+
+static inline int zov_dup2(int oldfd, int newfd) {
+    return dup2(oldfd, newfd);
+}
+
+static inline int zov_close(int fd) {
+    return close(fd);
+}
+
+static inline int zov_fork(void) {
+    return (int)fork();
+}
+
+static inline int zov_setpgid(int pid, int pgid) {
+    return setpgid((pid_t)pid, (pid_t)pgid);
+}
+
+static inline int zov_waitpid_nohang(int pid, int *status) {
+    return (int)waitpid((pid_t)pid, status, WNOHANG);
+}
+
+static inline int zov_waitpid_blocking(int pid, int *status) {
+    return (int)waitpid((pid_t)pid, status, 0);
+}
+
+static inline int zov_kill(int pid, int sig) {
+    return kill((pid_t)pid, sig);
+}
+
+static inline int zov_wait_status(int st) {
+    if (WIFEXITED(st)) return WEXITSTATUS(st);
+    if (WIFSIGNALED(st)) return 128 + WTERMSIG(st);
+    return 125;
+}
+
+static inline void zov_timeout_sleep_step(void) {
+    struct timespec pause = {0, 10000000};
+    while (nanosleep(&pause, &pause) < 0 && errno == EINTR) {}
+}
+
+static inline int zov_timeout_parse_signal(const char *s) {
+    if (!strcmp(s, "TERM") || !strcmp(s, "SIGTERM")) return SIGTERM;
+    if (!strcmp(s, "KILL") || !strcmp(s, "SIGKILL")) return SIGKILL;
+    if (!strcmp(s, "INT") || !strcmp(s, "SIGINT")) return SIGINT;
+    if (!strcmp(s, "HUP") || !strcmp(s, "SIGHUP")) return SIGHUP;
+    if (!strcmp(s, "QUIT") || !strcmp(s, "SIGQUIT")) return SIGQUIT;
+    if (!strcmp(s, "ALRM") || !strcmp(s, "SIGALRM")) return SIGALRM;
+    if (!strcmp(s, "USR1") || !strcmp(s, "SIGUSR1")) return SIGUSR1;
+    if (!strcmp(s, "USR2") || !strcmp(s, "SIGUSR2")) return SIGUSR2;
+    char *e;
+    long n = strtol(s, &e, 10);
+    return *e || n <= 0 || n >= NSIG ? -1 : (int)n;
+}
+
+static inline const char *zov_timeout_signal_name(int sig) {
+    switch (sig) {
+        case SIGTERM: return "TERM";
+        case SIGKILL: return "KILL";
+        case SIGINT: return "INT";
+        case SIGHUP: return "HUP";
+        case SIGQUIT: return "QUIT";
+        case SIGALRM: return "ALRM";
+        case SIGUSR1: return "USR1";
+        case SIGUSR2: return "USR2";
+        default: return "signal";
+    }
+}
+
+static inline int zov_timeout_duration(const char *value, double *seconds) {
+    char *end = NULL;
+    errno = 0;
+    double amount = strtod(value, &end);
+    if (errno || end == value || amount < 0) return 0;
+    double scale = 1.0;
+    if (*end == 's') end++;
+    else if (*end == 'm') { scale = 60.0; end++; }
+    else if (*end == 'h') { scale = 3600.0; end++; }
+    else if (*end == 'd') { scale = 86400.0; end++; }
+    if (*end || amount * scale > 86400.0 * 365.0) return 0;
+    *seconds = amount * scale;
+    return 1;
+}
+
+static inline int zov_sigterm_val(void) { return SIGTERM; }
+static inline int zov_sigkill_val(void) { return SIGKILL; }
+
+static inline void zov_exit_process(int status) {
+    _exit(status);
+}
+
 #endif
+

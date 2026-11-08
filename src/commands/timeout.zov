@@ -1,9 +1,226 @@
 use std::env as args;
-use <nohup_timeout_backend.h> as backend;
+use std::io;
+use <stdio.h> as c;
+use <string.h> as strc;
+use <platform_errno.h> as platform_errno;
+use <platform_process.h> as platform_process;
+
 export fn run(start: usize, argc: usize) i32 = {
-    let count: usize = argc - start;
-    if (count > 4096usize) { return 1; };
-    let mut argv: [4096]*i8;
-    for (let i in 0usize..count) { argv[i] = args::argat(start + i).data as *i8; };
-    return backend::zov_timeout_run(count as i32, (&argv[0usize]) as **i8);
+    let mut sig: i32 = platform_process::zov_sigterm_val();
+    let mut preserve: bool = false;
+    let mut foreground: bool = false;
+    let mut verbose: bool = false;
+    let mut kill_after: f64 = -1.0;
+
+    let mut i: usize = start;
+    while (i < argc) {
+        let a: str = args::argat(i);
+        if (a == "--help") {
+            io::println("Usage: timeout [OPTION] DURATION COMMAND [ARG]...\n" +
+                        "Start COMMAND, and kill it if still running after DURATION.\n" +
+                        "  -f, --foreground       do not create a separate process group\n" +
+                        "  -k, --kill-after=DURATION  send KILL if COMMAND is still running\n" +
+                        "  -p, --preserve-status  exit with the same status as COMMAND\n" +
+                        "  -s, --signal=SIGNAL    specify the signal to send on timeout\n" +
+                        "  -v, --verbose          diagnose the signal sent\n" +
+                        "      --help             display this help and exit\n" +
+                        "      --version          output version information and exit");
+            return 0i32;
+        };
+        if (a == "--version") {
+            io::println("timeout (zovutils) 0.10.61");
+            return 0i32;
+        };
+        if (a == "-p" || a == "--preserve-status") {
+            preserve = true;
+            i += 1usize;
+            continue;
+        };
+        if (a == "-f" || a == "--foreground") {
+            foreground = true;
+            i += 1usize;
+            continue;
+        };
+        if (a == "-v" || a == "--verbose") {
+            verbose = true;
+            i += 1usize;
+            continue;
+        };
+        if (a == "-s" || a == "--signal") {
+            if (i + 1usize >= argc) {
+                c::fputs("timeout: option requires an argument -- 's'\nTry 'timeout --help' for more information.\n\0".data as *i8, c::stderr);
+                return 125i32;
+            };
+            i += 1usize;
+            let sig_arg: str = args::argat(i);
+            sig = platform_process::zov_timeout_parse_signal(sig_arg.data as *i8);
+            if (sig < 0i32) {
+                c::fprintf(c::stderr, "timeout: invalid signal '%s'\n\0".data as *i8, sig_arg.data as *i8);
+                return 125i32;
+            };
+            i += 1usize;
+            continue;
+        };
+        if (a.len >= 9usize && a[0usize..9usize] == "--signal=") {
+            let sig_val: str = a[9usize..a.len];
+            sig = platform_process::zov_timeout_parse_signal(sig_val.data as *i8);
+            if (sig < 0i32) {
+                c::fprintf(c::stderr, "timeout: invalid signal '%s'\n\0".data as *i8, sig_val.data as *i8);
+                return 125i32;
+            };
+            i += 1usize;
+            continue;
+        };
+        if (a == "-k" || a == "--kill-after") {
+            if (i + 1usize >= argc) {
+                c::fprintf(c::stderr, "timeout: invalid time interval '%s'\n\0".data as *i8, "".data as *i8);
+                return 125i32;
+            };
+            i += 1usize;
+            let k_arg: str = args::argat(i);
+            if (platform_process::zov_timeout_duration(k_arg.data as *i8, &mut kill_after) == 0i32) {
+                c::fprintf(c::stderr, "timeout: invalid time interval '%s'\n\0".data as *i8, k_arg.data as *i8);
+                return 125i32;
+            };
+            i += 1usize;
+            continue;
+        };
+        if (a.len >= 13usize && a[0usize..13usize] == "--kill-after=") {
+            let k_val: str = a[13usize..a.len];
+            if (platform_process::zov_timeout_duration(k_val.data as *i8, &mut kill_after) == 0i32) {
+                c::fprintf(c::stderr, "timeout: invalid time interval '%s'\n\0".data as *i8, k_val.data as *i8);
+                return 125i32;
+            };
+            i += 1usize;
+            continue;
+        };
+        if (a.len > 0usize && a.data[0usize] == 45u8 && a != "-") {
+            c::fprintf(c::stderr, "timeout: unrecognized option '%s'\nTry 'timeout --help' for more information.\n\0".data as *i8, a.data as *i8);
+            return 125i32;
+        };
+        break;
+    };
+
+    if (i + 1usize >= argc) {
+        c::fputs("timeout: missing operand\nTry 'timeout --help' for more information.\n\0".data as *i8, c::stderr);
+        return 125i32;
+    };
+
+    let dur_arg: str = args::argat(i);
+    let mut seconds: f64 = 0.0;
+    if (platform_process::zov_timeout_duration(dur_arg.data as *i8, &mut seconds) == 0i32) {
+        c::fprintf(c::stderr, "timeout: invalid time interval '%s'\nTry 'timeout --help' for more information.\n\0".data as *i8, dur_arg.data as *i8);
+        return 125i32;
+    };
+
+    let cmd_idx: usize = i + 1usize;
+    let cmd_prog: str = args::argat(cmd_idx);
+
+    let pid: i32 = platform_process::zov_fork();
+    if (pid < 0i32) {
+        c::fprintf(c::stderr, "timeout: fork: %s\n\0".data as *i8, strc::strerror(platform_errno::zov_errno_value()));
+        return 125i32;
+    };
+
+    if (pid == 0i32) {
+        if (!foreground) {
+            platform_process::zov_setpgid(0i32, 0i32);
+        };
+        let cmd_count: usize = argc - cmd_idx;
+        let mut child_argv: [4097]*i8;
+        for (let j in 0usize..cmd_count) {
+            child_argv[j] = args::argat(cmd_idx + j).data as *i8;
+        };
+        child_argv[cmd_count] = 0 as *i8;
+        platform_process::zov_exec_command(cmd_prog.data as *i8, (&mut child_argv[0usize]) as *void);
+        let err: i32 = platform_errno::zov_errno_value();
+        c::fprintf(c::stderr, "timeout: failed to run command '%s': %s\n\0".data as *i8, cmd_prog.data as *i8, strc::strerror(err));
+        if (platform_errno::zov_errno_is_enoent(err) != 0i32) {
+            platform_process::zov_exit_process(127i32);
+        };
+        platform_process::zov_exit_process(126i32);
+    };
+
+    if (!foreground) {
+        platform_process::zov_setpgid(pid, pid);
+    };
+
+    let mut waited: f64 = 0.0;
+    let mut st: i32 = 0i32;
+    while (true) {
+        let r: i32 = platform_process::zov_waitpid_nohang(pid, &mut st);
+        if (r == pid) {
+            return platform_process::zov_wait_status(st);
+        };
+        if (r < 0i32) {
+            if (platform_errno::zov_errno_interrupted() != 0i32) {
+                continue;
+            };
+            return 125i32;
+        };
+        if (waited >= seconds) {
+            break;
+        };
+        platform_process::zov_timeout_sleep_step();
+        waited = waited + 0.01;
+    };
+
+    if (verbose) {
+        let sig_name_ptr: nullable *i8 = platform_process::zov_timeout_signal_name(sig);
+        let mut sig_name: str = "signal";
+        if (sig_name_ptr != null) {
+            sig_name = zov_str_from_raw(sig_name_ptr! as *u8, strc::strlen(sig_name_ptr!));
+        };
+        c::fprintf(c::stderr, "timeout: sending signal %s to command '%s'\n\0".data as *i8, sig_name.data as *i8, cmd_prog.data as *i8);
+    };
+
+    let mut target: i32 = -pid;
+    if (foreground) {
+        target = pid;
+    };
+    if (platform_process::zov_kill(target, sig) < 0i32) {
+        if (platform_errno::zov_errno_value() != 3i32) { // ESRCH
+            return 125i32;
+        };
+    };
+
+    let mut grace: f64 = 0.0;
+    if (kill_after >= 0.0) {
+        while (true) {
+            let r: i32 = platform_process::zov_waitpid_nohang(pid, &mut st);
+            if (r == pid) {
+                if (preserve) {
+                    return platform_process::zov_wait_status(st);
+                };
+                return 124i32;
+            };
+            if (r < 0i32) {
+                if (platform_errno::zov_errno_interrupted() != 0i32) {
+                    continue;
+                };
+                return 125i32;
+            };
+            if (grace >= kill_after) {
+                break;
+            };
+            platform_process::zov_timeout_sleep_step();
+            grace = grace + 0.01;
+        };
+        if (verbose) {
+            c::fprintf(c::stderr, "timeout: sending signal KILL to command '%s'\n\0".data as *i8, cmd_prog.data as *i8);
+        };
+        platform_process::zov_kill(target, platform_process::zov_sigkill_val());
+    };
+
+    while (platform_process::zov_waitpid_blocking(pid, &mut st) < 0i32) {
+        if (platform_errno::zov_errno_interrupted() != 0i32) {
+            continue;
+        };
+        return 125i32;
+    };
+
+    if (preserve) {
+        return platform_process::zov_wait_status(st);
+    };
+    return 124i32;
 };
