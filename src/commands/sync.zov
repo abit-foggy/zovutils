@@ -1,9 +1,86 @@
 use std::env as args;
-use <tty_sync_backend.h> as backend;
+use std::io;
+use std::vec as vec;
+use <stdio.h> as c;
+use <unistd.h> as posix;
+use <fcntl.h> as fcntl;
+use <string.h> as strc;
+use <platform_errno.h> as platform_errno;
+use shared::io as stream;
+
+fn help() void = {
+    io::print("Usage: sync [OPTION]... [FILE]...\n");
+    io::print("Synchronize cached writes to persistent storage.\n\n");
+    io::print("  -d, --data             sync only file data, not metadata\n");
+    io::print("  -f, --file-system      sync the file systems that contain the files\n");
+    io::print("      --help             display this help and exit\n");
+    io::print("      --version          output version information and exit\n\n");
+    io::print("Report bugs to: bug-coreutils@gnu.org\n");
+    io::print("GNU coreutils home page: <https://www.gnu.org/software/coreutils/>\n");
+    io::print("General help using GNU software: <https://www.gnu.org/gethelp/>\n");
+    io::print("Report any translation bugs to <https://translationproject.org/team/>\n");
+    io::print("Full documentation <https://www.gnu.org/software/coreutils/sync>\n");
+    io::print("or available locally via: info '(coreutils) sync invocation'\n");
+};
+
 export fn run(start: usize, argc: usize) i32 = {
-    let count: usize = argc - start;
-    if (count > 4096usize) { return 1; };
-    let mut argv: [4096]*i8;
-    for (let i in 0usize..count) { argv[i] = args::argat(start + i).data as *i8; };
-    return backend::zov_sync_run(count as i32, (&argv[0usize]) as **i8);
+    let mut files = vec::new[str]();
+    let mut options_allowed: bool = true;
+    let mut i: usize = start;
+    while (i < argc) {
+        let arg: str = args::argat(i);
+        if (options_allowed && arg == "--") {
+            options_allowed = false;
+            i += 1usize;
+            continue;
+        };
+        if (options_allowed && arg.len > 1usize && arg.data[0usize] == 45u8 && arg != "-") {
+            if (arg == "--help") {
+                help();
+                stream::finishoutput("sync");
+                return 0;
+            };
+            if (arg == "--version") {
+                io::println("sync (zovutils) 0.10.61");
+                stream::finishoutput("sync");
+                return 0;
+            };
+            if (arg == "-d" || arg == "--data" || arg == "-f" || arg == "--file-system") {
+                i += 1usize;
+                continue;
+            };
+            c::fprintf(c::stderr, "sync: unrecognized option '%s'\nTry 'sync --help' for more information.\n", arg.data as *i8);
+            return 1;
+        };
+        files.push(arg);
+        i += 1usize;
+    };
+
+    if (files.len() == 0usize) {
+        posix::sync();
+        return 0;
+    };
+
+    let mut status: i32 = 0;
+    let mut j: usize = 0usize;
+    while (j < files.len()) {
+        let f: str = files.get(j);
+        let fd: i32 = fcntl::open(f.data as *i8, 0i32);
+        if (fd < 0i32) {
+            let err: i32 = platform_errno::zov_errno_value();
+            c::fprintf(c::stderr, "sync: %s: %s\n", f.data as *i8, strc::strerror(err));
+            status = 1;
+            j += 1usize;
+            continue;
+        };
+        let rc: i32 = posix::fsync(fd);
+        let err: i32 = platform_errno::zov_errno_value();
+        posix::close(fd);
+        if (rc < 0i32) {
+            c::fprintf(c::stderr, "sync: %s: %s\n", f.data as *i8, strc::strerror(err));
+            status = 1;
+        };
+        j += 1usize;
+    };
+    return status;
 };
