@@ -1,9 +1,290 @@
 use std::env as args;
-use <account_terminal_backend.h> as backend;
+use <stdio.h> as c;
+use <platform_utmpx.h> as platform_utmpx;
+
+fn print_help() = {
+    c::fputs("Usage: who [OPTION]... [ FILE | ARG1 ARG2 ]\n", c::stdout);
+    c::fputs("Print information about users who are currently logged in.\n", c::stdout);
+    c::fputs("  -a, --all       same as -b -d --login -p -r -t -T -u\n", c::stdout);
+    c::fputs("  -b, --boot      time of last system boot\n", c::stdout);
+    c::fputs("  -d, --dead      print dead processes\n", c::stdout);
+    c::fputs("  -H, --heading   print line of column headings\n", c::stdout);
+    c::fputs("  -l, --login     print system login processes\n", c::stdout);
+    c::fputs("      --lookup    attempt to canonicalize hostnames via DNS\n", c::stdout);
+    c::fputs("  -m              only hostname and user associated with standard input\n", c::stdout);
+    c::fputs("  -p, --process   print active processes spawned by init\n", c::stdout);
+    c::fputs("  -q, --count     print only login names and number of users logged on\n", c::stdout);
+    c::fputs("  -r, --runlevel  print current runlevel\n", c::stdout);
+    c::fputs("  -s, --short     print only name, line, and time (default)\n", c::stdout);
+    c::fputs("  -t, --time      print last system clock change\n", c::stdout);
+    c::fputs("  -T, -w, --mesg  add user's message status\n", c::stdout);
+    c::fputs("  -u, --users     list logged-in users, including idle time\n", c::stdout);
+    c::fputs("      --help      display this help and exit\n", c::stdout);
+    c::fputs("      --version   output version information and exit\n", c::stdout);
+};
+
 export fn run(start: usize, argc: usize) i32 = {
-    let count: usize = argc - start;
-    if (count > 4096usize) { return 1; };
-    let mut argv: [4096]*i8;
-    for (let i in 0usize..count) { argv[i] = args::argat(start + i).data as *i8; };
-    return backend::zov_who_run(count as i32, (&argv[0usize]) as **i8);
+    let mut header: bool = false;
+    let mut quick: bool = false;
+    let mut boot: bool = false;
+    let mut all: bool = false;
+    let mut dead: bool = false;
+    let mut login: bool = false;
+    let mut process: bool = false;
+    let mut runlevel: bool = false;
+    let mut clock_change: bool = false;
+    let mut idle_info: bool = false;
+    let mut message_info: bool = false;
+
+    let mut i: usize = start;
+    while (i < argc) {
+        let a: str = args::argat(i).view();
+        if (a == "--help") {
+            print_help();
+            return 0;
+        };
+        if (a == "--version") {
+            c::fputs("who (zovutils) 0.10.61\n", c::stdout);
+            return 0;
+        };
+        if (a == "--") {
+            break;
+        };
+        if (a == "--heading") {
+            header = true;
+            i = i + 1usize;
+            continue;
+        };
+        if (a == "--count") {
+            quick = true;
+            i = i + 1usize;
+            continue;
+        };
+        if (a == "--all") {
+            all = true;
+            boot = true;
+            dead = true;
+            login = true;
+            process = true;
+            runlevel = true;
+            clock_change = true;
+            idle_info = true;
+            message_info = true;
+            i = i + 1usize;
+            continue;
+        };
+        if (a == "--boot") {
+            boot = true;
+            i = i + 1usize;
+            continue;
+        };
+        if (a == "--dead") {
+            dead = true;
+            i = i + 1usize;
+            continue;
+        };
+        if (a == "--login") {
+            login = true;
+            i = i + 1usize;
+            continue;
+        };
+        if (a == "--process") {
+            process = true;
+            i = i + 1usize;
+            continue;
+        };
+        if (a == "--runlevel") {
+            runlevel = true;
+            i = i + 1usize;
+            continue;
+        };
+        if (a == "--time") {
+            clock_change = true;
+            i = i + 1usize;
+            continue;
+        };
+        if (a == "--mesg" || a == "--message" || a == "--writable") {
+            message_info = true;
+            i = i + 1usize;
+            continue;
+        };
+        if (a == "--users") {
+            idle_info = true;
+            i = i + 1usize;
+            continue;
+        };
+        if (a == "--lookup" || a == "--short") {
+            i = i + 1usize;
+            continue;
+        };
+        if (a.len > 2usize && a[0usize] == 45u8 && a[1usize] == 45u8) {
+            c::fprintf(c::stderr, "who: unrecognized option '%s'\nTry 'who --help' for more information.\n", a.data as *i8);
+            return 1;
+        };
+        if (a.len > 1usize && a[0usize] == 45u8) {
+            let mut j: usize = 1usize;
+            let mut err: bool = false;
+            let mut bad_opt: u8 = 0u8;
+            while (j < a.len) {
+                let opt: u8 = a[j];
+                if (opt == 97u8) { // 'a'
+                    all = true;
+                    boot = true;
+                    dead = true;
+                    login = true;
+                    process = true;
+                    runlevel = true;
+                    clock_change = true;
+                    idle_info = true;
+                    message_info = true;
+                } else if (opt == 98u8) { // 'b'
+                    boot = true;
+                } else if (opt == 100u8) { // 'd'
+                    dead = true;
+                } else if (opt == 108u8) { // 'l'
+                    login = true;
+                } else if (opt == 109u8) { // 'm'
+                } else if (opt == 112u8) { // 'p'
+                    process = true;
+                } else if (opt == 114u8) { // 'r'
+                    runlevel = true;
+                } else if (opt == 115u8) { // 's'
+                } else if (opt == 116u8) { // 't'
+                    clock_change = true;
+                } else if (opt == 84u8 || opt == 119u8) { // 'T' or 'w'
+                    message_info = true;
+                } else if (opt == 117u8) { // 'u'
+                    idle_info = true;
+                } else if (opt == 72u8) { // 'H'
+                    header = true;
+                } else if (opt == 113u8) { // 'q'
+                    quick = true;
+                } else {
+                    bad_opt = opt;
+                    err = true;
+                    break;
+                };
+                j = j + 1usize;
+            };
+            if (err) {
+                c::fprintf(c::stderr, "who: invalid option -- '%c'\nTry 'who --help' for more information.\n", bad_opt as i32);
+                return 1;
+            };
+            i = i + 1usize;
+            continue;
+        };
+        i = i + 1usize;
+    };
+
+    if (header && !quick) {
+        c::puts("NAME     LINE         TIME         COMMENT");
+    };
+
+    platform_utmpx::zov_utmpx_start();
+    let mut ut_type: i32 = 0i32;
+    let mut tv_sec: i64 = 0i64;
+    let mut pid: i32 = 0i32;
+    let mut user: [64]u8;
+    let mut line: [64]u8;
+    let mut id: [16]u8;
+    let mut host: [256]u8;
+    let mut rl: i32 = 0i32;
+    let mut count: i32 = 0i32;
+
+    let user_type: i32 = platform_utmpx::zov_utmp_type_user();
+    let boot_type: i32 = platform_utmpx::zov_utmp_type_boot();
+    let runlvl_type: i32 = platform_utmpx::zov_utmp_type_runlvl();
+    let login_type: i32 = platform_utmpx::zov_utmp_type_login();
+    let init_type: i32 = platform_utmpx::zov_utmp_type_init();
+    let dead_type: i32 = platform_utmpx::zov_utmp_type_dead();
+    let old_time_type: i32 = platform_utmpx::zov_utmp_type_old_time();
+    let new_time_type: i32 = platform_utmpx::zov_utmp_type_new_time();
+
+    let mut b: [64]u8;
+
+    while (platform_utmpx::zov_utmpx_next_entry(
+        &mut ut_type,
+        &mut tv_sec,
+        &mut pid,
+        (&mut user[0usize]) as *i8, 64usize,
+        (&mut line[0usize]) as *i8, 64usize,
+        (&mut id[0usize]) as *i8, 16usize,
+        (&mut host[0usize]) as *i8, 256usize,
+        &mut rl
+    ) != 0i32) {
+        if (boot && ut_type == boot_type) {
+            platform_utmpx::zov_utmpx_format_time(tv_sec, (&mut b[0usize]) as *i8, 64usize);
+            let mut indent: i32 = 8i32;
+            if (all) { indent = 10i32; };
+            c::printf("%*s system boot  %s\n", indent, "", (&mut b[0usize]) as *i8);
+            continue;
+        };
+        if ((runlevel || all) && ut_type == runlvl_type) {
+            platform_utmpx::zov_utmpx_format_time(tv_sec, (&mut b[0usize]) as *i8, 64usize);
+            let mut indent: i32 = 9i32;
+            if (all) { indent = 11i32; };
+            c::printf("%*srun-level %d  %s\n", indent, "", rl, (&mut b[0usize]) as *i8);
+            continue;
+        };
+        if ((login || all) && ut_type == login_type) {
+            platform_utmpx::zov_utmpx_format_time(tv_sec, (&mut b[0usize]) as *i8, 64usize);
+            if (all) {
+                c::fputs("LOGIN      ", c::stdout);
+            } else {
+                c::fputs("LOGIN    ", c::stdout);
+            };
+            c::printf("%-12s %s%18d id=%s\n", (&mut line[0usize]) as *i8, (&mut b[0usize]) as *i8, pid, (&mut id[0usize]) as *i8);
+            continue;
+        };
+        if ((process || all) && ut_type == init_type) {
+            platform_utmpx::zov_utmpx_format_time(tv_sec, (&mut b[0usize]) as *i8, 64usize);
+            c::printf("INIT       %-12s %s              %d id=%s\n", (&mut line[0usize]) as *i8, (&mut b[0usize]) as *i8, pid, (&mut id[0usize]) as *i8);
+            continue;
+        };
+        if ((dead || all) && ut_type == dead_type) {
+            platform_utmpx::zov_utmpx_format_time(tv_sec, (&mut b[0usize]) as *i8, 64usize);
+            c::printf("%-8s %-12s %s\n", (&mut user[0usize]) as *i8, (&mut line[0usize]) as *i8, (&mut b[0usize]) as *i8);
+            continue;
+        };
+        if ((clock_change || all) && (ut_type == old_time_type || ut_type == new_time_type)) {
+            continue;
+        };
+
+        let show_users: bool = !(boot || dead || login || process || runlevel || clock_change) || idle_info || message_info;
+        if (!show_users || ut_type != user_type) {
+            continue;
+        };
+
+        if (quick) {
+            if (count > 0i32) {
+                c::putchar(32i32);
+            };
+            c::fputs((&mut user[0usize]) as *i8, c::stdout);
+        } else {
+            platform_utmpx::zov_utmpx_format_time(tv_sec, (&mut b[0usize]) as *i8, 64usize);
+            if (idle_info || message_info) {
+                let mut idle: [16]u8;
+                let mut mesg: u8 = 0u8;
+                platform_utmpx::zov_utmpx_device_status((&mut line[0usize]) as *i8, (&mut mesg) as *i8, (&mut idle[0usize]) as *i8, 16usize);
+                if (!idle_info) {
+                    c::printf("%-8s %c %-12s %s\n", (&mut user[0usize]) as *i8, mesg as i32, (&mut line[0usize]) as *i8, (&mut b[0usize]) as *i8);
+                } else if (!message_info) {
+                    c::printf("%-8s %-12s %s  %-6s          %d\n", (&mut user[0usize]) as *i8, (&mut line[0usize]) as *i8, (&mut b[0usize]) as *i8, (&mut idle[0usize]) as *i8, pid);
+                } else {
+                    c::printf("%-8s %c %-12s %s  %-6s          %d\n", (&mut user[0usize]) as *i8, mesg as i32, (&mut line[0usize]) as *i8, (&mut b[0usize]) as *i8, (&mut idle[0usize]) as *i8, pid);
+                };
+            } else {
+                c::printf("%-8s %-12s %s\n", (&mut user[0usize]) as *i8, (&mut line[0usize]) as *i8, (&mut b[0usize]) as *i8);
+            };
+        };
+        count = count + 1i32;
+    };
+    platform_utmpx::zov_utmpx_end();
+
+    if (quick) {
+        c::putchar(10i32);
+        c::printf("# users=%d\n", count);
+    };
+
+    return 0;
 };

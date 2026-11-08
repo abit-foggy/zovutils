@@ -1,9 +1,226 @@
 use std::env as args;
-use <account_terminal_backend.h> as backend;
+use std::vec as vec;
+use <stdio.h> as c;
+use <string.h> as strc;
+use <platform_utmpx.h> as platform_utmpx;
+
+fn print_help() = {
+    c::fputs("Usage: pinky [OPTION]... [USER]...\n", c::stdout);
+    c::fputs("  -l             produce long format output for USERs\n", c::stdout);
+    c::fputs("  -b             omit home directory and shell in long format\n", c::stdout);
+    c::fputs("  -h             omit project file in long format\n", c::stdout);
+    c::fputs("  -p             omit plan file in long format\n", c::stdout);
+    c::fputs("  -s             do short format output (default)\n", c::stdout);
+    c::fputs("  -f             omit headings in short format\n", c::stdout);
+    c::fputs("  -w             omit full name in short format\n", c::stdout);
+    c::fputs("  -i             omit full name and remote host in short format\n", c::stdout);
+    c::fputs("  -q             omit full name, remote host and idle time in short format\n", c::stdout);
+    c::fputs("      --lookup   attempt to canonicalize hostnames via DNS\n", c::stdout);
+    c::fputs("      --help     display this help and exit\n", c::stdout);
+    c::fputs("      --version  output version information and exit\n", c::stdout);
+};
+
 export fn run(start: usize, argc: usize) i32 = {
-    let count: usize = argc - start;
-    if (count > 4096usize) { return 1; };
-    let mut argv: [4096]*i8;
-    for (let i in 0usize..count) { argv[i] = args::argat(start + i).data as *i8; };
-    return backend::zov_pinky_run(count as i32, (&argv[0usize]) as **i8);
+    let mut shortfmt: bool = true;
+    let mut header: bool = true;
+    let mut show_name: bool = true;
+    let mut show_host: bool = true;
+    let mut show_idle: bool = true;
+    let mut omit_home: bool = false;
+    let mut omit_project: bool = false;
+    let mut omit_plan: bool = false;
+    let mut users: vec::Vec<str> = vec::new<str>();
+
+    let mut i: usize = start;
+    while (i < argc) {
+        let a: str = args::argat(i).view();
+        if (a == "--help") {
+            print_help();
+            return 0;
+        };
+        if (a == "--version") {
+            c::fputs("pinky (zovutils) 0.10.61\n", c::stdout);
+            return 0;
+        };
+        if (a == "--lookup") {
+            i = i + 1usize;
+            continue;
+        };
+        if (a.len > 1usize && a[0usize] == 45u8 && a[1usize] != 45u8) {
+            let mut j: usize = 1usize;
+            let mut valid: bool = true;
+            while (j < a.len) {
+                let opt: u8 = a[j];
+                if (opt == 115u8) { // 's'
+                    shortfmt = true;
+                } else if (opt == 108u8) { // 'l'
+                    shortfmt = false;
+                } else if (opt == 102u8) { // 'f'
+                    header = false;
+                } else if (opt == 119u8) { // 'w'
+                    show_name = false;
+                } else if (opt == 105u8) { // 'i'
+                    show_name = false;
+                    show_host = false;
+                } else if (opt == 113u8) { // 'q'
+                    show_name = false;
+                    show_host = false;
+                    show_idle = false;
+                } else if (opt == 98u8) { // 'b'
+                    omit_home = true;
+                } else if (opt == 104u8) { // 'h'
+                    omit_project = true;
+                } else if (opt == 112u8) { // 'p'
+                    omit_plan = true;
+                } else {
+                    valid = false;
+                    break;
+                };
+                j = j + 1usize;
+            };
+            if (valid) {
+                i = i + 1usize;
+                continue;
+            };
+        };
+        if (a.len > 0usize && a[0usize] == 45u8) {
+            c::fprintf(c::stderr, "pinky: unrecognized option '%s'\nTry 'pinky --help' for more information.\n", a.data as *i8);
+            return 1;
+        };
+        users.push(a);
+        i = i + 1usize;
+    };
+
+    if (!shortfmt && users.len() == 0usize) {
+        c::fputs("pinky: no username specified; at least one must be specified when using -l\nTry 'pinky --help' for more information.\n", c::stderr);
+        return 1;
+    };
+
+    if (shortfmt) {
+        if (header) {
+            if (show_name) {
+                c::puts("Login    Name                 TTY      Idle   When         Where");
+            } else {
+                c::fputs("Login     TTY      ", c::stdout);
+                if (show_idle) {
+                    c::fputs("Idle   ", c::stdout);
+                };
+                c::printf("%-12s", "When");
+                if (show_host) {
+                    c::fputs(" Where", c::stdout);
+                };
+                c::putchar(10i32);
+            };
+        };
+
+        platform_utmpx::zov_utmpx_start();
+        let mut ut_type: i32 = 0i32;
+        let mut tv_sec: i64 = 0i64;
+        let mut pid: i32 = 0i32;
+        let mut login: [64]u8;
+        let mut line: [64]u8;
+        let mut id: [16]u8;
+        let mut host: [256]u8;
+        let mut rl: i32 = 0i32;
+        let user_type: i32 = platform_utmpx::zov_utmp_type_user();
+
+        let mut realname: [256]u8;
+        let mut when: [32]u8;
+        let mut idle: [32]u8;
+        let mut tty: [64]u8;
+
+        while (platform_utmpx::zov_utmpx_next_entry(
+            &mut ut_type,
+            &mut tv_sec,
+            &mut pid,
+            (&mut login[0usize]) as *i8, 64usize,
+            (&mut line[0usize]) as *i8, 64usize,
+            (&mut id[0usize]) as *i8, 16usize,
+            (&mut host[0usize]) as *i8, 256usize,
+            &mut rl
+        ) != 0i32) {
+            if (ut_type != user_type) {
+                continue;
+            };
+
+            if (users.len() > 0usize) {
+                let mut matched: bool = false;
+                for (let k in 0usize..users.len()) {
+                    let u: str = users.get(k);
+                    if (strc::strcmp((&login[0usize]) as *i8, u.data as *i8) == 0i32) {
+                        matched = true;
+                        break;
+                    };
+                };
+                if (!matched) {
+                    continue;
+                };
+            };
+
+            platform_utmpx::zov_get_user_gecos(
+                (&mut login[0usize]) as *i8,
+                (&mut realname[0usize]) as *i8, 256usize,
+                null, 0usize,
+                null, 0usize
+            );
+
+            if (!show_name) {
+                realname[0usize] = 0u8;
+            };
+            if (!show_host) {
+                host[0usize] = 0u8;
+            };
+
+            platform_utmpx::zov_utmpx_format_time(tv_sec, (&mut when[0usize]) as *i8, 32usize);
+            let mut show_idle_val: i32 = 0i32;
+            if (show_idle) { show_idle_val = 1i32; };
+            platform_utmpx::zov_pinky_tty_info(
+                (&mut line[0usize]) as *i8,
+                tv_sec,
+                show_idle_val,
+                (&mut tty[0usize]) as *i8, 64usize,
+                (&mut idle[0usize]) as *i8, 32usize
+            );
+
+            if (show_name) {
+                c::printf("%-8.8s %-19.19s %-8.8s  %-5.5s  %-12.12s", (&mut login[0usize]) as *i8, (&mut realname[0usize]) as *i8, (&mut tty[0usize]) as *i8, (&mut idle[0usize]) as *i8, (&mut when[0usize]) as *i8);
+            } else if (show_idle) {
+                c::printf("%-8.8s %-8.8s  %-6.6s %-12.12s", (&mut login[0usize]) as *i8, (&mut tty[0usize]) as *i8, (&mut idle[0usize]) as *i8, (&mut when[0usize]) as *i8);
+            } else {
+                c::printf("%-8.8s %-8.8s  %-12.12s", (&mut login[0usize]) as *i8, (&mut tty[0usize]) as *i8, (&mut when[0usize]) as *i8);
+            };
+
+            if (host[0usize] != 0u8) {
+                c::printf(" %s", (&mut host[0usize]) as *i8);
+            };
+            c::putchar(10i32);
+        };
+        platform_utmpx::zov_utmpx_end();
+        return 0;
+    };
+
+    let mut realname: [256]u8;
+    let mut dir: [256]u8;
+    let mut shell: [256]u8;
+
+    for (let u_idx in 0usize..users.len()) {
+        let u: str = users.get(u_idx);
+        let ok: i32 = platform_utmpx::zov_get_user_gecos(
+            u.data as *i8,
+            (&mut realname[0usize]) as *i8, 256usize,
+            (&mut dir[0usize]) as *i8, 256usize,
+            (&mut shell[0usize]) as *i8, 256usize
+        );
+        if (ok == 0i32) {
+            c::fprintf(c::stderr, "pinky: %s: no such user\n", u.data as *i8);
+            return 1;
+        };
+        c::printf("Login name: %-28sIn real life:  %s\n", u.data as *i8, (&mut realname[0usize]) as *i8);
+        if (!omit_home) {
+            c::printf("Directory: %-29sShell:  %s\n", (&mut dir[0usize]) as *i8, (&mut shell[0usize]) as *i8);
+        };
+        c::putchar(10i32);
+    };
+
+    return 0;
 };

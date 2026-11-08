@@ -1,9 +1,111 @@
 use std::env as args;
-use <account_terminal_backend.h> as backend;
+use std::vec as vec;
+use <stdio.h> as c;
+use <string.h> as strc;
+use <platform_errno.h> as platform_errno;
+
+fn print_help() = {
+    c::fputs("Usage: pr [OPTION]... [FILE]...\n", c::stdout);
+    c::fputs("Paginate or columnate FILE(s) for printing.\n", c::stdout);
+    c::fputs("  -t             omit page headers and trailers\n", c::stdout);
+    c::fputs("  -T             omit page headers and trailers, omit form feeds\n", c::stdout);
+    c::fputs("  -l PAGE_LENGTH set the page length\n", c::stdout);
+    c::fputs("      --help     display this help and exit\n", c::stdout);
+    c::fputs("      --version  output version information and exit\n", c::stdout);
+};
+
 export fn run(start: usize, argc: usize) i32 = {
-    let count: usize = argc - start;
-    if (count > 4096usize) { return 1; };
-    let mut argv: [4096]*i8;
-    for (let i in 0usize..count) { argv[i] = args::argat(start + i).data as *i8; };
-    return backend::zov_pr_run(count as i32, (&argv[0usize]) as **i8);
+    let mut nohead: bool = false;
+    let mut files: vec::Vec<str> = vec::new<str>();
+    let mut i: usize = start;
+
+    while (i < argc) {
+        let a: str = args::argat(i).view();
+        if (a == "--help") {
+            print_help();
+            return 0;
+        };
+        if (a == "--version") {
+            c::fputs("pr (zovutils) 0.10.61\n", c::stdout);
+            return 0;
+        };
+        if (a == "-t" || a == "-T") {
+            nohead = true;
+            i = i + 1usize;
+            continue;
+        };
+        if (a == "-l" || a == "-w" || a == "-h") {
+            if (i + 1usize < argc) {
+                i = i + 1usize;
+            };
+            i = i + 1usize;
+            continue;
+        };
+        if (a.len > 1usize && a[0usize] == 45u8 && a[1usize] >= 48u8 && a[1usize] <= 57u8) {
+            i = i + 1usize;
+            continue;
+        };
+        if (a.len > 0usize && a[0usize] == 45u8 && a != "-") {
+            if (a.len > 1usize && a[1usize] == 45u8) {
+                c::fprintf(c::stderr, "pr: unrecognized option '%s'\nTry 'pr --help' for more information.\n", a.data as *i8);
+            } else {
+                c::fprintf(c::stderr, "pr: invalid option -- '%c'\nTry 'pr --help' for more information.\n", a[1usize] as i32);
+            };
+            return 1;
+        };
+        files.push(a);
+        i = i + 1usize;
+    };
+
+    if (!nohead) {
+        c::fputs("pr: only headerless output is supported\n", c::stderr);
+        return 1;
+    };
+
+    if (files.len() == 0usize) {
+        files.push("-");
+    };
+
+    let mut status: i32 = 0i32;
+    for (let j in 0usize..files.len()) {
+        let filename: str = files.get(j);
+        let mut fp: nullable *c::FILE = null;
+        let is_stdin: bool = filename == "-";
+        if (is_stdin) {
+            fp = c::stdin;
+        } else {
+            fp = c::fopen(filename.data as *i8, "rb");
+            if (fp == null) {
+                let err: i32 = platform_errno::zov_errno_value();
+                c::fprintf(c::stderr, "pr: %s: %s\n", filename.data as *i8, strc::strerror(err));
+                status = 1;
+                continue;
+            };
+        };
+
+        let file: *c::FILE = fp!;
+        let mut last: i32 = -1i32;
+        while (true) {
+            let ch: i32 = c::fgetc(file);
+            if (ch == -1i32) {
+                break;
+            };
+            c::putchar(ch);
+            last = ch;
+        };
+
+        if (last != 10i32 && last != -1i32) {
+            c::putchar(10i32);
+        };
+
+        if (!is_stdin) {
+            c::fclose(file);
+        };
+
+        if (j + 1usize < files.len()) {
+            c::putchar(10i32);
+        };
+    };
+
+    return status;
 };

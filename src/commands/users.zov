@@ -1,9 +1,60 @@
 use std::env as args;
-use <account_terminal_backend.h> as backend;
+use <stdio.h> as c;
+use <platform_utmpx.h> as platform_utmpx;
+
+fn print_help() = {
+    c::fputs("Usage: users [OPTION]... [FILE]\n", c::stdout);
+    c::fputs("Print the user names of users currently logged in.\n", c::stdout);
+    c::fputs("  --help     display this help and exit\n", c::stdout);
+    c::fputs("  --version  output version information and exit\n", c::stdout);
+};
+
 export fn run(start: usize, argc: usize) i32 = {
-    let count: usize = argc - start;
-    if (count > 4096usize) { return 1; };
-    let mut argv: [4096]*i8;
-    for (let i in 0usize..count) { argv[i] = args::argat(start + i).data as *i8; };
-    return backend::zov_users_run(count as i32, (&argv[0usize]) as **i8);
+    let mut i: usize = start;
+    while (i < argc) {
+        let a: str = args::argat(i).view();
+        if (a == "--help") {
+            print_help();
+            return 0;
+        };
+        if (a == "--version") {
+            c::fputs("users (zovutils) 0.10.61\n", c::stdout);
+            return 0;
+        };
+        c::fprintf(c::stderr, "users: extra operand '%s'\nTry 'users --help' for more information.\n", a.data as *i8);
+        return 1;
+    };
+
+    platform_utmpx::zov_utmpx_start();
+    let mut ut_type: i32 = 0i32;
+    let mut tv_sec: i64 = 0i64;
+    let mut pid: i32 = 0i32;
+    let mut user: [64]u8;
+    let mut runlevel: i32 = 0i32;
+    let user_type: i32 = platform_utmpx::zov_utmp_type_user();
+    let mut first: bool = true;
+
+    while (platform_utmpx::zov_utmpx_next_entry(
+        &mut ut_type,
+        &mut tv_sec,
+        &mut pid,
+        (&mut user[0usize]) as *i8, 64usize,
+        null, 0usize,
+        null, 0usize,
+        null, 0usize,
+        &mut runlevel
+    ) != 0i32) {
+        if (ut_type == user_type) {
+            if (!first) {
+                c::putchar(32i32);
+            };
+            c::fputs((&mut user[0usize]) as *i8, c::stdout);
+            first = false;
+        };
+    };
+    platform_utmpx::zov_utmpx_end();
+    if (!first) {
+        c::putchar(10i32);
+    };
+    return 0;
 };

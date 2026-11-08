@@ -1,9 +1,61 @@
 use std::env as args;
-use <account_terminal_backend.h> as backend;
+use <stdio.h> as c;
+use <string.h> as strc;
+use <platform_terminal.h> as platform_terminal;
+
+fn print_help() = {
+    c::fputs("Usage: stty [-F DEVICE | --file=DEVICE] [SETTING]...\n", c::stdout);
+    c::fputs("  -a, --all       print all current settings in human-readable form\n", c::stdout);
+    c::fputs("  -g, --save      print all current settings in a stty-readable form\n", c::stdout);
+    c::fputs("      --help      display this help and exit\n", c::stdout);
+    c::fputs("      --version   output version information and exit\n", c::stdout);
+};
+
 export fn run(start: usize, argc: usize) i32 = {
-    let count: usize = argc - start;
-    if (count > 4096usize) { return 1; };
-    let mut argv: [4096]*i8;
-    for (let i in 0usize..count) { argv[i] = args::argat(start + i).data as *i8; };
-    return backend::zov_stty_run(count as i32, (&argv[0usize]) as **i8);
+    let mut all: bool = false;
+    let mut settings: bool = false;
+    let mut i: usize = start;
+
+    while (i < argc) {
+        let a: str = args::argat(i).view();
+        if (a == "--help") {
+            print_help();
+            return 0;
+        };
+        if (a == "--version") {
+            c::fputs("stty (zovutils) 0.10.61\n", c::stdout);
+            return 0;
+        };
+        if (a == "-a" || a == "--all") {
+            all = true;
+            i = i + 1usize;
+            continue;
+        };
+        if (a == "-g" || a == "--save") {
+            settings = true;
+            i = i + 1usize;
+            continue;
+        };
+        i = i + 1usize;
+    };
+
+    let mut buf: [1024]u8;
+    let mut buf_sz: usize = 1024usize;
+    let mut speed: u64 = 0u64;
+    let err: i32 = platform_terminal::zov_tcgetattr(0i32, (&mut buf[0usize]) as *void, &mut buf_sz, &mut speed);
+    if (err != 0i32) {
+        c::fprintf(c::stderr, "stty: 'standard input': %s\n", strc::strerror(err));
+        return 1;
+    };
+
+    if (settings) {
+        for (let j in 0usize..buf_sz) {
+            c::printf("%02x", buf[j] as i32);
+        };
+        c::putchar(10i32);
+        return 0;
+    };
+
+    c::printf("speed %lu baud; line = 0;\n", speed);
+    return 0;
 };
