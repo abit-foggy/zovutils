@@ -1,0 +1,131 @@
+use std::io;
+use <stdio.h> as c;
+
+export type TabStops = struct {
+    stops: [256]usize,
+    count: usize,
+    repeat: usize,
+};
+
+fn parse_num(s: str, start: usize, end: usize, out: &mut usize) i32 = {
+    if (start >= end) { return 0i32; };
+    let mut n: usize = 0usize;
+    let max_val: usize = 18446744073709551615usize;
+    for (let i in start..end) {
+        let b: u8 = s.data[i];
+        if (b < 48u8 || b > 57u8) { return 0i32; };
+        let digit: usize = (b - 48u8) as usize;
+        if (n > (max_val - digit) / 10usize) { return -1i32; };
+        n = n * 10usize + digit;
+    };
+    *out = n;
+    return 1i32;
+};
+
+export fn parse_tabs(text: str, tabs: &mut TabStops, error_code: &mut i32) bool = {
+    *error_code = 3i32;
+    tabs.count = 0usize;
+    tabs.repeat = 0usize;
+    if (text.len == 0usize) { return false; };
+
+    let mut slash_pos: usize = 18446744073709551615usize;
+    for (let i in 0usize..text.len) {
+        if (text.data[i] == 47u8) {
+            if (slash_pos != 18446744073709551615usize) { return false; };
+            slash_pos = i;
+        };
+    };
+
+    let mut main_text_len: usize = text.len;
+    let mut repeat_override: usize = 0usize;
+    if (slash_pos != 18446744073709551615usize) {
+        if (slash_pos == 0usize || text.data[slash_pos - 1usize] != 44u8 || slash_pos + 1usize == text.len) {
+            return false;
+        };
+        let mut rep: usize = 0usize;
+        let rc: i32 = parse_num(text, slash_pos + 1usize, text.len, &mut rep);
+        if (rc <= 0i32) { return false; };
+        repeat_override = rep;
+        main_text_len = slash_pos - 1usize;
+    };
+
+    let mut p: usize = 0usize;
+    let mut last_relative: bool = false;
+    let max_val: usize = 18446744073709551615usize;
+    while (p < main_text_len) {
+        let mut relative: bool = false;
+        if (text.data[p] == 43u8) {
+            relative = true;
+            p += 1usize;
+        };
+        last_relative = relative;
+        if (p >= main_text_len || text.data[p] < 48u8 || text.data[p] > 57u8 || tabs.count == 256usize) {
+            return false;
+        };
+        let num_start: usize = p;
+        while (p < main_text_len && text.data[p] >= 48u8 && text.data[p] <= 57u8) {
+            p += 1usize;
+        };
+        let mut n: usize = 0usize;
+        let rc: i32 = parse_num(text, num_start, p, &mut n);
+        if (rc < 0i32) { *error_code = 5i32; return false; };
+        if (rc == 0i32) { return false; };
+        if (n == 0usize) { *error_code = 2i32; return false; };
+        let mut stop: usize = n;
+        if (relative) {
+            if (tabs.count == 0usize || stop > max_val - tabs.stops[tabs.count - 1usize]) {
+                return false;
+            };
+            stop += tabs.stops[tabs.count - 1usize];
+        };
+        if (tabs.count != 0usize && stop <= tabs.stops[tabs.count - 1usize]) {
+            *error_code = 4i32;
+            return false;
+        };
+        tabs.stops[tabs.count] = stop;
+        tabs.count += 1usize;
+        if (p < main_text_len) {
+            if (text.data[p] == 44u8) {
+                p += 1usize;
+                if (p == main_text_len) { break; };
+            } else {
+                return false;
+            };
+        };
+    };
+
+    if (repeat_override != 0usize) {
+        tabs.repeat = repeat_override;
+    } else if (tabs.count == 1usize) {
+        tabs.repeat = tabs.stops[0usize];
+    } else if (last_relative && tabs.count >= 2usize) {
+        tabs.repeat = tabs.stops[tabs.count - 1usize] - tabs.stops[tabs.count - 2usize];
+    } else {
+        tabs.repeat = 1usize;
+    };
+    return tabs.repeat != 0usize;
+};
+
+export fn next_tab(tabs: &TabStops, column: usize) usize = {
+    for (let i in 0usize..tabs.count) {
+        if (tabs.stops[i] > column) { return tabs.stops[i]; };
+    };
+    let last: usize = tabs.stops[tabs.count - 1usize];
+    let delta: usize = column - last;
+    let steps: usize = (delta / tabs.repeat) + 1usize;
+    let max_val: usize = 18446744073709551615usize;
+    if (steps > (max_val - last) / tabs.repeat) { return max_val; };
+    return last + steps * tabs.repeat;
+};
+
+export fn report_tab_error(utility: str, tab_text: str, error_code: i32) void = {
+    if (error_code == 2i32) {
+        c::fprintf(c::stderr, "%s: tab size cannot be 0\n", utility.data as *i8);
+    } else if (error_code == 4i32) {
+        c::fprintf(c::stderr, "%s: tab sizes must be ascending\n", utility.data as *i8);
+    } else if (error_code == 5i32) {
+        c::fprintf(c::stderr, "%s: tab size too large\n", utility.data as *i8);
+    } else {
+        c::fprintf(c::stderr, "%s: tab size contains invalid character(s): '%s'\n", utility.data as *i8, tab_text.data as *i8);
+    };
+};

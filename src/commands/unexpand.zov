@@ -1,8 +1,12 @@
 use std::env as args;
 use std::io;
+use std::mem as mem;
 use <stdio.h> as c;
-use <unexpand_backend.h> as backend;
+use <string.h> as strc;
+use <platform_errno.h> as platform_errno;
+use <platform_locale.h> as platform_locale;
 use shared::io as stream;
+use shared::tabstops as tabstops;
 
 fn usage_error() void = { io::eprintln("Try 'unexpand --help' for more information."); };
 
@@ -37,6 +41,136 @@ fn help() void = {
     io::print("Report any translation bugs to <https://translationproject.org/team/>\n");
     io::print("Full documentation <https://www.gnu.org/software/coreutils/unexpand>\n");
     io::print("or available locally via: info '(coreutils) unexpand invocation'\n");
+};
+
+fn emit_spaces(column: &mut usize, spaces: usize, tabs: &tabstops::TabStops) bool = {
+    let max_val: usize = 18446744073709551615usize;
+    if (spaces > max_val - *column) { return false; };
+    let end: usize = *column + spaces;
+    while (tabstops::next_tab(tabs, *column) <= end) {
+        let stop: usize = tabstops::next_tab(tabs, *column);
+        if (!stream::putbyte(c::stdout, 9u8)) { return false; };
+        *column = stop;
+    };
+    while (*column < end) {
+        if (!stream::putbyte(c::stdout, 32u8)) { return false; };
+        *column += 1usize;
+    };
+    return true;
+};
+
+fn process_unexpand_line(line: *u8, len: usize, terminated: bool, tabs: &tabstops::TabStops,
+                         all_blanks: bool, column: &mut usize, at_line_start: &mut bool) bool = {
+    let mut pending_spaces: usize = 0usize;
+    let mut offset: usize = 0usize;
+    let max_val: usize = 18446744073709551615usize;
+
+    while (offset < len) {
+        let b: u8 = line[offset];
+        if (b == 32u8 && (all_blanks || *at_line_start)) {
+            if (pending_spaces == max_val) { return false; };
+            pending_spaces += 1usize;
+            offset += 1usize;
+            continue;
+        };
+        if (pending_spaces != 0usize) {
+            if (!emit_spaces(column, pending_spaces, tabs)) { return false; };
+            pending_spaces = 0usize;
+        };
+        if (b == 9u8) {
+            if (!stream::putbyte(c::stdout, 9u8)) { return false; };
+            *column = tabstops::next_tab(tabs, *column);
+            offset += 1usize;
+            continue;
+        };
+        if (b == 8u8) {
+            if (!stream::putbyte(c::stdout, 8u8)) { return false; };
+            if (*column != 0usize) { *column -= 1usize; };
+            *at_line_start = false;
+            offset += 1usize;
+            continue;
+        };
+        let mut char_bytes: usize = 1usize;
+        let mut char_width: usize = 1usize;
+        platform_locale::zov_fold_next_char(((&line[offset]) as *u8), len - offset, &mut char_bytes, &mut char_width);
+        if (!stream::writebytes(c::stdout, ((&line[offset]) as *u8), char_bytes)) { return false; };
+        if (char_width > 0usize && *column <= max_val - char_width) {
+            *column += char_width;
+        };
+        if (b != 32u8 && b != 9u8) {
+            *at_line_start = false;
+        };
+        offset += char_bytes;
+    };
+    if (pending_spaces != 0usize) {
+        if (!emit_spaces(column, pending_spaces, tabs)) { return false; };
+        pending_spaces = 0usize;
+    };
+    if (terminated) {
+        if (!stream::putbyte(c::stdout, 10u8)) { return false; };
+        *column = 0usize;
+        *at_line_start = true;
+    };
+    return true;
+};
+
+fn unexpand_file(path: str, tabs: &tabstops::TabStops, all_blanks: bool) i32 = {
+    let is_stdin: bool = path == "-";
+    let mut fp: *c::FILE = c::stdin;
+    if (!is_stdin) {
+        let open_res: nullable *c::FILE = stream::openread(path);
+        match (open_res) {
+            case let opened: *c::FILE => { fp = opened; },
+            case null => {
+                let err: i32 = platform_errno::zov_errno_value();
+                c::fprintf(c::stderr, "unexpand: %s: %s\n", path.data as *i8, strc::strerror(err));
+                return 1;
+            },
+        };
+    };
+
+    let mut column: usize = 0usize;
+    let mut at_line_start: bool = true;
+    let mut status: i32 = 0;
+
+    let mut line_buf: *u8 = mem::alloc[u8](256usize);
+    let mut line_cap: usize = 256usize;
+    let mut line_len: usize = 0usize;
+
+    while (true) {
+        let ch: i32 = c::fgetc(fp);
+        if (ch == -1i32) {
+            if (stream::readerror(fp)) {
+                let err: i32 = platform_errno::zov_errno_value();
+                c::fprintf(c::stderr, "unexpand: %s: %s\n", path.data as *i8, strc::strerror(err));
+                status = 1;
+            } else if (line_len > 0usize) {
+                if (!process_unexpand_line(line_buf, line_len, false, tabs, all_blanks, &mut column, &mut at_line_start)) {
+                    status = 1;
+                };
+            };
+            break;
+        };
+        if (ch == 10i32) {
+            if (!process_unexpand_line(line_buf, line_len, true, tabs, all_blanks, &mut column, &mut at_line_start)) {
+                status = 1;
+                break;
+            };
+            line_len = 0usize;
+            continue;
+        };
+        if (line_len == line_cap) {
+            let next: usize = line_cap * 2usize;
+            line_buf = mem::reallocbuf[u8](line_buf, next);
+            line_cap = next;
+        };
+        line_buf[line_len] = ch as u8;
+        line_len += 1usize;
+    };
+
+    mem::freeptr[u8](line_buf);
+    if (!is_stdin) { stream::closefile(fp); };
+    return status;
 };
 
 export fn run(start: usize, argc: usize) i32 = {
@@ -86,7 +220,21 @@ export fn run(start: usize, argc: usize) i32 = {
     };
     if (file_count == 0usize) { files[0usize] = "-"; file_count = 1usize; };
     if (first_only) { all_blanks = false; };
-    let mut paths: [256]*i8;
-    for (let fi in 0usize..file_count) { paths[fi] = files[fi].data as *i8; };
-    return backend::zov_unexpand_run(file_count, ((&paths[0usize]) as **i8), tabs.data as *i8, all_blanks as i32);
+
+    platform_locale::zov_init_ctype_locale();
+
+    let mut tab_stops: tabstops::TabStops;
+    let mut tabs_error: i32 = 0i32;
+    if (!tabstops::parse_tabs(tabs, &mut tab_stops, &mut tabs_error)) {
+        tabstops::report_tab_error("unexpand", tabs, tabs_error);
+        return 1;
+    };
+
+    let mut status: i32 = 0i32;
+    for (let fi in 0usize..file_count) {
+        let result: i32 = unexpand_file(files[fi], &tab_stops, all_blanks);
+        if (result != 0i32) { status = 1i32; };
+    };
+    if (!stream::finishoutput("unexpand")) { status = 1i32; };
+    return status;
 };
