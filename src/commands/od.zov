@@ -1,10 +1,967 @@
 use std::env as args;
-use <od_backend.h> as backend;
+use std::io;
+use std::vec as vec;
+use <stdio.h> as c;
+use <string.h> as strc;
+use <platform_errno.h> as platform_errno;
+use <platform_od.h> as platform_od;
+use shared::io as stream;
+
+fn key(arg: str) str = {
+    for (let i in 0usize..arg.len) { if (arg.data[i] == 61u8) { return arg[0usize..i]; }; };
+    return arg;
+};
+
+fn prefix(value: str, full: str) bool = {
+    return value.len > 2usize && value.len <= full.len && value == full[0usize..value.len];
+};
+
+type OdType = struct {
+    kind: u8,
+    size: usize,
+    strings: bool,
+    bfloat: bool,
+};
+
+fn od_field_width(type_kind: u8, type_size: usize) usize = {
+    if (type_kind == 97u8 || type_kind == 99u8) { return 3usize; }; // 'a', 'c'
+    if (type_kind == 120u8) { return type_size * 2usize; }; // 'x'
+    if (type_kind == 111u8) { return type_size * 3usize; }; // 'o'
+    if (type_kind == 102u8) { // 'f'
+        if (type_size == 2usize || type_size == 4usize) { return 15usize; };
+        if (type_size == 8usize) { return 24usize; };
+        return 29usize; // long double on x86_64
+    };
+    if (type_kind == 100u8) { // 'd'
+        if (type_size == 1usize) { return 4usize; };
+        if (type_size == 2usize) { return 6usize; };
+        if (type_size == 4usize) { return 11usize; };
+        return 20usize;
+    };
+    // 'u'
+    if (type_size == 1usize) { return 3usize; };
+    if (type_size == 2usize) { return 5usize; };
+    if (type_size == 4usize) { return 10usize; };
+    return 20usize;
+};
+
+fn od_ascii_name(c: u8) str = {
+    if (c == 0u8) { return "nul"; };
+    if (c == 1u8) { return "soh"; };
+    if (c == 2u8) { return "stx"; };
+    if (c == 3u8) { return "etx"; };
+    if (c == 4u8) { return "eot"; };
+    if (c == 5u8) { return "enq"; };
+    if (c == 6u8) { return "ack"; };
+    if (c == 7u8) { return "bel"; };
+    if (c == 8u8) { return "bs"; };
+    if (c == 9u8) { return "ht"; };
+    if (c == 10u8) { return "nl"; };
+    if (c == 11u8) { return "vt"; };
+    if (c == 12u8) { return "ff"; };
+    if (c == 13u8) { return "cr"; };
+    if (c == 14u8) { return "so"; };
+    if (c == 15u8) { return "si"; };
+    if (c == 16u8) { return "dle"; };
+    if (c == 17u8) { return "dc1"; };
+    if (c == 18u8) { return "dc2"; };
+    if (c == 19u8) { return "dc3"; };
+    if (c == 20u8) { return "dc4"; };
+    if (c == 21u8) { return "nak"; };
+    if (c == 22u8) { return "syn"; };
+    if (c == 23u8) { return "etb"; };
+    if (c == 24u8) { return "can"; };
+    if (c == 25u8) { return "em"; };
+    if (c == 26u8) { return "sub"; };
+    if (c == 27u8) { return "esc"; };
+    if (c == 28u8) { return "fs"; };
+    if (c == 29u8) { return "gs"; };
+    if (c == 30u8) { return "rs"; };
+    if (c == 31u8) { return "us"; };
+    if (c == 32u8) { return "sp"; };
+    if (c == 127u8) { return "del"; };
+    return "";
+};
+
+fn od_print_c(ch: u8, out_buf: *u8) usize = {
+    if (ch == 0u8) { out_buf[0usize] = 92u8; out_buf[1usize] = 48u8; return 2usize; };
+    if (ch == 7u8) { out_buf[0usize] = 92u8; out_buf[1usize] = 97u8; return 2usize; };
+    if (ch == 8u8) { out_buf[0usize] = 92u8; out_buf[1usize] = 98u8; return 2usize; };
+    if (ch == 9u8) { out_buf[0usize] = 92u8; out_buf[1usize] = 116u8; return 2usize; };
+    if (ch == 10u8) { out_buf[0usize] = 92u8; out_buf[1usize] = 110u8; return 2usize; };
+    if (ch == 11u8) { out_buf[0usize] = 92u8; out_buf[1usize] = 118u8; return 2usize; };
+    if (ch == 12u8) { out_buf[0usize] = 92u8; out_buf[1usize] = 102u8; return 2usize; };
+    if (ch == 13u8) { out_buf[0usize] = 92u8; out_buf[1usize] = 114u8; return 2usize; };
+    if (ch >= 32u8 && ch < 127u8) { out_buf[0usize] = ch; return 1usize; };
+    out_buf[0usize] = 92u8;
+    out_buf[1usize] = 48u8 + ((ch / 64u8) & 7u8);
+    out_buf[2usize] = 48u8 + ((ch / 8u8) & 7u8);
+    out_buf[3usize] = 48u8 + (ch & 7u8);
+    return 4usize;
+};
+
+fn is_printable(ch: u8) bool = {
+    return ch >= 32u8 && ch < 127u8;
+};
+
+fn print_address(address: u64, radix: u8, width: i32) void = {
+    if (radix == 110u8) { return; }; // 'n'
+    if (radix == 120u8) { // 'x'
+        c::printf("%0*lx".data as *i8, width, address);
+    } else if (radix == 100u8) { // 'd'
+        c::printf("%0*lu".data as *i8, width, address);
+    } else { // 'o'
+        c::printf("%0*lo".data as *i8, width, address);
+    };
+};
+
+fn od_extract_value(p: *u8, n: usize, big_endian: bool) u64 = {
+    let mut v: u64 = 0u64;
+    if (big_endian) {
+        for (let i in 0usize..n) {
+            v = (v << 8u64) | (p[i] as u64);
+        };
+    } else {
+        let mut i: usize = n;
+        while (i > 0usize) {
+            v = (v << 8u64) | (p[i - 1usize] as u64);
+            i -= 1usize;
+        };
+    };
+    return v;
+};
+
+fn print_type(
+    t: &OdType,
+    data: *u8,
+    available: usize,
+    big_endian: bool,
+    multi: bool,
+    pad_extra: bool
+) void = {
+    let mut bytes: [16]u8;
+    for (let k in 0usize..16usize) { bytes[k] = 0u8; };
+    let mut n: usize = available;
+    if (n > t.size) { n = t.size; };
+    for (let k in 0usize..n) { bytes[k] = data[k]; };
+
+    let mut width: usize = od_field_width(t.kind, t.size);
+    if (pad_extra) {
+        if (t.kind == 120u8 || t.kind == 111u8) { // 'x' or 'o'
+            c::putchar(32i32);
+        } else {
+            width += 1usize;
+        };
+    };
+    if (multi) {
+        c::putchar(32i32);
+    };
+
+    if (t.kind == 97u8) { // 'a'
+        let b: u8 = bytes[0usize] & 127u8;
+        let name: str = od_ascii_name(b);
+        if (name.len > 0usize) {
+            c::printf("%*s".data as *i8, width as i32, name.data as *i8);
+        } else {
+            let mut s: [2]u8;
+            s[0usize] = b;
+            s[1usize] = 0u8;
+            c::printf("%*s".data as *i8, width as i32, (&s[0usize]) as *i8);
+        };
+    } else if (t.kind == 99u8) { // 'c'
+        let mut rendered: [8]u8;
+        let rlen: usize = od_print_c(bytes[0usize], (&mut rendered[0usize]) as *u8);
+        rendered[rlen] = 0u8;
+        c::printf("%*s".data as *i8, width as i32, (&rendered[0usize]) as *i8);
+    } else if (t.kind == 120u8) { // 'x'
+        let value: u64 = od_extract_value((&bytes[0usize]) as *u8, t.size, big_endian);
+        c::printf("%0*lx".data as *i8, width as i32, value);
+    } else if (t.kind == 111u8) { // 'o'
+        let value: u64 = od_extract_value((&bytes[0usize]) as *u8, t.size, big_endian);
+        c::printf("%0*lo".data as *i8, width as i32, value);
+    } else if (t.kind == 117u8) { // 'u'
+        let value: u64 = od_extract_value((&bytes[0usize]) as *u8, t.size, big_endian);
+        c::printf("%*lu".data as *i8, width as i32, value);
+    } else if (t.kind == 100u8) { // 'd'
+        let value: u64 = od_extract_value((&bytes[0usize]) as *u8, t.size, big_endian);
+        let mut signed_value: i64 = 0i64;
+        if (t.size >= 8usize) {
+            signed_value = value as i64;
+        } else {
+            let bits: u64 = (t.size * 8usize) as u64;
+            let sign_bit: u64 = 1u64 << (bits - 1u64);
+            signed_value = ((value ^ sign_bit) - sign_bit) as i64;
+        };
+        c::printf("%*ld".data as *i8, width as i32, signed_value);
+    } else if (t.kind == 102u8) { // 'f'
+        let mut text: [128]u8;
+        text[0usize] = 0u8;
+        if (t.size == 2usize) {
+            let value: u64 = od_extract_value((&bytes[0usize]) as *u8, 2usize, big_endian);
+            platform_od::zov_od_format_half(value as u16, t.bfloat as i32, (&mut text[0usize]) as *i8, 128usize);
+        } else if (t.size == 4usize) {
+            let value: u64 = od_extract_value((&bytes[0usize]) as *u8, 4usize, big_endian);
+            platform_od::zov_od_format_float_bits(value as u32, (&mut text[0usize]) as *i8, 128usize);
+        } else if (t.size == 8usize) {
+            let value: u64 = od_extract_value((&bytes[0usize]) as *u8, 8usize, big_endian);
+            platform_od::zov_od_format_double_bits(value, (&mut text[0usize]) as *i8, 128usize);
+        } else {
+            platform_od::zov_od_format_long_double_bytes((&bytes[0usize]) as *u8, available, big_endian as i32, (&mut text[0usize]) as *i8, 128usize);
+        };
+        c::printf("%*s".data as *i8, width as i32, (&text[0usize]) as *i8);
+    };
+};
+
+fn parse_od_size(text: str, out: &mut u64) bool = {
+    if (text.len == 0usize || text.data[0usize] == 45u8) { return false; };
+    let mut base: u64 = 10u64;
+    let mut i: usize = 0usize;
+    if (text.len > 2usize && text.data[0usize] == 48u8 && (text.data[1usize] == 120u8 || text.data[1usize] == 88u8)) {
+        base = 16u64;
+        i = 2usize;
+    } else if (text.len > 1usize && text.data[0usize] == 48u8) {
+        base = 8u64;
+        i = 1usize;
+    };
+
+    let num_start: usize = i;
+    let mut n: u64 = 0u64;
+    let max_u64: u64 = 18446744073709551615u64;
+    while (i < text.len) {
+        let ch: u8 = text.data[i];
+        let mut d: u64 = 99u64;
+        if (ch >= 48u8 && ch <= 57u8) {
+            d = (ch - 48u8) as u64;
+        } else if (base == 16u64 && ch >= 97u8 && ch <= 102u8) {
+            d = (ch - 87u8) as u64;
+        } else if (base == 16u64 && ch >= 65u8 && ch <= 70u8) {
+            d = (ch - 55u8) as u64;
+        };
+        if (d >= base) {
+            break;
+        };
+        if (n > (max_u64 - d) / base) {
+            return false;
+        };
+        n = n * base + d;
+        i += 1usize;
+    };
+    if (i == num_start && !(num_start > 0usize && base == 8u64)) {
+        return false;
+    };
+
+    let suffix: str = text[i..text.len];
+    let mut multiplier: u64 = 1u64;
+    if (suffix.len > 0usize) {
+        if (suffix == "b") { multiplier = 512u64; }
+        else if (suffix == "K" || suffix == "KiB") { multiplier = 1024u64; }
+        else if (suffix == "KB") { multiplier = 1000u64; }
+        else if (suffix == "M" || suffix == "MiB") { multiplier = 1048576u64; }
+        else if (suffix == "MB") { multiplier = 1000000u64; }
+        else if (suffix == "G" || suffix == "GiB") { multiplier = 1073741824u64; }
+        else if (suffix == "GB") { multiplier = 1000000000u64; }
+        else if (suffix == "T" || suffix == "TiB") { multiplier = 1099511627776u64; }
+        else if (suffix == "TB") { multiplier = 1000000000000u64; }
+        else if (suffix == "P" || suffix == "PiB") { multiplier = 1125899906842624u64; }
+        else if (suffix == "PB") { multiplier = 1000000000000000u64; }
+        else if (suffix == "E" || suffix == "EiB") { multiplier = 1152921504606846976u64; }
+        else if (suffix == "EB") { multiplier = 1000000000000000000u64; }
+        else if (suffix == "Z" || suffix == "ZiB" || suffix == "Y" || suffix == "YiB" ||
+                 suffix == "R" || suffix == "RiB" || suffix == "Q" || suffix == "QiB") { multiplier = max_u64; }
+        else { return false; };
+    };
+    if (multiplier == 0u64 || n > max_u64 / multiplier) {
+        return false;
+    };
+    *out = n * multiplier;
+    return true;
+};
+
+fn parse_od_offset(text: str, out: &mut u64) bool = {
+    let mut digits: str = text;
+    if (digits.len > 0usize && digits.data[0usize] == 43u8) {
+        digits = digits[1usize..digits.len];
+    };
+    if (digits.len == 0usize) { return false; };
+    let mut n: usize = digits.len;
+    let mut multiplier: u64 = 1u64;
+    let mut force_octal: bool = false;
+    if (digits.data[n - 1usize] == 98u8) {
+        multiplier = 512u64;
+        n -= 1usize;
+    } else if (digits.data[n - 1usize] == 46u8) {
+        force_octal = true;
+        n -= 1usize;
+    };
+    if (n == 0usize) { return false; };
+
+    let mut base: u64 = 10u64;
+    let mut i: usize = 0usize;
+    if (force_octal) {
+        base = 8u64;
+    } else if (n > 2usize && digits.data[0usize] == 48u8 && (digits.data[1usize] == 120u8 || digits.data[1usize] == 88u8)) {
+        base = 16u64;
+        i = 2usize;
+    } else if (n > 1usize && digits.data[0usize] == 48u8) {
+        base = 8u64;
+        i = 1usize;
+    };
+
+    let num_start: usize = i;
+    let mut val: u64 = 0u64;
+    let max_u64: u64 = 18446744073709551615u64;
+    while (i < n) {
+        let ch: u8 = digits.data[i];
+        let mut d: u64 = 99u64;
+        if (ch >= 48u8 && ch <= 57u8) {
+            d = (ch - 48u8) as u64;
+        } else if (base == 16u64 && ch >= 97u8 && ch <= 102u8) {
+            d = (ch - 87u8) as u64;
+        } else if (base == 16u64 && ch >= 65u8 && ch <= 70u8) {
+            d = (ch - 55u8) as u64;
+        };
+        if (d >= base) { return false; };
+        if (val > (max_u64 - d) / base) { return false; };
+        val = val * base + d;
+        i += 1usize;
+    };
+    if (i == num_start && !(num_start > 0usize && base == 8u64)) { return false; };
+    if (multiplier == 0u64 || val > max_u64 / multiplier) { return false; };
+    *out = val * multiplier;
+    return true;
+};
+
+fn add_od_type(types: &mut vec::Vec[OdType], kind: u8, size: usize, strings: bool, bfloat: bool) bool = {
+    if (types.len() >= 16usize || size == 0usize || size > 16usize) {
+        return false;
+    };
+    types.push(OdType {
+        kind = kind,
+        size = size,
+        strings = strings,
+        bfloat = bfloat,
+    });
+    return true;
+};
+
+fn parse_od_types(spec: str, types: &mut vec::Vec[OdType]) bool = {
+    let mut p: usize = 0usize;
+    let n: usize = spec.len;
+    while (p < n) {
+        let kind: u8 = spec.data[p];
+        p += 1usize;
+        if (!(kind == 97u8 || kind == 99u8 || kind == 100u8 || kind == 102u8 ||
+              kind == 111u8 || kind == 117u8 || kind == 120u8)) {
+            c::fprintf(c::stderr, "od: invalid character '%c' in type string '%s'\n", kind as i32, spec.data as *i8);
+            return false;
+        };
+        let integral: bool = kind == 100u8 || kind == 111u8 || kind == 117u8 || kind == 120u8;
+        let mut bfloat: bool = false;
+        let mut size: usize = 4usize;
+        if (kind == 97u8 || kind == 99u8) {
+            size = 1usize;
+        } else if (kind == 102u8) {
+            size = 8usize;
+        };
+
+        if (kind == 97u8 || kind == 99u8) {
+            if (p < n && spec.data[p] == 122u8) {
+                p += 1usize;
+            } else if (p < n) {
+                c::fprintf(c::stderr, "od: invalid character '%c' in type string '%s'\n", spec.data[p] as i32, spec.data as *i8);
+                return false;
+            };
+            if (!add_od_type(types, kind, 1usize, false, false)) {
+                c::fprintf(c::stderr, "od: too many types in type string '%s'\n", spec.data as *i8);
+                return false;
+            };
+            continue;
+        };
+
+        if (integral && p < n && spec.data[p] == 67u8) { size = 1usize; p += 1usize; }
+        else if (integral && p < n && spec.data[p] == 83u8) { size = 2usize; p += 1usize; }
+        else if (integral && p < n && spec.data[p] == 73u8) { size = 4usize; p += 1usize; }
+        else if (integral && p < n && spec.data[p] == 76u8) { size = 8usize; p += 1usize; }
+        else if (kind == 102u8 && p < n && spec.data[p] == 66u8) { size = 2usize; bfloat = true; p += 1usize; }
+        else if (kind == 102u8 && p < n && spec.data[p] == 72u8) { size = 2usize; p += 1usize; }
+        else if (kind == 102u8 && p < n && spec.data[p] == 70u8) { size = 4usize; p += 1usize; }
+        else if (kind == 102u8 && p < n && spec.data[p] == 68u8) { size = 8usize; p += 1usize; }
+        else if (kind == 102u8 && p < n && spec.data[p] == 76u8) { size = 16usize; p += 1usize; }
+        else if (p < n && spec.data[p] >= 48u8 && spec.data[p] <= 57u8) {
+            size = 0usize;
+            let max_usize: usize = 18446744073709551615usize;
+            while (p < n && spec.data[p] >= 48u8 && spec.data[p] <= 57u8) {
+                let digit: usize = (spec.data[p] - 48u8) as usize;
+                if (size > (max_usize - digit) / 10usize) { size = max_usize; }
+                else { size = size * 10usize + digit; };
+                p += 1usize;
+            };
+        } else if (p < n && spec.data[p] != 122u8) {
+            c::fprintf(c::stderr, "od: invalid character '%c' in type string '%s'\n", spec.data[p] as i32, spec.data as *i8);
+            return false;
+        };
+
+        let mut supported: bool = false;
+        if (integral) {
+            supported = size == 1usize || size == 2usize || size == 4usize || size == 8usize;
+        } else {
+            supported = size == 2usize || size == 4usize || size == 8usize || size == 16usize;
+        };
+
+        if (!supported) {
+            let mut type_desc: str = "floating point";
+            if (integral) {
+                type_desc = "integral";
+            };
+            c::fprintf(c::stderr, "od: invalid type string '%s';\nthis system doesn't provide a %zu-byte %s type\n",
+                       spec.data as *i8, size, type_desc.data as *i8);
+            return false;
+        };
+
+        let mut strings: bool = false;
+        if (p < n && spec.data[p] == 122u8) {
+            strings = true;
+            p += 1usize;
+        };
+        if (!add_od_type(types, kind, size, strings, bfloat)) {
+            c::fprintf(c::stderr, "od: too many types in type string '%s'\n", spec.data as *i8);
+            return false;
+        };
+    };
+    return true;
+};
+
+fn od_read_file(path: str, buf: &mut vec::Vec[u8]) bool = {
+    let mut fp: nullable *c::FILE = null;
+    if (path == "-") {
+        fp = c::stdin;
+    } else {
+        fp = c::fopen(path.data as *i8, "rb".data as *i8);
+    };
+    if (fp == null) {
+        let err: i32 = platform_errno::zov_errno_value();
+        c::fprintf(c::stderr, "od: %s: %s\n", path.data as *i8, strc::strerror(err));
+        return false;
+    };
+    let f: *c::FILE = fp!;
+    let mut chunk: [65536]u8;
+    let mut ok: bool = true;
+    while (true) {
+        let n: usize = c::fread((&mut chunk[0usize]) as *void, 1usize, 65536usize, f);
+        if (n > 0usize) {
+            buf.reserve(n);
+            for (let j in 0usize..n) {
+                buf.push(chunk[j]);
+            };
+        };
+        if (n < 65536usize) {
+            if (c::ferror(f) != 0i32) {
+                ok = false;
+            };
+            break;
+        };
+    };
+    if (path != "-") {
+        c::fclose(f);
+    };
+    if (!ok) {
+        c::fprintf(c::stderr, "od: read error: %s\n", path.data as *i8);
+    };
+    return ok;
+};
+
+fn help() void = {
+    c::fputs("Usage: od [OPTION]... [FILE]...\n  or:  od [-abcdfilosx]... [FILE] [[+]OFFSET[.][b]]\n  or:  od --traditional [OPTION]... [FILE] [[+]OFFSET[.][b] [+][LABEL][.][b]]\n\nWrite an unambiguous representation, octal bytes by default,\nof FILE to standard output.  With more than one FILE argument,\nconcatenate them in the listed order to form the input.\n\nWith no FILE, or when FILE is -, read standard input.\n\nIf first and second call formats both apply, the second format is assumed\nif the last operand begins with + or (if there are 2 operands) a digit.\nAn OFFSET operand means -j OFFSET.  LABEL is the pseudo-address\nat first byte printed, incremented when dump is progressing.\nFor OFFSET and LABEL, a 0x or 0X prefix indicates hexadecimal;\nsuffixes may be . for octal and b for multiply by 512.\n\nMandatory arguments to long options are mandatory for short options too.\n  -A, --address-radix=RADIX\n         output format for file offsets;\n         RADIX is one of [doxn], for Decimal, Octal, Hex or None\n      --endian=".data as *i8, c::stdout);
+    c::putchar(123i32);
+    c::fputs("big|little".data as *i8, c::stdout);
+    c::putchar(125i32);
+    c::puts("\n         swap input bytes according the specified order\n  -j, --skip-bytes=BYTES\n         skip BYTES input bytes first\n  -N, --read-bytes=BYTES\n         limit dump to BYTES input bytes\n  -S BYTES, --strings[=BYTES]\n         show only NUL terminated strings\n         of at least BYTES (default 3) printable characters\n  -t, --format=TYPE\n         select output format or formats\n  -v, --output-duplicates\n         do not use * to mark line suppression\n  -w[BYTES], --width[=BYTES]\n         output BYTES bytes per output line;\n         32 is implied when BYTES is not specified\n      --traditional\n         accept arguments in third form above\n      --help\n         display this help and exit\n      --version\n         output version information and exit\n\n\nTraditional format specifications may be intermixed; they accumulate:\n  -a   same as -t a,  select named characters, ignoring high-order bit\n  -b   same as -t o1, select octal bytes\n  -c   same as -t c,  select printable characters or backslash escapes\n  -d   same as -t u2, select unsigned decimal 2-byte units\n  -f   same as -t fF, select floats\n  -i   same as -t dI, select decimal ints\n  -l   same as -t dL, select decimal longs\n  -o   same as -t o2, select octal 2-byte units\n  -s   same as -t d2, select decimal 2-byte units\n  -x   same as -t x2, select hexadecimal 2-byte units\n\n\nTYPE is made up of one or more of these specifications:\n  a          named character, ignoring high-order bit\n  c          printable character or backslash escape\n  d[SIZE]    signed decimal, SIZE bytes per integer\n  f[SIZE]    floating point, SIZE bytes per float\n  o[SIZE]    octal, SIZE bytes per integer\n  u[SIZE]    unsigned decimal, SIZE bytes per integer\n  x[SIZE]    hexadecimal, SIZE bytes per integer\n\nSIZE is a number.  For TYPE in [doux], SIZE may also be C for\nsizeof(char), S for sizeof(short), I for sizeof(int) or L for\nsizeof(long).  If TYPE is f, SIZE may also be B for Brain 16 bit,\nH for Half precision float, F for sizeof(float), D for sizeof(double),\nor L for sizeof(long double).\n\nAdding a z suffix to any type displays printable characters at the end of\neach output line.\n\n\nBYTES is hex with 0x or 0X prefix, and may have a multiplier suffix:\n  b    512\n  KB   1000\n  K    1024\n  MB   1000*1000\n  M    1024*1024\nand so on for G, T, P, E, Z, Y, R, Q.\nBinary prefixes can be used, too: KiB=K, MiB=M, and so on.\n\nReport bugs to: bug-coreutils@gnu.org\nGNU coreutils home page: <https://www.gnu.org/software/coreutils/>\nGeneral help using GNU software: <https://www.gnu.org/gethelp/>\nReport any translation bugs to <https://translationproject.org/team/>\nFull documentation <https://www.gnu.org/software/coreutils/od>\nor available locally via: info '(coreutils) od invocation'".data as *i8);
+};
 
 export fn run(start: usize, argc: usize) i32 = {
-    let count: usize = argc - start;
-    if (count > 1024usize) { return 1; };
-    let mut argv: [1024]*i8;
-    for (let i in 0usize..count) { argv[i] = args::argat(start + i).data as *i8; };
-    return backend::zov_od_run(count as i32, (&argv[0usize]) as **i8);
+    let mut address_radix: u8 = 111u8; // 'o'
+    let mut skip: u64 = 0u64;
+    let mut read_limit: u64 = 18446744073709551615u64;
+    let mut width: usize = 16usize;
+    let mut width_set: bool = false;
+    let mut string_min: usize = 3usize;
+    let mut strings_mode: bool = false;
+    let mut show_duplicates: bool = false;
+    let mut big_endian: bool = false;
+    let mut options_done: bool = false;
+
+    let mut types: vec::Vec[OdType] = vec::new[OdType]();
+    let mut files: vec::Vec[str] = vec::new[str]();
+
+    let mut i: usize = start;
+    let mut status: i32 = 0i32;
+
+    while (i < argc) {
+        let arg: str = args::argat(i);
+        if (!options_done && arg == "--") { options_done = true; i += 1usize; continue; };
+        if (!options_done && arg.len > 2usize && arg[0usize..2usize] == "--") {
+            let k: str = key(arg);
+            let has_eq: bool = arg.len > k.len;
+            let mut value: str = "";
+            if (has_eq) {
+                value = arg[k.len + 1usize..arg.len];
+            };
+
+            if (k == "--help" || prefix(k, "--help") ||
+                k == "--version" || prefix(k, "--version") ||
+                k == "--output-duplicates" || prefix(k, "--output-duplicates") ||
+                k == "--traditional" || prefix(k, "--traditional")) {
+                let mut name: str = "--traditional";
+                if (k == "--help" || prefix(k, "--help")) { name = "--help"; }
+                else if (k == "--version" || prefix(k, "--version")) { name = "--version"; }
+                else if (k == "--output-duplicates" || prefix(k, "--output-duplicates")) { name = "--output-duplicates"; };
+                if (has_eq) {
+                    c::fprintf(c::stderr, "od: option '%s' doesn't allow an argument\nTry 'od --help' for more information.\n", name.data as *i8);
+                    return 1;
+                };
+                if (name == "--help") { help(); stream::finishoutput("od"); return 0; };
+                if (name == "--version") { io::println("od (zovutils) 0.10.61"); stream::finishoutput("od"); return 0; };
+                if (name == "--output-duplicates") { show_duplicates = true; i += 1usize; continue; };
+                // --traditional
+                i += 1usize;
+                continue;
+            };
+
+            if (k == "--strings" || prefix(k, "--strings")) {
+                strings_mode = true;
+                if (has_eq) {
+                    let mut n: u64 = 0u64;
+                    if (!parse_od_size(value, &mut n) || n == 0u64) {
+                        c::fprintf(c::stderr, "od: invalid string length: %s\n", value.data as *i8);
+                        return 1;
+                    };
+                    string_min = n as usize;
+                };
+                i += 1usize;
+                continue;
+            };
+
+            if (k == "--width" || prefix(k, "--width")) {
+                if (!has_eq) {
+                    width = 32usize;
+                    width_set = true;
+                } else {
+                    let mut n: u64 = 0u64;
+                    if (!parse_od_size(value, &mut n) || n == 0u64 || n > 1048576u64) {
+                        c::fprintf(c::stderr, "od: invalid --width argument '%s'\n", value.data as *i8);
+                        return 1;
+                    };
+                    width = n as usize;
+                    width_set = true;
+                };
+                i += 1usize;
+                continue;
+            };
+
+            if (k == "--endian" || prefix(k, "--endian")) {
+                let mut v: str = "";
+                if (has_eq) {
+                    v = value;
+                    i += 1usize;
+                } else if (i + 1usize < argc) {
+                    i += 1usize;
+                    v = args::argat(i);
+                    i += 1usize;
+                } else {
+                    c::fprintf(c::stderr, "od: option '--endian' requires an argument\nTry 'od --help' for more information.\n");
+                    return 1;
+                };
+                if (v != "big" && v != "little") {
+                    c::fprintf(c::stderr, "od: invalid argument '%s' for '--endian'\nValid arguments are:\n  - 'little'\n  - 'big'\nTry 'od --help' for more information.\n", v.data as *i8);
+                    return 1;
+                };
+                big_endian = v == "big";
+                continue;
+            };
+
+            if (k == "--address-radix" || prefix(k, "--address-radix") ||
+                k == "--skip-bytes" || prefix(k, "--skip-bytes") ||
+                k == "--read-bytes" || prefix(k, "--read-bytes") ||
+                k == "--format" || prefix(k, "--format")) {
+                let mut name: str = "--format";
+                if (k == "--address-radix" || prefix(k, "--address-radix")) { name = "--address-radix"; }
+                else if (k == "--skip-bytes" || prefix(k, "--skip-bytes")) { name = "--skip-bytes"; }
+                else if (k == "--read-bytes" || prefix(k, "--read-bytes")) { name = "--read-bytes"; };
+                let mut v: str = "";
+                if (has_eq) {
+                    v = value;
+                    i += 1usize;
+                } else if (i + 1usize < argc) {
+                    i += 1usize;
+                    v = args::argat(i);
+                    i += 1usize;
+                } else {
+                    c::fprintf(c::stderr, "od: option '%s' requires an argument\n", name.data as *i8);
+                    return 1;
+                };
+
+                if (name == "--address-radix") {
+                    if (v.len != 1usize || !(v.data[0usize] == 100u8 || v.data[0usize] == 111u8 || v.data[0usize] == 120u8 || v.data[0usize] == 110u8)) {
+                        let mut bad_char: i32 = 0i32;
+                        if (v.len > 0usize) {
+                            bad_char = v.data[0usize] as i32;
+                        };
+                        c::fprintf(c::stderr, "od: invalid output address radix '%c'; it must be one character from [doxn]\n", bad_char);
+                        return 1;
+                    };
+                    address_radix = v.data[0usize];
+                } else if (name == "--skip-bytes") {
+                    if (!parse_od_size(v, &mut skip)) {
+                        c::fprintf(c::stderr, "od: invalid suffix in -j argument '%s'\n", v.data as *i8);
+                        return 1;
+                    };
+                } else if (name == "--read-bytes") {
+                    if (!parse_od_size(v, &mut read_limit)) {
+                        c::fprintf(c::stderr, "od: invalid suffix in -N argument '%s'\n", v.data as *i8);
+                        return 1;
+                    };
+                } else { // --format
+                    if (!parse_od_types(v, &mut types)) {
+                        return 1;
+                    };
+                };
+                continue;
+            };
+
+            c::fprintf(c::stderr, "od: unrecognized option '%s'\nTry 'od --help' for more information.\n", arg.data as *i8);
+            return 1;
+        };
+
+        if (!options_done && arg.len > 1usize && arg.data[0usize] == 45u8) {
+            let mut j: usize = 1usize;
+            while (j < arg.len) {
+                let ch: u8 = arg.data[j];
+                if (ch == 118u8) { // 'v'
+                    show_duplicates = true;
+                    j += 1usize;
+                    continue;
+                };
+                if (ch == 97u8) { // 'a'
+                    if (!add_od_type(&mut types, 97u8, 1usize, false, false)) { return 1; };
+                    j += 1usize;
+                    continue;
+                };
+                if (ch == 98u8) { // 'b'
+                    if (!add_od_type(&mut types, 111u8, 1usize, false, false)) { return 1; };
+                    j += 1usize;
+                    continue;
+                };
+                if (ch == 99u8) { // 'c'
+                    if (!add_od_type(&mut types, 99u8, 1usize, false, false)) { return 1; };
+                    j += 1usize;
+                    continue;
+                };
+                if (ch == 100u8) { // 'd'
+                    if (!add_od_type(&mut types, 117u8, 2usize, false, false)) { return 1; };
+                    j += 1usize;
+                    continue;
+                };
+                if (ch == 102u8) { // 'f'
+                    if (!add_od_type(&mut types, 102u8, 4usize, false, false)) { return 1; };
+                    j += 1usize;
+                    continue;
+                };
+                if (ch == 105u8) { // 'i'
+                    if (!add_od_type(&mut types, 100u8, 4usize, false, false)) { return 1; };
+                    j += 1usize;
+                    continue;
+                };
+                if (ch == 108u8) { // 'l'
+                    if (!add_od_type(&mut types, 100u8, 8usize, false, false)) { return 1; };
+                    j += 1usize;
+                    continue;
+                };
+                if (ch == 111u8) { // 'o'
+                    if (!add_od_type(&mut types, 111u8, 2usize, false, false)) { return 1; };
+                    j += 1usize;
+                    continue;
+                };
+                if (ch == 115u8) { // 's'
+                    if (!add_od_type(&mut types, 100u8, 2usize, false, false)) { return 1; };
+                    j += 1usize;
+                    continue;
+                };
+                if (ch == 120u8) { // 'x'
+                    if (!add_od_type(&mut types, 120u8, 2usize, false, false)) { return 1; };
+                    j += 1usize;
+                    continue;
+                };
+                if (ch == 83u8) { // 'S'
+                    let mut val: str = "";
+                    if (j + 1usize < arg.len) {
+                        val = arg[j + 1usize..arg.len];
+                        j = arg.len;
+                    } else if (i + 1usize < argc && args::argat(i + 1usize).len > 0usize && args::argat(i + 1usize).data[0usize] >= 48u8 && args::argat(i + 1usize).data[0usize] <= 57u8) {
+                        i += 1usize;
+                        val = args::argat(i);
+                        j = arg.len;
+                    };
+                    if (val.len > 0usize) {
+                        let mut n: u64 = 0u64;
+                        if (!parse_od_size(val, &mut n) || n == 0u64) {
+                            c::fprintf(c::stderr, "od: invalid string length: %s\n", val.data as *i8);
+                            return 1;
+                        };
+                        string_min = n as usize;
+                    };
+                    strings_mode = true;
+                    break;
+                };
+                if (ch == 65u8 || ch == 106u8 || ch == 78u8 || ch == 116u8 || ch == 119u8) {
+                    let mut val: str = "";
+                    if (j + 1usize < arg.len) {
+                        val = arg[j + 1usize..arg.len];
+                        j = arg.len;
+                    } else if (ch == 119u8) {
+                        width = 32usize;
+                        width_set = true;
+                        break;
+                    } else if (i + 1usize < argc) {
+                        i += 1usize;
+                        val = args::argat(i);
+                        j = arg.len;
+                    } else {
+                        c::fprintf(c::stderr, "od: option requires an argument -- '%c'\n", ch as i32);
+                        return 1;
+                    };
+
+                    if (ch == 65u8) {
+                        if (val.len != 1usize || !(val.data[0usize] == 100u8 || val.data[0usize] == 111u8 || val.data[0usize] == 120u8 || val.data[0usize] == 110u8)) {
+                            let mut bad_char: i32 = 0i32;
+                            if (val.len > 0usize) {
+                                bad_char = val.data[0usize] as i32;
+                            };
+                            c::fprintf(c::stderr, "od: invalid output address radix '%c'; it must be one character from [doxn]\n", bad_char);
+                            return 1;
+                        };
+                        address_radix = val.data[0usize];
+                    } else if (ch == 106u8) {
+                        if (!parse_od_size(val, &mut skip)) {
+                            c::fprintf(c::stderr, "od: invalid suffix in -j argument '%s'\n", val.data as *i8);
+                            return 1;
+                        };
+                    } else if (ch == 78u8) {
+                        if (!parse_od_size(val, &mut read_limit)) {
+                            c::fprintf(c::stderr, "od: invalid suffix in -N argument '%s'\n", val.data as *i8);
+                            return 1;
+                        };
+                    } else if (ch == 116u8) {
+                        if (!parse_od_types(val, &mut types)) {
+                            return 1;
+                        };
+                    } else {
+                        let mut n: u64 = 0u64;
+                        if (!parse_od_size(val, &mut n) || n == 0u64 || n > 1048576u64) {
+                            c::fprintf(c::stderr, "od: invalid -w argument '%s'\n", val.data as *i8);
+                            return 1;
+                        };
+                        width = n as usize;
+                        width_set = true;
+                    };
+                    break;
+                };
+
+                c::fprintf(c::stderr, "od: invalid option -- '%c'\nTry 'od --help' for more information.\n", ch as i32);
+                return 1;
+            };
+            i += 1usize;
+            continue;
+        };
+
+        files.push(arg);
+        i += 1usize;
+    };
+
+    if (files.len() > 0usize) {
+        let last: str = files.get(files.len() - 1usize);
+        let mut offset_operand: bool = false;
+        if (last.len > 0usize && last.data[0usize] == 43u8) {
+            offset_operand = true;
+        } else if (files.len() > 1usize && last.len > 0usize && last.data[0usize] >= 48u8 && last.data[0usize] <= 57u8) {
+            offset_operand = true;
+        };
+        if (offset_operand) {
+            let mut off: u64 = 0u64;
+            if (!parse_od_offset(last, &mut off)) {
+                c::fprintf(c::stderr, "od: invalid offset '%s'\n", last.data as *i8);
+                return 1;
+            };
+            skip = off;
+            let _ = files.pop();
+        };
+    };
+
+    if (types.len() == 0usize) {
+        add_od_type(&mut types, 111u8, 2usize, false, false);
+    };
+
+    if (!width_set || width == 0usize) {
+        width = 16usize;
+    };
+
+    let mut buf: vec::Vec[u8] = vec::new[u8]();
+    let mut opened: usize = 0usize;
+
+    if (files.len() == 0usize) {
+        if (!od_read_file("-", &mut buf)) {
+            status = 1i32;
+        } else {
+            opened = 1usize;
+        };
+    } else {
+        for (let idx in 0usize..files.len()) {
+            let fpath: str = files.get(idx);
+            if (!od_read_file(fpath, &mut buf)) {
+                status = 1i32;
+            } else {
+                opened += 1usize;
+            };
+        };
+    };
+
+    if (status != 0i32 && opened == 0usize) {
+        return 1;
+    };
+
+    let total_bytes: usize = buf.len();
+    let mut dump_start: usize = total_bytes;
+    if (skip < (total_bytes as u64)) {
+        dump_start = skip as usize;
+    };
+    let mut available: usize = total_bytes - dump_start;
+    if ((available as u64) > read_limit) {
+        available = read_limit as usize;
+    };
+
+    let mut addr_width: i32 = 7i32;
+    if (address_radix == 120u8) {
+        addr_width = 6i32;
+    };
+
+    if (strings_mode) {
+        let mut processed: usize = 0usize;
+        let mut string_start: usize = dump_start;
+        let mut str_buf: vec::Vec[u8] = vec::new[u8]();
+        let mut printable: bool = true;
+        while (processed < available) {
+            let ch: u8 = buf.data![dump_start + processed];
+            processed += 1usize;
+            if (ch == 0u8) {
+                if (str_buf.len() >= string_min && printable) {
+                    print_address(string_start as u64, address_radix, addr_width);
+                    c::putchar(32i32);
+                    for (let k in 0usize..str_buf.len()) {
+                        c::putchar(str_buf.data![k] as i32);
+                    };
+                    c::putchar(10i32);
+                };
+                str_buf.clear();
+                printable = true;
+                string_start = dump_start + processed;
+            } else {
+                if (!is_printable(ch)) {
+                    printable = false;
+                };
+                str_buf.push(ch);
+            };
+        };
+    } else {
+        let mut offset: usize = 0usize;
+        let mut have_previous: bool = false;
+        let mut star: bool = false;
+        while (offset < available) {
+            let mut chunk: usize = available - offset;
+            if (chunk > width) {
+                chunk = width;
+            };
+            let row_ptr: *u8 = (&buf.data![dump_start + offset]) as *u8;
+            let mut duplicate: bool = false;
+            if (chunk == width && have_previous) {
+                duplicate = true;
+                let prev_ptr: *u8 = (&buf.data![dump_start + offset - width]) as *u8;
+                for (let k in 0usize..width) {
+                    if (row_ptr[k] != prev_ptr[k]) {
+                        duplicate = false;
+                        break;
+                    };
+                };
+            };
+            if (duplicate && !show_duplicates) {
+                if (!star) {
+                    c::puts("*".data as *i8);
+                    star = true;
+                };
+                offset += chunk;
+                continue;
+            };
+            star = false;
+
+            for (let t in 0usize..types.len()) {
+                if (t == 0usize) {
+                    print_address((dump_start + offset) as u64, address_radix, addr_width);
+                    c::putchar(32i32);
+                } else {
+                    for (let _k in 0usize..((addr_width + 1i32) as usize)) {
+                        c::putchar(32i32);
+                    };
+                };
+                let typ: OdType = types.get(t);
+                let mut pos: usize = 0usize;
+                while (pos < chunk) {
+                    let mut n_bytes: usize = chunk - pos;
+                    if (n_bytes > typ.size) {
+                        n_bytes = typ.size;
+                    };
+                    print_type(&typ, (&row_ptr[pos]) as *u8, n_bytes, big_endian,
+                               pos > 0usize, t == 0usize && types.len() > 1usize);
+                    pos += typ.size;
+                };
+
+                if (typ.strings) {
+                    let total_cells: usize = (width + typ.size - 1usize) / typ.size;
+                    let shown_cells: usize = (chunk + typ.size - 1usize) / typ.size;
+                    if (shown_cells < total_cells) {
+                        for (let _cell in shown_cells..total_cells) {
+                            for (let _k in 0usize..(od_field_width(typ.kind, typ.size) + 1usize)) {
+                                c::putchar(32i32);
+                            };
+                        };
+                    };
+                    c::fputs("  >".data as *i8, c::stdout);
+                    for (let k in 0usize..chunk) {
+                        let ch: u8 = row_ptr[k];
+                        if (is_printable(ch)) {
+                            c::putchar(ch as i32);
+                        } else {
+                            c::putchar(46i32);
+                        };
+                    };
+                    c::putchar(60i32);
+                };
+                c::putchar(10i32);
+            };
+
+            if (chunk == width) {
+                have_previous = true;
+            };
+            offset += chunk;
+        };
+    };
+
+    if (opened > 0usize && !strings_mode) {
+        print_address((dump_start + available) as u64, address_radix, addr_width);
+        if (address_radix != 110u8) {
+            c::putchar(10i32);
+        };
+    };
+
+    if (c::fflush(c::stdout) != 0i32) {
+        status = 1i32;
+    };
+    return status;
 };
