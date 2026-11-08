@@ -1,9 +1,37 @@
 use std::env as args;
-use <identity_backend.h> as backend;
+use std::io;
+use <stdio.h> as c;
+use <platform_identity.h> as platform_identity;
+
 export fn run(start: usize, argc: usize) i32 = {
-    let count: usize = argc - start;
-    if (count > 4096usize) { return 1; };
-    let mut argv: [4096]*i8;
-    for (let i in 0usize..count) { argv[i] = args::argat(start + i).data as *i8; };
-    return backend::zov_whoami_run(count as i32, (&argv[0usize]) as **i8);
+    let mut i: usize = start;
+    while (i < argc) {
+        let a: str = args::argat(i);
+        if (a == "--help") {
+            io::println("Usage: whoami [OPTION]...\n" +
+                        "Print the user name associated with the current effective user ID.\n" +
+                        "  --help     display this help and exit\n" +
+                        "  --version  output version information and exit");
+            return 0i32;
+        };
+        if (a == "--version") {
+            io::println("whoami (zovutils) 0.10.61");
+            return 0i32;
+        };
+        if (a.len > 0usize && a.data[0usize] == 45u8) {
+            c::fprintf(c::stderr, "whoami: unrecognized option '%s'\nTry 'whoami --help' for more information.\n\0".data as *i8, a.data as *i8);
+        } else {
+            c::fprintf(c::stderr, "whoami: extra operand '%s'\nTry 'whoami --help' for more information.\n\0".data as *i8, a.data as *i8);
+        };
+        return 1i32;
+    };
+
+    let euid: u32 = platform_identity::zov_geteuid();
+    let name_ptr: nullable *i8 = platform_identity::zov_user_name(euid);
+    if (name_ptr == null) {
+        c::fprintf(c::stderr, "whoami: cannot find name for user ID %lu\n\0".data as *i8, euid as u64);
+        return 1i32;
+    };
+    c::puts(name_ptr!);
+    return 0i32;
 };

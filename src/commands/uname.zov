@@ -1,9 +1,155 @@
 use std::env as args;
-use <identity_backend.h> as backend;
+use std::io;
+use <stdio.h> as c;
+use <string.h> as strc;
+use <platform_errno.h> as platform_errno;
+use <platform_identity.h> as platform_identity;
+
 export fn run(start: usize, argc: usize) i32 = {
-    let count: usize = argc - start;
-    if (count > 4096usize) { return 1; };
-    let mut argv: [4096]*i8;
-    for (let i in 0usize..count) { argv[i] = args::argat(start + i).data as *i8; };
-    return backend::zov_uname_run(count as i32, (&argv[0usize]) as **i8);
+    let mut fields: [8]bool;
+    for (let f in 0usize..8usize) { fields[f] = false; };
+    let mut all: bool = false;
+    let mut explicit: bool = false;
+
+    let mut i: usize = start;
+    while (i < argc) {
+        let a: str = args::argat(i);
+        if (a == "--help") {
+            io::println("Usage: uname [OPTION]...\n" +
+                        "Print certain system information.\n" +
+                        "  -a, --all                print all information, in the following order,\n" +
+                        "                             except omit -p and -i if unknown\n" +
+                        "  -s, --kernel-name        print the kernel name\n" +
+                        "  -n, --nodename           print the network node hostname\n" +
+                        "  -r, --kernel-release     print the kernel release\n" +
+                        "  -v, --kernel-version     print the kernel version\n" +
+                        "  -m, --machine            print the machine hardware name\n" +
+                        "  -p, --processor          print the processor type (non-portable)\n" +
+                        "  -i, --hardware-platform  print the hardware platform (non-portable)\n" +
+                        "  -o, --operating-system   print the operating system\n" +
+                        "      --help               display this help and exit\n" +
+                        "      --version            output version information and exit");
+            return 0i32;
+        };
+        if (a == "--version") {
+            io::println("uname (zovutils) 0.10.61");
+            return 0i32;
+        };
+        if (a.len < 2usize || a.data[0usize] != 45u8) {
+            c::fprintf(c::stderr, "uname: extra operand '%s'\nTry 'uname --help' for more information.\n\0".data as *i8, a.data as *i8);
+            return 1i32;
+        };
+        if (a == "--all") { all = true; explicit = true; i += 1usize; continue; };
+        if (a == "--kernel-name") { fields[0usize] = true; explicit = true; i += 1usize; continue; };
+        if (a == "--nodename") { fields[1usize] = true; explicit = true; i += 1usize; continue; };
+        if (a == "--kernel-release") { fields[2usize] = true; explicit = true; i += 1usize; continue; };
+        if (a == "--kernel-version") { fields[3usize] = true; explicit = true; i += 1usize; continue; };
+        if (a == "--machine") { fields[4usize] = true; explicit = true; i += 1usize; continue; };
+        if (a == "--processor") { fields[5usize] = true; explicit = true; i += 1usize; continue; };
+        if (a == "--hardware-platform") { fields[6usize] = true; explicit = true; i += 1usize; continue; };
+        if (a == "--operating-system") { fields[7usize] = true; explicit = true; i += 1usize; continue; };
+        if (a.len > 2usize && a.data[1usize] == 45u8) {
+            c::fprintf(c::stderr, "uname: unrecognized option '%s'\nTry 'uname --help' for more information.\n\0".data as *i8, a.data as *i8);
+            return 1i32;
+        };
+        for (let j in 1usize..a.len) {
+            let ch: u8 = a.data[j];
+            if (ch == 97u8) { // 'a'
+                all = true;
+                explicit = true;
+            } else if (ch == 115u8) { // 's'
+                fields[0usize] = true;
+                explicit = true;
+            } else if (ch == 110u8) { // 'n'
+                fields[1usize] = true;
+                explicit = true;
+            } else if (ch == 114u8) { // 'r'
+                fields[2usize] = true;
+                explicit = true;
+            } else if (ch == 118u8) { // 'v'
+                fields[3usize] = true;
+                explicit = true;
+            } else if (ch == 109u8) { // 'm'
+                fields[4usize] = true;
+                explicit = true;
+            } else if (ch == 112u8) { // 'p'
+                fields[5usize] = true;
+                explicit = true;
+            } else if (ch == 105u8) { // 'i'
+                fields[6usize] = true;
+                explicit = true;
+            } else if (ch == 111u8) { // 'o'
+                fields[7usize] = true;
+                explicit = true;
+            } else {
+                c::fprintf(c::stderr, "uname: invalid option -- '%c'\nTry 'uname --help' for more information.\n\0".data as *i8, ch as i32);
+                return 1i32;
+            };
+        };
+        i += 1usize;
+    };
+
+    let mut sysname: [256]u8;
+    let mut nodename: [256]u8;
+    let mut release: [256]u8;
+    let mut version: [256]u8;
+    let mut machine: [256]u8;
+    let rc: i32 = platform_identity::zov_get_uname_fields(
+        (&mut sysname[0usize]) as *i8, 256usize,
+        (&mut nodename[0usize]) as *i8, 256usize,
+        (&mut release[0usize]) as *i8, 256usize,
+        (&mut version[0usize]) as *i8, 256usize,
+        (&mut machine[0usize]) as *i8, 256usize
+    );
+    if (rc != 0i32) {
+        c::fprintf(c::stderr, "uname: cannot get system name: %s\n\0".data as *i8, strc::strerror(rc));
+        return 1i32;
+    };
+
+    let proc_ptr: nullable *i8 = platform_identity::zov_uname_processor();
+    let mut proc_str: str = "unknown";
+    if (proc_ptr != null) {
+        proc_str = zov_str_from_raw(proc_ptr! as *u8, strc::strlen(proc_ptr!));
+    };
+
+    if (!explicit) {
+        fields[0usize] = true;
+    } else if (all) {
+        for (let k in 0usize..5usize) {
+            fields[k] = true;
+        };
+        if (proc_str != "unknown") {
+            fields[5usize] = true;
+        };
+        fields[7usize] = true;
+    };
+
+    let mut first: bool = true;
+    for (let idx in 0usize..8usize) {
+        if (fields[idx]) {
+            if (!first) {
+                c::putchar(32i32);
+            };
+            if (idx == 0usize) {
+                c::fputs((&mut sysname[0usize]) as *i8, c::stdout);
+            } else if (idx == 1usize) {
+                c::fputs((&mut nodename[0usize]) as *i8, c::stdout);
+            } else if (idx == 2usize) {
+                c::fputs((&mut release[0usize]) as *i8, c::stdout);
+            } else if (idx == 3usize) {
+                c::fputs((&mut version[0usize]) as *i8, c::stdout);
+            } else if (idx == 4usize) {
+                c::fputs((&mut machine[0usize]) as *i8, c::stdout);
+            } else if (idx == 5usize) {
+                c::fputs(proc_str.data as *i8, c::stdout);
+            } else if (idx == 6usize) {
+                c::fputs("unknown\0".data as *i8, c::stdout);
+            } else if (idx == 7usize) {
+                c::fputs(platform_identity::zov_uname_os()!, c::stdout);
+            };
+            first = false;
+        };
+    };
+    c::putchar(10i32);
+    return 0i32;
 };
