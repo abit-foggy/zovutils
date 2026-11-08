@@ -1,7 +1,7 @@
 use std::env as args;
 use std::io;
 use <stdio.h> as c;
-use <tr_backend.h> as backend;
+use <platform_locale.h> as platform_locale;
 use shared::io as stream;
 
 fn usage_error() void = { io::eprintln("Try 'tr --help' for more information."); };
@@ -46,6 +46,250 @@ fn help() void = {
     io::print("or available locally via: info '(coreutils) tr invocation'\n");
 };
 
+type TrSet = struct {
+    sequence: [256]u8,
+    length: usize,
+    members: [256]bool,
+};
+
+fn set_init() TrSet = {
+    let mut s: TrSet;
+    s.length = 0usize;
+    for (let i in 0usize..256usize) {
+        s.sequence[i] = 0u8;
+        s.members[i] = false;
+    };
+    return s;
+};
+
+fn set_append(set: &mut TrSet, value: u8, repeats: usize) void = {
+    let mut r: usize = repeats;
+    while (r > 0usize && set.length < 256usize) {
+        set.sequence[set.length] = value;
+        set.length += 1usize;
+        set.members[value as usize] = true;
+        r -= 1usize;
+    };
+};
+
+fn tr_escape(s: str, i: &mut usize, value: &mut u8) bool = {
+    let p: usize = *i;
+    if (s.data[p] != 92u8) {
+        *value = s.data[p];
+        return true;
+    };
+    *i += 1usize;
+    if (*i >= s.len) {
+        *value = 92u8;
+        return true;
+    };
+    let curr_p: usize = *i;
+    let c: u8 = s.data[curr_p];
+    if (c == 110u8) { *value = 10u8; }
+    else if (c == 116u8) { *value = 9u8; }
+    else if (c == 114u8) { *value = 13u8; }
+    else if (c == 98u8) { *value = 8u8; }
+    else if (c == 102u8) { *value = 12u8; }
+    else if (c == 118u8) { *value = 11u8; }
+    else if (c == 97u8) { *value = 7u8; }
+    else if (c == 92u8) { *value = 92u8; }
+    else if (c >= 48u8 && c <= 55u8) {
+        let mut number: u32 = 0u32;
+        let mut k: i32 = 0i32;
+        let mut curr_i: usize = *i;
+        while (k < 3i32 && curr_i < s.len && s.data[curr_i] >= 48u8 && s.data[curr_i] <= 55u8) {
+            number = number * 8u32 + ((s.data[curr_i] - 48u8) as u32);
+            if (k < 2i32 && curr_i + 1usize < s.len && s.data[curr_i + 1usize] >= 48u8 && s.data[curr_i + 1usize] <= 55u8) {
+                curr_i += 1usize;
+            };
+            k += 1i32;
+        };
+        *i = curr_i;
+        *value = (number & 255u32) as u8;
+    } else if (c == 120u8 && *i + 2usize < s.len) {
+        let curr_i: usize = *i;
+        let h1: u8 = s.data[curr_i + 1usize];
+        let h2: u8 = s.data[curr_i + 2usize];
+        let mut d1: u32 = 0u32;
+        let mut d2: u32 = 0u32;
+        if (h1 >= 48u8 && h1 <= 57u8) { d1 = (h1 - 48u8) as u32; }
+        else if (h1 >= 97u8 && h1 <= 102u8) { d1 = (h1 - 87u8) as u32; }
+        else if (h1 >= 65u8 && h1 <= 70u8) { d1 = (h1 - 55u8) as u32; }
+        else { return false; };
+        if (h2 >= 48u8 && h2 <= 57u8) { d2 = (h2 - 48u8) as u32; }
+        else if (h2 >= 97u8 && h2 <= 102u8) { d2 = (h2 - 87u8) as u32; }
+        else if (h2 >= 65u8 && h2 <= 70u8) { d2 = (h2 - 55u8) as u32; }
+        else { return false; };
+        *value = ((d1 * 16u32 + d2) & 255u32) as u8;
+        *i += 2usize;
+    } else {
+        *value = c;
+    };
+    return true;
+};
+
+fn tr_class_char(name: str, c: u8) i32 = {
+    if (name == "upper") {
+        if (c >= 65u8 && c <= 90u8) { return 1i32; };
+        return 0i32;
+    };
+    if (name == "lower") {
+        if (c >= 97u8 && c <= 122u8) { return 1i32; };
+        return 0i32;
+    };
+    if (name == "alpha") {
+        if ((c >= 65u8 && c <= 90u8) || (c >= 97u8 && c <= 122u8)) { return 1i32; };
+        return 0i32;
+    };
+    if (name == "alnum") {
+        if ((c >= 65u8 && c <= 90u8) || (c >= 97u8 && c <= 122u8) || (c >= 48u8 && c <= 57u8)) { return 1i32; };
+        return 0i32;
+    };
+    if (name == "digit") {
+        if (c >= 48u8 && c <= 57u8) { return 1i32; };
+        return 0i32;
+    };
+    if (name == "xdigit") {
+        if ((c >= 48u8 && c <= 57u8) || (c >= 97u8 && c <= 102u8) || (c >= 65u8 && c <= 70u8)) { return 1i32; };
+        return 0i32;
+    };
+    if (name == "space") {
+        if (c == 32u8 || (c >= 9u8 && c <= 13u8)) { return 1i32; };
+        return 0i32;
+    };
+    if (name == "blank") {
+        if (c == 32u8 || c == 9u8) { return 1i32; };
+        return 0i32;
+    };
+    if (name == "cntrl") {
+        if (c < 32u8 || c == 127u8) { return 1i32; };
+        return 0i32;
+    };
+    if (name == "print") {
+        if (c >= 32u8 && c < 127u8) { return 1i32; };
+        return 0i32;
+    };
+    if (name == "graph") {
+        if (c > 32u8 && c < 127u8) { return 1i32; };
+        return 0i32;
+    };
+    if (name == "punct") {
+        if (c >= 32u8 && c < 127u8 && c != 32u8 && !((c >= 65u8 && c <= 90u8) || (c >= 97u8 && c <= 122u8) || (c >= 48u8 && c <= 57u8))) {
+            return 1i32;
+        };
+        return 0i32;
+    };
+    if (name == "word") {
+        if ((c >= 65u8 && c <= 90u8) || (c >= 97u8 && c <= 122u8) || (c >= 48u8 && c <= 57u8) || c == 95u8) {
+            return 1i32;
+        };
+        return 0i32;
+    };
+    return -1i32;
+};
+
+fn parse_repeat(s: str, start: usize, end: usize, out: &mut usize) bool = {
+    if (start >= end) { return false; };
+    let mut base: usize = 10usize;
+    let mut p: usize = start;
+    if (s.data[p] == 48u8 && p + 1usize < end) {
+        base = 8usize;
+        p += 1usize;
+    };
+    let mut n: usize = 0usize;
+    let max_val: usize = 18446744073709551615usize;
+    for (let i in p..end) {
+        let b: u8 = s.data[i];
+        let mut digit: usize = 0usize;
+        if (base == 8usize) {
+            if (b < 48u8 || b > 55u8) { return false; };
+            digit = (b - 48u8) as usize;
+        } else {
+            if (b < 48u8 || b > 57u8) { return false; };
+            digit = (b - 48u8) as usize;
+        };
+        if (n > (max_val - digit) / base) { return false; };
+        n = n * base + digit;
+    };
+    *out = n;
+    return true;
+};
+
+fn tr_expand(text: str, set: &mut TrSet) bool = {
+    *set = set_init();
+    let n: usize = text.len;
+    let mut i: usize = 0usize;
+    while (i < n) {
+        if (text.data[i] == 91u8) { // '['
+            let mut star: usize = i + 1usize;
+            while (star < n && text.data[star] != 42u8 && text.data[star] != 93u8) { star += 1usize; };
+            if (star < n && text.data[star] == 42u8) { // '*'
+                let mut close: usize = star + 1usize;
+                while (close < n && text.data[close] != 93u8) { close += 1usize; };
+                if (close < n && star > i + 1usize) {
+                    let repeated: u8 = text.data[i + 1usize];
+                    let mut repeats: usize = 256usize;
+                    if (close > star + 1usize) {
+                        let mut parsed: usize = 0usize;
+                        if (!parse_repeat(text, star + 1usize, close, &mut parsed)) { return false; };
+                        if (parsed > 256usize) { repeats = 256usize; } else { repeats = parsed; };
+                    };
+                    set_append(set, repeated, repeats);
+                    i = close + 1usize;
+                    continue;
+                };
+            };
+        };
+        if (text.data[i] == 91u8 && i + 2usize < n && text.data[i + 1usize] == 58u8) { // "[:"
+            let mut end: usize = i + 2usize;
+            while (end + 1usize < n && !(text.data[end] == 58u8 && text.data[end + 1usize] == 93u8)) { end += 1usize; };
+            if (end + 1usize < n) {
+                let name: str = text[i + 2usize..end];
+                let known: i32 = tr_class_char(name, 0u8);
+                if (known < 0i32) { return false; };
+                for (let c_val in 0usize..256usize) {
+                    if (tr_class_char(name, c_val as u8) > 0i32) {
+                        set_append(set, c_val as u8, 1usize);
+                    };
+                };
+                i = end + 2usize;
+                continue;
+            };
+        };
+        let mut first: u8 = 0u8;
+        if (!tr_escape(text, &mut i, &mut first)) { return false; };
+        if (i + 1usize < n && text.data[i + 1usize] == 45u8 && i + 2usize < n) { // '-'
+            let mut end_i: usize = i + 2usize;
+            let mut last: u8 = 0u8;
+            if (!tr_escape(text, &mut end_i, &mut last)) { return false; };
+            if (last < first) { return false; };
+            for (let c_val in (first as usize)..(last as usize) + 1usize) {
+                set_append(set, c_val as u8, 1usize);
+            };
+            i = end_i + 1usize;
+            continue;
+        };
+        if (i + 2usize < n && text.data[i + 1usize] == 91u8 && text.data[i + 2usize] == 42u8) {
+            let mut end: usize = i + 2usize;
+            while (end < n && text.data[end] != 93u8) { end += 1usize; };
+            if (end < n) {
+                let mut repeats: usize = 256usize;
+                if (end > i + 3usize) {
+                    let mut parsed: usize = 0usize;
+                    if (!parse_repeat(text, i + 3usize, end, &mut parsed)) { return false; };
+                    if (parsed > 256usize) { repeats = 256usize; } else { repeats = parsed; };
+                };
+                set_append(set, first, repeats);
+                i = end + 1usize;
+                continue;
+            };
+        };
+        set_append(set, first, 1usize);
+        i += 1usize;
+    };
+    return true;
+};
+
 export fn run(start: usize, argc: usize) i32 = {
     let mut complement: bool = false;
     let mut delete_mode: bool = false;
@@ -85,9 +329,120 @@ export fn run(start: usize, argc: usize) i32 = {
     if (operand_count == 0usize) { io::eprintln("tr: missing operand"); usage_error(); return 1; };
     if (delete_mode && operand_count > 1usize && (!squeeze || operand_count > 2usize)) { io::eprintln("tr: extra operand '" + operands[1usize] + "'"); usage_error(); return 1; };
     if (!delete_mode && !squeeze && operand_count != 2usize) { io::eprintln("tr: missing operand"); usage_error(); return 1; };
-    let mut set2: str = "";
+    let mut set2_text: str = "";
     let mut has_set2: bool = false;
-    if (operand_count > 1usize) { set2 = operands[1usize]; has_set2 = true; };
-    return backend::zov_tr_run(operands[0usize].data as *i8, set2.data as *i8,
-        has_set2 as i32, complement as i32, delete_mode as i32, squeeze as i32, truncate as i32);
+    if (operand_count > 1usize) { set2_text = operands[1usize]; has_set2 = true; };
+
+    platform_locale::zov_init_ctype_locale();
+
+    let mut set1: TrSet = set_init();
+    let mut set2: TrSet = set_init();
+    if (!tr_expand(operands[0usize], &mut set1) || (has_set2 && !tr_expand(set2_text, &mut set2))) {
+        io::eprintln("tr: invalid character array");
+        return 1;
+    };
+
+    if (truncate && has_set2 && !delete_mode && !squeeze && set2.length < set1.length) {
+        set1.length = set2.length;
+        for (let idx in 0usize..256usize) { set1.members[idx] = false; };
+        for (let idx in 0usize..set1.length) { set1.members[set1.sequence[idx] as usize] = true; };
+    };
+
+    let mut target_length: usize = set1.length;
+    if (complement) {
+        target_length = 0usize;
+        for (let c_val in 0usize..256usize) {
+            if (!set1.members[c_val]) { target_length += 1usize; };
+        };
+    };
+
+    if (has_set2 && !delete_mode && set2.length > 0usize && target_length > set2.length && !truncate) {
+        let pad: u8 = set2.sequence[set2.length - 1usize];
+        set_append(&mut set2, pad, target_length - set2.length);
+    };
+
+    let mut is_deleted: [256]bool;
+    let mut maps_to: [256]u8;
+    let mut is_squeezed: [256]bool;
+    let mut mapped: [256]bool;
+
+    for (let c_val in 0usize..256usize) {
+        is_deleted[c_val] = false;
+        maps_to[c_val] = c_val as u8;
+        is_squeezed[c_val] = false;
+        mapped[c_val] = false;
+    };
+
+    for (let c_val in 0usize..256usize) {
+        let mut selected: bool = set1.members[c_val];
+        if (complement) { selected = !selected; };
+        if (delete_mode && selected) {
+            is_deleted[c_val] = true;
+        };
+        if (!selected || mapped[c_val]) { continue; };
+        let mut target: u8 = c_val as u8;
+        if (!delete_mode && has_set2 && set2.length > 0usize) {
+            let mut index: usize = 0usize;
+            if (complement) {
+                for (let j in 0usize..c_val) {
+                    if (!set1.members[j]) { index += 1usize; };
+                };
+            } else {
+                for (let j in 0usize..set1.length) {
+                    if (set1.sequence[j] == (c_val as u8)) { index = j; break; };
+                };
+            };
+            if (index >= set2.length) { index = set2.length - 1usize; };
+            target = set2.sequence[index];
+        };
+        maps_to[c_val] = target;
+        mapped[c_val] = true;
+    };
+
+    if (squeeze) {
+        if (has_set2) {
+            for (let c_val in 0usize..256usize) { is_squeezed[c_val] = set2.members[c_val]; };
+        } else if (delete_mode) {
+            for (let c_val in 0usize..256usize) { is_squeezed[c_val] = set1.members[c_val]; };
+        } else {
+            for (let c_val in 0usize..256usize) { is_squeezed[c_val] = set1.members[c_val]; };
+        };
+    };
+
+    let mut prev_valid: bool = false;
+    let mut prev_byte: u8 = 0u8;
+    let mut in_buf: [8192]u8;
+    let mut out_buf: [8192]u8;
+    let mut out_len: usize = 0usize;
+
+    while (true) {
+        let n: usize = c::fread((&in_buf[0usize]) as *void, 1usize, 8192usize, c::stdin);
+        if (n == 0usize) { break; };
+        for (let i in 0usize..n) {
+            let input: u8 = in_buf[i];
+            let idx: usize = input as usize;
+            if (is_deleted[idx]) { continue; };
+            let output: u8 = maps_to[idx];
+            let out_idx: usize = output as usize;
+            if (is_squeezed[out_idx] && prev_valid && output == prev_byte) { continue; };
+            out_buf[out_len] = output;
+            out_len += 1usize;
+            prev_byte = output;
+            prev_valid = true;
+            if (out_len == 8192usize) {
+                if (!stream::writebytes(c::stdout, (&out_buf[0usize]) as *u8, out_len)) {
+                    return 1;
+                };
+                out_len = 0usize;
+            };
+        };
+    };
+    if (out_len > 0usize) {
+        if (!stream::writebytes(c::stdout, (&out_buf[0usize]) as *u8, out_len)) {
+            return 1;
+        };
+    };
+    if (stream::readerror(c::stdin)) { return 1; };
+    if (!stream::finishoutput("tr")) { return 1; };
+    return 0;
 };
