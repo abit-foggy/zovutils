@@ -1,10 +1,604 @@
 use std::env as args;
-use <chmod_backend.h> as backend;
+use std::io;
+use std::vec;
+use <stdio.h> as c;
+use <string.h> as strc;
+use <platform_errno.h> as platform_errno;
+use <platform_stat.h> as platform_stat;
+use <platform_quote.h> as platform_quote;
+
+type ChmodOptions = struct {
+    recursive: bool,
+    force: bool,
+    verbose: bool,
+    changes_only: bool,
+    dereference: bool,
+    preserve_root: bool,
+    traverse_mode: i32,
+};
+
+fn print_help() void = {
+    io::print("Usage: chmod [OPTION]... MODE[,MODE]... FILE...\n" +
+          "  or:  chmod [OPTION]... OCTAL-MODE FILE...\n" +
+          "  or:  chmod [OPTION]... --reference=RFILE FILE...\n" +
+          "Change the mode of each FILE to MODE.\n" +
+          "With --reference, change the mode of each FILE to that of RFILE.\n\n" +
+          "  -c, --changes\n" +
+          "         like verbose but report only when a change is made\n" +
+          "  -f, --silent, --quiet\n" +
+          "         suppress most error messages\n" +
+          "  -v, --verbose\n" +
+          "         output a diagnostic for every file processed\n" +
+          "      --dereference\n" +
+          "         affect the referent of each symbolic link,\n" +
+          "         rather than the symbolic link itself\n" +
+          "  -h, --no-dereference\n" +
+          "         affect each symbolic link, rather than the referent\n" +
+          "      --no-preserve-root\n" +
+          "         do not treat '/' specially (the default)\n" +
+          "      --preserve-root\n" +
+          "         fail to operate recursively on '/'\n" +
+          "      --reference=RFILE\n" +
+          "         use RFILE's mode instead of specifying MODE values.\n" +
+          "         RFILE is always dereferenced if a symbolic link.\n" +
+          "  -R, --recursive\n" +
+          "         change files and directories recursively\n\n" +
+          "The following options modify how a hierarchy is traversed when the -R\n" +
+          "option is also specified.  If more than one is specified, only the final\n" +
+          "one takes effect. -H is the default.\n\n" +
+          "  -H\n" +
+          "         if a command line argument is a symlink to a directory, traverse it\n" +
+          "  -L\n" +
+          "         traverse every symbolic link to a directory encountered\n" +
+          "  -P\n" +
+          "         do not traverse any symbolic links\n\n" +
+          "      --help\n" +
+          "         display this help and exit\n" +
+          "      --version\n" +
+          "         output version information and exit\n\n" +
+          "Each MODE is of the form '[ugoa]*([-+=]([rwxXst]*|[ugo]))+|[-+=][0-7]+'.\n\n" +
+          "Report bugs to: bug-coreutils@gnu.org\n" +
+          "GNU coreutils home page: <https://www.gnu.org/software/coreutils/>\n" +
+          "General help using GNU software: <https://www.gnu.org/gethelp/>\n" +
+          "Report any translation bugs to <https://translationproject.org/team/>\n" +
+          "Full documentation <https://www.gnu.org/software/coreutils/chmod>\n" +
+          "or available locally via: info '(coreutils) chmod invocation'\n");
+};
+
+fn is_long_opt(arg: str, keylen: usize, name: str) bool = {
+    if (keylen <= 2usize) { return false; };
+    if (keylen > name.len) { return false; };
+    let sub: str = arg[0usize..keylen];
+    let nsub: str = name[0usize..keylen];
+    return sub == nsub;
+};
+
+fn join_path(dir: str, name: str) String = {
+    if (dir.len == 0usize) { return String::from(name); };
+    if (dir[dir.len - 1usize] == 47u8) {
+        return dir + name;
+    };
+    return dir + "/" + name;
+};
+
+fn if_u8(cond: bool, a: u8, b: u8) u8 = {
+    if (cond) { return a; };
+    return b;
+};
+
+fn get_mode_text(mode: u32) String = {
+    let mut buf: [10]u8;
+    buf[0usize] = if_u8((mode & 0o400u32) != 0u32, 114u8, 45u8); // 'r' : '-'
+    buf[1usize] = if_u8((mode & 0o200u32) != 0u32, 119u8, 45u8); // 'w' : '-'
+    if ((mode & 0o4000u32) != 0u32) {
+        buf[2usize] = if_u8((mode & 0o100u32) != 0u32, 115u8, 83u8); // 's' : 'S'
+    } else {
+        buf[2usize] = if_u8((mode & 0o100u32) != 0u32, 120u8, 45u8); // 'x' : '-'
+    };
+    buf[3usize] = if_u8((mode & 0o40u32) != 0u32, 114u8, 45u8); // 'r' : '-'
+    buf[4usize] = if_u8((mode & 0o20u32) != 0u32, 119u8, 45u8); // 'w' : '-'
+    if ((mode & 0o2000u32) != 0u32) {
+        buf[5usize] = if_u8((mode & 0o10u32) != 0u32, 115u8, 83u8); // 's' : 'S'
+    } else {
+        buf[5usize] = if_u8((mode & 0o10u32) != 0u32, 120u8, 45u8); // 'x' : '-'
+    };
+    buf[6usize] = if_u8((mode & 0o4u32) != 0u32, 114u8, 45u8); // 'r' : '-'
+    buf[7usize] = if_u8((mode & 0o2u32) != 0u32, 119u8, 45u8); // 'w' : '-'
+    if ((mode & 0o1000u32) != 0u32) {
+        buf[8usize] = if_u8((mode & 0o1u32) != 0u32, 116u8, 84u8); // 't' : 'T'
+    } else {
+        buf[8usize] = if_u8((mode & 0o1u32) != 0u32, 120u8, 45u8); // 'x' : '-'
+    };
+    buf[9usize] = 0u8;
+    return String::from(zov_str_from_raw((&buf[0usize]) as *u8, 9usize));
+};
+
+fn parse_mode(text: str, current: u32, mask: u32, is_directory: bool, result: &mut u32) bool = {
+    if (text.len == 0usize) { return false; };
+    let mut octal: bool = true;
+    for (let i in 0usize..text.len) {
+        let ch: u8 = text[i];
+        if (ch < 48u8 || ch > 55u8) { // '0'..'7'
+            octal = false;
+            break;
+        };
+    };
+    if (octal) {
+        let mut val: u32 = 0u32;
+        for (let i in 0usize..text.len) {
+            let d: u32 = (text[i] - 48u8) as u32;
+            val = (val << 3u32) | d;
+        };
+        if (val > 0o7777u32) { return false; };
+        *result = val;
+        return true;
+    };
+
+    let mut p: usize = 0usize;
+    let mut mode: u32 = current & 0o7777u32;
+    let mut clauses: usize = 0usize;
+
+    while (p < text.len) {
+        let mut who: u32 = 0u32;
+        let mut explicit_who: bool = false;
+        while (p < text.len) {
+            let c: u8 = text[p];
+            if (c == 117u8) { // 'u'
+                explicit_who = true;
+                who |= 1u32;
+                p += 1usize;
+            } else if (c == 103u8) { // 'g'
+                explicit_who = true;
+                who |= 2u32;
+                p += 1usize;
+            } else if (c == 111u8) { // 'o'
+                explicit_who = true;
+                who |= 4u32;
+                p += 1usize;
+            } else if (c == 97u8) { // 'a'
+                explicit_who = true;
+                who |= 7u32;
+                p += 1usize;
+            } else {
+                break;
+            };
+        };
+        if (!explicit_who) { who = 7u32; };
+        if (p >= text.len) { return false; };
+        let op: u8 = text[p];
+        if (op != 43u8 && op != 45u8 && op != 61u8) { // '+', '-', '='
+            return false;
+        };
+        p += 1usize;
+
+        let mut affected: u32 = 0u32;
+        if ((who & 1u32) != 0u32) { affected |= 0o4700u32; }; // S_IRWXU | S_ISUID
+        if ((who & 2u32) != 0u32) { affected |= 0o2070u32; }; // S_IRWXG | S_ISGID
+        if ((who & 4u32) != 0u32) { affected |= 0o1007u32; }; // S_IRWXO | S_ISVTX
+
+        let mut bits: u32 = 0u32;
+        let mut any: bool = false;
+
+        while (p < text.len) {
+            if (text[p] == 44u8) { break; }; // ','
+            let c: u8 = text[p];
+            p += 1usize;
+            any = true;
+            if (c == 114u8 || c == 119u8 || c == 120u8 || c == 88u8) { // 'r', 'w', 'x', 'X'
+                let mut enabled: bool = true;
+                if (c == 88u8) { // 'X'
+                    enabled = is_directory || ((mode & 0o111u32) != 0u32);
+                };
+                if (!enabled) { continue; };
+                let mut bit: u32 = 1u32;
+                if (c == 114u8) {
+                    bit = 4u32;
+                } else if (c == 119u8) {
+                    bit = 2u32;
+                };
+                if ((who & 1u32) != 0u32) { bits |= bit << 6u32; };
+                if ((who & 2u32) != 0u32) { bits |= bit << 3u32; };
+                if ((who & 4u32) != 0u32) { bits |= bit; };
+            } else if (c == 115u8) { // 's'
+                if ((who & 1u32) != 0u32) { bits |= 0o4000u32; };
+                if ((who & 2u32) != 0u32) { bits |= 0o2000u32; };
+            } else if (c == 116u8) { // 't'
+                if ((who & 4u32) != 0u32) { bits |= 0o1000u32; };
+            } else if (c == 117u8 || c == 103u8 || c == 111u8) { // 'u', 'g', 'o'
+                let mut copied: u32 = 0u32;
+                if (c == 117u8) {
+                    copied = (mode & 0o700u32) >> 6u32;
+                } else if (c == 103u8) {
+                    copied = (mode & 0o070u32) >> 3u32;
+                } else {
+                    copied = mode & 0o007u32;
+                };
+                if ((who & 1u32) != 0u32) { bits |= copied << 6u32; };
+                if ((who & 2u32) != 0u32) { bits |= copied << 3u32; };
+                if ((who & 4u32) != 0u32) { bits |= copied; };
+            } else {
+                return false;
+            };
+        };
+
+        if (!any && op != 61u8) { return false; }; // not '='
+        if (!explicit_who) {
+            let restricted: u32 = affected & ~(mask & 0o777u32);
+            affected &= ~(mask & 0o777u32);
+            bits &= ~restricted;
+        };
+
+        if (op == 61u8) { // '='
+            mode = (mode & ~affected) | bits;
+        } else if (op == 43u8) { // '+'
+            mode |= bits;
+        } else { // '-'
+            mode &= ~bits;
+        };
+        clauses += 1usize;
+        if (p < text.len) {
+            if (text[p] == 44u8) {
+                p += 1usize;
+                if (p == text.len) { return false; };
+            };
+        };
+    };
+
+    if (clauses == 0usize) { return false; };
+    *result = mode & 0o7777u32;
+    return true;
+};
+
+fn apply_chmod(mode_text: str, path: str, opt: &ChmodOptions, is_root: bool) i32 = {
+    let mut info_mode: u32 = 0u32;
+    let stat_rc: i32 = platform_stat::zov_stat_mode(path.data as *i8, 1i32, &mut info_mode);
+    if (stat_rc != 0i32) {
+        if (!opt.force) {
+            c::fputs("chmod: cannot access ", c::stderr);
+            platform_quote::zov_quote_shell(c::stderr, path.data as *i8);
+            c::fprintf(c::stderr, ": %s\n", strc::strerror(stat_rc));
+        };
+        if (opt.force) { return 0i32; };
+        return 1i32;
+    };
+
+    let is_dir: bool = (info_mode & 0o170000u32) == 0o40000u32;
+    if (is_root && opt.recursive && opt.preserve_root && is_dir) {
+        if (platform_stat::zov_realpath_is_root(path.data as *i8) != 0i32) {
+            c::fputs("chmod: it is dangerous to operate recursively on '/'\nchmod: use --no-preserve-root to override this failsafe\n", c::stderr);
+            return 1i32;
+        };
+    };
+
+    let old_mask: u32 = platform_stat::zov_get_umask();
+    let mut desired: u32 = 0u32;
+    if (!parse_mode(mode_text, info_mode, old_mask, is_dir, &mut desired)) {
+        c::fputs("chmod: invalid mode: ", c::stderr);
+        platform_quote::zov_quote_shell(c::stderr, mode_text.data as *i8);
+        c::fputs("\nTry 'chmod --help' for more information.\n", c::stderr);
+        return 1i32;
+    };
+
+    let cur_perm: u32 = info_mode & 0o7777u32;
+    let changed: bool = cur_perm != desired;
+    if (changed) {
+        let rc: i32 = platform_stat::zov_chmod(path.data as *i8, desired);
+        if (rc != 0i32) {
+            if (!opt.force) {
+                c::fputs("chmod: changing permissions of ", c::stderr);
+                platform_quote::zov_quote_shell(c::stderr, path.data as *i8);
+                c::fprintf(c::stderr, ": %s\n", strc::strerror(platform_errno::zov_errno_value()));
+            };
+            return 1i32;
+        };
+    };
+
+    if (opt.verbose) {
+        if (!opt.changes_only || changed) {
+            let before: String = get_mode_text(cur_perm);
+            let after: String = get_mode_text(desired);
+            c::fputs("mode of ", c::stdout);
+            platform_quote::zov_quote_shell(c::stdout, path.data as *i8);
+            if (changed) {
+                c::fprintf(c::stdout, " changed from %04o (%s) to %04o (%s)\n", cur_perm, before.view().data as *i8, desired, after.view().data as *i8);
+            } else {
+                c::fprintf(c::stdout, " retained as %04o (%s)\n", desired, after.view().data as *i8);
+            };
+        };
+    };
+    return 0i32;
+};
+
+fn apply_chmod_link(mode_text: str, path: str, link_mode: u32, opt: &ChmodOptions) i32 = {
+    let old_mask: u32 = platform_stat::zov_get_umask();
+    let mut desired: u32 = 0u32;
+    if (!parse_mode(mode_text, link_mode, old_mask, false, &mut desired)) {
+        return 1i32;
+    };
+    let cur_perm: u32 = link_mode & 0o7777u32;
+    let changed: bool = cur_perm != desired;
+    if (changed) {
+        let rc: i32 = platform_stat::zov_lchmod(path.data as *i8, desired);
+        if (rc != 0i32) {
+            if (!opt.force) {
+                c::fputs("chmod: changing permissions of ", c::stderr);
+                platform_quote::zov_quote_shell(c::stderr, path.data as *i8);
+                c::fprintf(c::stderr, ": %s\n", strc::strerror(rc));
+            };
+            return 1i32;
+        };
+    };
+    if (opt.verbose) {
+        if (!opt.changes_only || changed) {
+            let before: String = get_mode_text(cur_perm);
+            let after: String = get_mode_text(desired);
+            c::fputs("mode of ", c::stdout);
+            platform_quote::zov_quote_shell(c::stdout, path.data as *i8);
+            if (changed) {
+                c::fprintf(c::stdout, " changed from %04o (%s) to %04o (%s)\n", cur_perm, before.view().data as *i8, desired, after.view().data as *i8);
+            } else {
+                c::fprintf(c::stdout, " retained as %04o (%s)\n", desired, after.view().data as *i8);
+            };
+        };
+    };
+    return 0i32;
+};
+
+fn chmod_path(mode: str, path: str, opt: &ChmodOptions, is_root: bool, command_line: bool) i32 = {
+    let mut link_mode: u32 = 0u32;
+    let lrc: i32 = platform_stat::zov_stat_mode(path.data as *i8, 0i32, &mut link_mode);
+    if (lrc != 0i32) {
+        return apply_chmod(mode, path, opt, is_root);
+    };
+
+    let is_symlink: bool = (link_mode & 0o170000u32) == 0o120000u32;
+    if (is_symlink) {
+        if (!opt.dereference || (opt.recursive && !command_line && opt.traverse_mode != 1i32) || (opt.recursive && command_line && opt.traverse_mode == 2i32)) {
+            return apply_chmod_link(mode, path, link_mode, opt);
+        };
+    };
+
+    let mut info_mode: u32 = 0u32;
+    let src: i32 = platform_stat::zov_stat_mode(path.data as *i8, 1i32, &mut info_mode);
+    if (src != 0i32) {
+        return apply_chmod(mode, path, opt, is_root);
+    };
+
+    let is_dir: bool = (info_mode & 0o170000u32) == 0o40000u32;
+    if (!is_dir || !opt.recursive) {
+        return apply_chmod(mode, path, opt, is_root);
+    };
+
+    if (is_root && opt.preserve_root) {
+        if (platform_stat::zov_realpath_is_root(path.data as *i8) != 0i32) {
+            c::fputs("chmod: it is dangerous to operate recursively on '/'\nchmod: use --no-preserve-root to override this failsafe\n", c::stderr);
+            return 1i32;
+        };
+    };
+
+    let mut status: i32 = 0i32;
+    let dir: nullable *void = platform_stat::zov_opendir(path.data as *i8);
+    if (dir == null) {
+        if (!opt.force) {
+            c::fputs("chmod: cannot access ", c::stderr);
+            platform_quote::zov_quote_shell(c::stderr, path.data as *i8);
+            c::fprintf(c::stderr, ": %s\n", strc::strerror(platform_errno::zov_errno_value()));
+        };
+        if (opt.force) { return 0i32; };
+        return 1i32;
+    };
+
+    while (true) {
+        let ent: nullable *i8 = platform_stat::zov_readdir(dir!);
+        if (ent == null) { break; };
+        let ename: str = zov_str_from_raw(ent! as *u8, strc::strlen(ent!));
+        if (ename == "." || ename == "..") { continue; };
+        let child_str: String = join_path(path, ename);
+        let child: str = child_str.view();
+
+        let mut child_info: u32 = 0u32;
+        if (platform_stat::zov_stat_mode(child.data as *i8, 0i32, &mut child_info) != 0i32) {
+            status = 1i32;
+        } else {
+            if (chmod_path(mode, child, opt, false, false) != 0i32) {
+                status = 1i32;
+            };
+        };
+    };
+
+    if (platform_stat::zov_closedir(dir!) != 0i32) {
+        status = 1i32;
+    };
+    if (apply_chmod(mode, path, opt, is_root) != 0i32) {
+        status = 1i32;
+    };
+    return status;
+};
 
 export fn run(start: usize, argc: usize) i32 = {
-    let count: usize = argc - start;
-    if (count > 4096usize) { return 1; };
-    let mut argv: [4096]*i8;
-    for (let i in 0usize..count) { argv[i] = args::argat(start + i).data as *i8; };
-    return backend::zov_chmod_run(count as i32, (&argv[0usize]) as **i8);
+    let mut opt: ChmodOptions = ChmodOptions {
+        recursive = false,
+        force = false,
+        verbose = false,
+        changes_only = false,
+        dereference = true,
+        preserve_root = false,
+        traverse_mode = 0i32,
+    };
+
+    let mut reference_file: str = "";
+    let mut operands = vec::new[str]();
+    let mut options_done: bool = false;
+
+    let mut i: usize = start;
+    while (i < argc) {
+        let arg: str = args::argat(i);
+        if (!options_done && arg == "--") {
+            options_done = true;
+            i += 1usize;
+            continue;
+        };
+
+        if (!options_done) {
+            let mut is_long: bool = false;
+            if (arg.len >= 2usize) {
+                let pfx: str = arg[0usize..2usize];
+                if (pfx == "--") {
+                    is_long = true;
+                };
+            };
+
+            if (is_long) {
+                let mut equal_pos: usize = arg.len;
+                for (let j in 2usize..arg.len) {
+                    if (arg[j] == 61u8) { // '='
+                        equal_pos = j;
+                        break;
+                    };
+                };
+                let keylen: usize = equal_pos;
+                let mut has_value: bool = false;
+                let mut value: str = "";
+                if (equal_pos < arg.len) {
+                    has_value = true;
+                    value = arg[(equal_pos + 1usize)..arg.len];
+                };
+
+                let is_help: bool = is_long_opt(arg, keylen, "--help");
+                let is_ver: bool = is_long_opt(arg, keylen, "--version");
+                if (is_help || is_ver) {
+                    if (has_value) {
+                        let mut optname: str = "--version";
+                        if (is_help) { optname = "--help"; };
+                        c::fprintf(c::stderr, "chmod: option '%s' doesn't allow an argument\nTry 'chmod --help' for more information.\n", optname.data as *i8);
+                        return 1i32;
+                    };
+                    if (is_help) {
+                        print_help();
+                        return 0i32;
+                    };
+                    io::println("chmod (zovutils) 0.10.61");
+                    return 0i32;
+                };
+
+                if (is_long_opt(arg, keylen, "--recursive")) { opt.recursive = true; i += 1usize; continue; };
+                if (is_long_opt(arg, keylen, "--changes")) { opt.verbose = true; opt.changes_only = true; i += 1usize; continue; };
+                if (is_long_opt(arg, keylen, "--verbose")) { opt.verbose = true; i += 1usize; continue; };
+                if (is_long_opt(arg, keylen, "--quiet") || is_long_opt(arg, keylen, "--silent")) { opt.force = true; i += 1usize; continue; };
+                if (is_long_opt(arg, keylen, "--preserve-root")) { opt.preserve_root = true; i += 1usize; continue; };
+                if (is_long_opt(arg, keylen, "--no-preserve-root")) { opt.preserve_root = false; i += 1usize; continue; };
+                if (is_long_opt(arg, keylen, "--dereference")) { opt.dereference = true; i += 1usize; continue; };
+                if (is_long_opt(arg, keylen, "--no-dereference")) { opt.dereference = false; i += 1usize; continue; };
+
+                if (is_long_opt(arg, keylen, "--reference")) {
+                    if (!has_value) {
+                        if (i + 1usize < argc) {
+                            i += 1usize;
+                            value = args::argat(i);
+                        } else {
+                            c::fputs("chmod: option '--reference' requires an argument\nTry 'chmod --help' for more information.\n", c::stderr);
+                            return 1i32;
+                        };
+                    };
+                    reference_file = value;
+                    i += 1usize;
+                    continue;
+                };
+
+                c::fprintf(c::stderr, "chmod: unrecognized option '%s'\nTry 'chmod --help' for more information.\n", arg.data as *i8);
+                return 1i32;
+            };
+
+            let mut is_short: bool = false;
+            if (arg.len > 1usize) {
+                if (arg[0usize] == 45u8) {
+                    is_short = true;
+                };
+            };
+
+            if (is_short) {
+                let mut j: usize = 1usize;
+                while (j < arg.len) {
+                    let opt_ch: u8 = arg[j];
+                    if (opt_ch == 82u8) { // 'R'
+                        opt.recursive = true;
+                    } else if (opt_ch == 102u8) { // 'f'
+                        opt.force = true;
+                    } else if (opt_ch == 118u8) { // 'v'
+                        opt.verbose = true;
+                    } else if (opt_ch == 99u8) { // 'c'
+                        opt.verbose = true;
+                        opt.changes_only = true;
+                    } else if (opt_ch == 104u8) { // 'h'
+                        opt.dereference = false;
+                    } else if (opt_ch == 72u8) { // 'H'
+                        opt.traverse_mode = 0i32;
+                    } else if (opt_ch == 76u8) { // 'L'
+                        opt.traverse_mode = 1i32;
+                    } else if (opt_ch == 80u8) { // 'P'
+                        opt.traverse_mode = 2i32;
+                    } else {
+                        c::fprintf(c::stderr, "chmod: invalid option -- '%c'\nTry 'chmod --help' for more information.\n", opt_ch as i32);
+                        return 1i32;
+                    };
+                    j += 1usize;
+                };
+                i += 1usize;
+                continue;
+            };
+        };
+
+        operands.push(arg);
+        i += 1usize;
+    };
+
+    if (operands.len() == 0usize) {
+        c::fputs("chmod: missing operand\nTry 'chmod --help' for more information.\n", c::stderr);
+        return 1i32;
+    };
+
+    let mut reference_mode: String = String::new();
+    let has_reference: bool = reference_file.len > 0usize;
+    if (has_reference) {
+        let mut ref_st_mode: u32 = 0u32;
+        let rrc: i32 = platform_stat::zov_stat_mode(reference_file.data as *i8, 1i32, &mut ref_st_mode);
+        if (rrc != 0i32) {
+            c::fputs("chmod: cannot access ", c::stderr);
+            platform_quote::zov_quote_shell(c::stderr, reference_file.data as *i8);
+            c::fprintf(c::stderr, ": %s\n", strc::strerror(rrc));
+            return 1i32;
+        };
+        let mut r_buf: [16]u8;
+        c::snprintf((&mut r_buf[0usize]) as *i8, 16usize, "%o\0".data as *i8, ref_st_mode & 0o7777u32);
+        reference_mode = String::from(zov_str_from_raw((&r_buf[0usize]) as *u8, strc::strlen((&r_buf[0usize]) as *i8)));
+    };
+
+    let first_file: usize = if_u8(has_reference, 0u8, 1u8) as usize;
+    if (operands.len() <= first_file) {
+        if (has_reference) {
+            c::fputs("chmod: missing operand\nTry 'chmod --help' for more information.\n", c::stderr);
+        } else {
+            c::fputs("chmod: missing operand after ", c::stderr);
+            platform_quote::zov_quote_shell(c::stderr, operands.get(0usize).data as *i8);
+            c::fputs("\nTry 'chmod --help' for more information.\n", c::stderr);
+        };
+        return 1i32;
+    };
+
+    let mut mode: str = "";
+    if (has_reference) {
+        mode = reference_mode.view();
+    } else {
+        mode = operands.get(0usize);
+    };
+
+    let mut status: i32 = 0i32;
+    for (let k in first_file..operands.len()) {
+        let fpath: str = operands.get(k);
+        if (chmod_path(mode, fpath, &opt, true, true) != 0i32) {
+            status = 1i32;
+        };
+    };
+
+    return status;
 };

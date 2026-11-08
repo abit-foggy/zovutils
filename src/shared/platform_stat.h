@@ -11,6 +11,8 @@
 #include <sys/time.h>
 #include <pwd.h>
 #include <grp.h>
+#include <dirent.h>
+#include <limits.h>
 #if defined(__linux__)
 #include <sys/sysmacros.h>
 #endif
@@ -372,6 +374,43 @@ static inline int zov_path_is_dir(const char *path, int follow) {
     int rc = follow ? stat(path, &st) : lstat(path, &st);
     if (rc != 0) return 0;
     return S_ISDIR(st.st_mode);
+}
+
+static inline void *zov_opendir(const char *path) {
+    return (void *)opendir(path);
+}
+
+static inline const char *zov_readdir(void *dir) {
+    struct dirent *ent = readdir((DIR *)dir);
+    if (!ent) return NULL;
+    return ent->d_name;
+}
+
+static inline int zov_closedir(void *dir) {
+    return closedir((DIR *)dir);
+}
+
+static inline int zov_realpath_is_root(const char *path) {
+    char buf[PATH_MAX];
+    if (realpath(path, buf) == NULL) return 0;
+    return strcmp(buf, "/") == 0;
+}
+
+static inline int zov_lchmod(const char *path, uint32_t mode) {
+#if defined(__APPLE__)
+    return lchmod(path, (mode_t)mode) == 0 ? 0 : errno;
+#else
+    (void)path; (void)mode;
+    return 0;
+#endif
+}
+
+static inline int zov_stat_mode(const char *path, int follow, uint32_t *mode_out) {
+    struct stat st;
+    int rc = follow ? stat(path, &st) : lstat(path, &st);
+    if (rc != 0) return errno;
+    *mode_out = (uint32_t)st.st_mode;
+    return 0;
 }
 
 #endif
