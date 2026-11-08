@@ -237,6 +237,7 @@ class Suite:
                 with sink.open("wb") as stdout:
                     proc = subprocess.run(
                         command,
+                        stdin=subprocess.DEVNULL,
                         stdout=stdout,
                         stderr=subprocess.PIPE,
                         env=env,
@@ -253,6 +254,7 @@ class Suite:
             for command, env in commands:
                 proc = subprocess.run(
                     command,
+                    stdin=subprocess.DEVNULL,
                     stdout=write_fd,
                     stderr=subprocess.PIPE,
                     env=env,

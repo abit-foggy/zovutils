@@ -278,7 +278,7 @@ static inline int zov_signal_list(void) {
         int is_blocked = sigismember(&blocked, signal_number) == 1;
         int is_ignored = action.sa_handler == SIG_IGN;
         if (!is_blocked && !is_ignored) continue;
-        fprintf(stderr, "%-10s (%d): %s\n", zov_signal_name(signal_number), signal_number,
+        fprintf(stderr, "%-10s (%2d): %s\n", zov_signal_name(signal_number), signal_number,
                 is_ignored ? "IGNORE" : "BLOCK");
     }
     return ferror(stderr) ? -1 : 0;
