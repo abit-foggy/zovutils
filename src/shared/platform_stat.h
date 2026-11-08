@@ -106,4 +106,34 @@ static inline int zov_mknod_device(const char *path, char type, uint32_t mode, u
 #endif
 }
 
+static inline uint32_t zov_get_umask(void) {
+    mode_t mask = umask(0);
+    umask(mask);
+    return (uint32_t)mask;
+}
+
+static inline int zov_mkdir(const char *path, uint32_t mode) {
+    return mkdir(path, (mode_t)mode);
+}
+
+static inline int zov_chmod(const char *path, uint32_t mode) {
+    return chmod(path, (mode_t)mode);
+}
+
+static inline int zov_is_directory(const char *path) {
+    struct stat info;
+    if (stat(path, &info) != 0) return 0;
+    return S_ISDIR(info.st_mode);
+}
+
+static inline int zov_context_enabled(void) {
+#if defined(__linux__)
+    return access("/sys/fs/selinux/enforce", F_OK) == 0 ||
+           access("/sys/fs/smackfs", F_OK) == 0 ||
+           access("/smack", F_OK) == 0;
+#else
+    return 0;
+#endif
+}
+
 #endif

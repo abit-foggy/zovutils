@@ -1,0 +1,160 @@
+export type ParseModeResult = struct {
+    valid: bool,
+    mode: u32,
+};
+
+// Mode bits constants:
+// S_IRWXU = 0x1c0, S_IRUSR = 0x100, S_IWUSR = 0x080, S_IXUSR = 0x040, S_ISUID = 0x800
+// S_IRWXG = 0x038, S_IRGRP = 0x020, S_IWGRP = 0x010, S_IXGRP = 0x008, S_ISGID = 0x400
+// S_IRWXO = 0x007, S_IROTH = 0x004, S_IWOTH = 0x002, S_IXOTH = 0x001, S_ISVTX = 0x200
+// 0777 = 0x1ff, 07777 = 0xfff
+
+export fn parse_mode(text: str, current_mode: u32, current_umask: u32, is_apple: bool) ParseModeResult = {
+    if (text.len == 0usize) {
+        return ParseModeResult{ valid = false, mode = 0u32 };
+    };
+
+    // Check if octal
+    let mut octal: bool = true;
+    for (let i in 0usize..text.len) {
+        let ch: u8 = text.data[i];
+        if (ch < 48u8 || ch > 55u8) { // '0'..'7'
+            octal = false;
+            break;
+        };
+    };
+
+    if (octal) {
+        let mut mode: u32 = 0u32;
+        for (let i in 0usize..text.len) {
+            let digit: u32 = (text.data[i] - 48u8) as u32;
+            if (mode > (0xfffu32 - digit) / 8u32) {
+                return ParseModeResult{ valid = false, mode = 0u32 };
+            };
+            mode = (mode << 3u32) | digit;
+        };
+        if (mode > 0xfffu32) {
+            return ParseModeResult{ valid = false, mode = 0u32 };
+        };
+        return ParseModeResult{ valid = true, mode = mode };
+    };
+
+    // Symbolic mode
+    let mut mode: u32 = current_mode;
+    let mut p: usize = 0usize;
+    while (p < text.len) {
+        let mut who: u32 = 0u32;
+        let mut who_given: bool = false;
+        while (p < text.len) {
+            let ch: u8 = text.data[p];
+            if (ch == 117u8) { // 'u'
+                who_given = true;
+                who |= 1u32;
+                p += 1usize;
+            } else if (ch == 103u8) { // 'g'
+                who_given = true;
+                who |= 2u32;
+                p += 1usize;
+            } else if (ch == 111u8) { // 'o'
+                who_given = true;
+                who |= 4u32;
+                p += 1usize;
+            } else if (ch == 97u8) { // 'a'
+                who_given = true;
+                who |= 7u32;
+                p += 1usize;
+            } else {
+                break;
+            };
+        };
+        if (!who_given) {
+            who = 7u32;
+        };
+        if (p >= text.len) {
+            return ParseModeResult{ valid = false, mode = 0u32 };
+        };
+        let op: u8 = text.data[p];
+        if (op != 43u8 && op != 45u8 && op != 61u8) { // '+', '-', '='
+            return ParseModeResult{ valid = false, mode = 0u32 };
+        };
+        p += 1usize;
+
+        let mut affected: u32 = 0u32;
+        if ((who & 1u32) != 0u32) { affected |= 0x1c0u32 | 0x800u32; }; // S_IRWXU | S_ISUID
+        if ((who & 2u32) != 0u32) { affected |= 0x038u32 | 0x400u32; }; // S_IRWXG | S_ISGID
+        if ((who & 4u32) != 0u32) { affected |= 0x007u32 | 0x200u32; }; // S_IRWXO | S_ISVTX
+
+        let mut bits: u32 = 0u32;
+        let mut any: bool = false;
+        while (p < text.len && text.data[p] != 44u8) { // ','
+            let c: u8 = text.data[p];
+            p += 1usize;
+            any = true;
+            if (c == 114u8 || c == 119u8 || c == 120u8 || c == 88u8) { // 'r', 'w', 'x', 'X'
+                let mut bit: u32 = 1u32;
+                if (c == 114u8) { bit = 4u32; }
+                else if (c == 119u8) { bit = 2u32; };
+                // 'X' is bit 1
+                if ((who & 1u32) != 0u32) {
+                    bits |= (bit << 6u32);
+                };
+                if ((who & 2u32) != 0u32) {
+                    bits |= (bit << 3u32);
+                };
+                if ((who & 4u32) != 0u32) {
+                    bits |= bit;
+                };
+            } else if (c == 115u8) { // 's'
+                if ((who & 1u32) != 0u32) { bits |= 0x800u32; };
+                if ((who & 2u32) != 0u32) { bits |= 0x400u32; };
+            } else if (c == 116u8) { // 't'
+                if ((who & 4u32) != 0u32) { bits |= 0x200u32; };
+            } else if (c == 117u8 || c == 103u8 || c == 111u8) { // 'u', 'g', 'o'
+                let mut source: u32 = mode & 0x007u32;
+                if (c == 117u8) {
+                    source = (mode & 0x1c0u32) >> 6u32;
+                } else if (c == 103u8) {
+                    source = (mode & 0x038u32) >> 3u32;
+                };
+                if ((who & 1u32) != 0u32) { bits |= source << 6u32; };
+                if ((who & 2u32) != 0u32) { bits |= source << 3u32; };
+                if ((who & 4u32) != 0u32) { bits |= source; };
+            } else {
+                return ParseModeResult{ valid = false, mode = 0u32 };
+            };
+        };
+
+        if (!any && op != 61u8) { // '='
+            return ParseModeResult{ valid = false, mode = 0u32 };
+        };
+
+        if (!who_given) {
+            affected &= ~(current_umask & 0x1ffu32);
+            bits &= affected;
+            if (op == 61u8) { // '='
+                affected |= 0x1ffu32;
+            };
+        };
+
+        if (op == 61u8) { // '='
+            mode = (mode & ~affected) | bits;
+        } else if (op == 43u8) { // '+'
+            mode |= bits;
+        } else { // '-'
+            mode &= ~bits;
+        };
+
+        if (!is_apple && (bits & 0x200u32) != 0u32) { // S_ISVTX
+            mode &= ~(current_umask & 0x1ffu32);
+        };
+
+        if (p < text.len && text.data[p] == 44u8) { // ','
+            p += 1usize;
+            if (p >= text.len) {
+                return ParseModeResult{ valid = false, mode = 0u32 };
+            };
+        };
+    };
+
+    return ParseModeResult{ valid = true, mode = mode & 0xfffu32 };
+};

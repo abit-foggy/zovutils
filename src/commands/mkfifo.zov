@@ -1,10 +1,179 @@
 use std::env as args;
-use <mkfifo_backend.h> as backend;
+use std::io as io;
+use std::vec;
+use <stdio.h> as c;
+use <string.h> as strc;
+use <platform_errno.h> as platform_errno;
+use <platform_stat.h> as platform_stat;
+use <platform_quote.h> as platform_quote;
+use shared::mode as mode;
+
+fn is_option_prefix(arg: str, opt: str) bool = {
+    if (arg.len < 3usize || arg.len > opt.len) { return false; };
+    for (let i in 0usize..arg.len) {
+        if (arg.data[i] != opt.data[i]) { return false; };
+    };
+    return true;
+};
+
+fn print_help() = {
+    c::fputs("Usage: mkfifo [OPTION]... NAME...\nCreate named pipes (FIFOs) with the given NAMEs.\n\nMandatory arguments to long options are mandatory for short options too.\n  -m, --mode=MODE\n         set file permission bits to MODE, not a=rw - umask\n  -Z\n         set the SELinux security context to default type\n      --context[=CTX]\n         like -Z, or if CTX is specified then set the\n         SELinux or SMACK security context to CTX\n      --help\n         display this help and exit\n      --version\n         output version information and exit\n\nReport bugs to: bug-coreutils@gnu.org\nGNU coreutils home page: <https://www.gnu.org/software/coreutils/>\nGeneral help using GNU software: <https://www.gnu.org/gethelp/>\nReport any translation bugs to <https://translationproject.org/team/>\nFull documentation <https://www.gnu.org/software/coreutils/mkfifo>\nor available locally via: info '(coreutils) mkfifo invocation'\n", c::stdout);
+};
 
 export fn run(start: usize, argc: usize) i32 = {
-    let count: usize = argc - start;
-    if (count > 4096usize) { return 1; };
-    let mut argv: [4096]*i8;
-    for (let i in 0usize..count) { argv[i] = args::argat(start + i).data as *i8; };
-    return backend::zov_mkfifo_run(count as i32, (&argv[0usize]) as **i8);
+    let mut mode_text: str = "";
+    let mut mode_set: bool = false;
+    let mut context: str = "";
+    let mut context_option: bool = false;
+    let mut options_done: bool = false;
+    let mut paths: vec::Vec[str] = vec::new[str]();
+
+    let mut i: usize = start;
+    while (i < argc) {
+        let a: str = args::argat(i);
+        if (!options_done && a.len == 2usize && a.data[0usize] == 45u8 && a.data[1usize] == 45u8) { // "--"
+            options_done = true;
+            i += 1usize;
+            continue;
+        };
+        if (!options_done && a.len >= 2usize && a.data[0usize] == 45u8 && a.data[1usize] == 45u8) { // "--..."
+            let mut eq_pos: usize = a.len;
+            for (let j in 2usize..a.len) {
+                if (a.data[j] == 61u8) { // '='
+                    eq_pos = j;
+                    break;
+                };
+            };
+            let key: str = a[0..eq_pos];
+            let has_eq: bool = eq_pos < a.len;
+            let mut val: str = "";
+            if (has_eq) {
+                val = a[(eq_pos + 1usize)..a.len];
+            };
+
+            if (is_option_prefix(key, "--help") || is_option_prefix(key, "--version")) {
+                let mut name: str = "--version";
+                if (is_option_prefix(key, "--help")) {
+                    name = "--help";
+                };
+                if (has_eq) {
+                    c::fprintf(c::stderr, "mkfifo: option '%s' doesn't allow an argument\nTry 'mkfifo --help' for more information.\n", name.data as *i8);
+                    return 1i32;
+                };
+                if (is_option_prefix(key, "--help")) {
+                    print_help();
+                } else {
+                    io::println("mkfifo (zovutils) 0.10.61");
+                };
+                return 0i32;
+            };
+            if (is_option_prefix(key, "--mode")) {
+                if (has_eq) {
+                    mode_text = val;
+                    mode_set = true;
+                    i += 1usize;
+                } else if (i + 1usize < argc) {
+                    mode_text = args::argat(i + 1usize);
+                    mode_set = true;
+                    i += 2usize;
+                } else {
+                    c::fputs("mkfifo: option '--mode' requires an argument\nTry 'mkfifo --help' for more information.\n", c::stderr);
+                    return 1i32;
+                };
+                continue;
+            };
+            if (is_option_prefix(key, "--context")) {
+                context_option = true;
+                if (has_eq) {
+                    context = val;
+                };
+                i += 1usize;
+                continue;
+            };
+            c::fprintf(c::stderr, "mkfifo: unrecognized option '%s'\nTry 'mkfifo --help' for more information.\n", a.data as *i8);
+            return 1i32;
+        };
+        if (!options_done && a.len > 1usize && a.data[0usize] == 45u8) { // short options
+            let mut j: usize = 1usize;
+            let mut skip_remaining: bool = false;
+            while (j < a.len && !skip_remaining) {
+                let ch: u8 = a.data[j];
+                if (ch == 90u8) { // 'Z'
+                    context_option = true;
+                    j += 1usize;
+                } else if (ch == 109u8) { // 'm'
+                    if (j + 1usize < a.len) {
+                        mode_text = a[(j + 1usize)..a.len];
+                        mode_set = true;
+                        skip_remaining = true;
+                    } else if (i + 1usize < argc) {
+                        mode_text = args::argat(i + 1usize);
+                        mode_set = true;
+                        i += 1usize;
+                        skip_remaining = true;
+                    } else {
+                        c::fputs("mkfifo: option requires an argument -- 'm'\nTry 'mkfifo --help' for more information.\n", c::stderr);
+                        return 1i32;
+                    };
+                } else {
+                    c::fprintf(c::stderr, "mkfifo: invalid option -- '%c'\nTry 'mkfifo --help' for more information.\n", ch as i32);
+                    return 1i32;
+                };
+            };
+            i += 1usize;
+            continue;
+        };
+        paths.push(a);
+        i += 1usize;
+    };
+
+    if (paths.len() == 0usize) {
+        c::fputs("mkfifo: missing operand\nTry 'mkfifo --help' for more information.\n", c::stderr);
+        return 1i32;
+    };
+
+    if (context_option && context.len > 0usize) {
+        c::fputs("mkfifo: failed to set default file creation context to ", c::stderr);
+        platform_quote::zov_quote_shell(c::stderr, context.data as *i8);
+        c::fputs(": Invalid argument\n", c::stderr);
+        return 1i32;
+    };
+
+    let mask: u32 = platform_stat::zov_get_umask();
+    let mut final_mode: u32 = 0x1b6u32; // 0666
+    if (mode_set) {
+        let res: mode::ParseModeResult = mode::parse_mode(mode_text, 0x1ffu32, mask, platform_errno::zov_platform_is_apple() != 0i32);
+        if (!res.valid) {
+            c::fputs("mkfifo: invalid mode\n", c::stderr);
+            return 1i32;
+        };
+        final_mode = res.mode;
+    };
+    let mut create_mode: u32 = 0x1b6u32 & ~mask;
+    if (mode_set) {
+        create_mode = final_mode;
+    };
+
+    let mut status: i32 = 0i32;
+    for (let pi in 0usize..paths.len()) {
+        let p: str = paths.get(pi);
+        platform_errno::zov_errno_set(0i32);
+        if (platform_stat::zov_mkfifo(p.data as *i8, create_mode) != 0i32) {
+            let err: i32 = platform_errno::zov_errno_value();
+            c::fputs("mkfifo: cannot create fifo ", c::stderr);
+            platform_quote::zov_quote_shell(c::stderr, p.data as *i8);
+            c::fprintf(c::stderr, ": %s\n", strc::strerror(err));
+            status = 1i32;
+            continue;
+        };
+        if (mode_set && platform_stat::zov_chmod(p.data as *i8, final_mode) != 0i32) {
+            let err: i32 = platform_errno::zov_errno_value();
+            c::fputs("mkfifo: cannot create fifo ", c::stderr);
+            platform_quote::zov_quote_shell(c::stderr, p.data as *i8);
+            c::fprintf(c::stderr, ": %s\n", strc::strerror(err));
+            status = 1i32;
+        };
+    };
+
+    return status;
 };
