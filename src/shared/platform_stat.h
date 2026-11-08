@@ -312,6 +312,16 @@ static inline int zov_stat_info(const char *path, int follow, void *out_ptr) {
     return 0;
 }
 
+static inline int zov_du_stat(const char *path, int follow, uint64_t *size_out, uint64_t *blocks_out, uint32_t *mode_out) {
+    struct stat st;
+    int rc = follow ? stat(path, &st) : lstat(path, &st);
+    if (rc != 0) return errno;
+    if (size_out) *size_out = (uint64_t)st.st_size;
+    if (blocks_out) *blocks_out = (uint64_t)(st.st_blocks > 0 ? (st.st_blocks + 1) / 2 : 0);
+    if (mode_out) *mode_out = (uint32_t)st.st_mode;
+    return 0;
+}
+
 static inline const char *zov_get_username(uint32_t uid) {
     struct passwd *pw = getpwuid((uid_t)uid);
     return pw ? pw->pw_name : NULL;

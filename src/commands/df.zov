@@ -1,9 +1,306 @@
 use std::env as args;
-use <df_backend.h> as backend;
+use std::vec as vec;
+use <stdio.h> as c;
+use <string.h> as strc;
+use <platform_filesystem.h> as platform_filesystem;
+
+fn print_help() = {
+    c::fputs("Usage: df [OPTION]... [FILE]...\n", c::stdout);
+    c::fputs("Show information about the file system on which each FILE resides.\n", c::stdout);
+    c::fputs("  -i, --inodes       list inode information instead of block usage\n", c::stdout);
+    c::fputs("  -P, --portability  use the POSIX output format\n", c::stdout);
+    c::fputs("  -T, --print-type   print file system type\n", c::stdout);
+    c::fputs("  -h, --human-readable  print sizes in powers of 1024\n", c::stdout);
+    c::fputs("  -H, --si           print sizes in powers of 1000\n", c::stdout);
+    c::fputs("      --help         display this help and exit\n", c::stdout);
+    c::fputs("      --version      output version information and exit\n", c::stdout);
+};
+
+fn if_u64(cond: bool, a: u64, b: u64) u64 = {
+    if (cond) { return a; };
+    return b;
+};
+
+fn num_digits(n: u64) i32 = {
+    let mut width: i32 = 1i32;
+    let mut val: u64 = n;
+    while (val >= 10u64) {
+        val = val / 10u64;
+        width += 1i32;
+    };
+    return width;
+};
+
+fn get_used_width(path: str) i32 = {
+    let mut v: platform_filesystem::ZovStatvfs = platform_filesystem::ZovStatvfs {
+        f_bsize = 0u64,
+        f_frsize = 0u64,
+        f_blocks = 0u64,
+        f_bfree = 0u64,
+        f_bavail = 0u64,
+        f_files = 0u64,
+        f_ffree = 0u64,
+    };
+    let rc: i32 = platform_filesystem::zov_statvfs(path.data as *i8, &mut v);
+    if (rc != 0i32) {
+        return 5i32;
+    };
+    let size: u64 = if_u64(v.f_frsize != 0u64, v.f_frsize, v.f_bsize);
+    let mut used: u64 = (v.f_blocks - v.f_bfree) * size / 1024u64;
+    let mut width: i32 = 0i32;
+    while (true) {
+        width += 1i32;
+        used = used / 10u64;
+        if (used == 0u64) { break; };
+    };
+    if (width > 5i32) { return width; };
+    return 5i32;
+};
+
+fn df_one(
+    path: str,
+    inodes: bool,
+    print_type: bool,
+    human: bool,
+    si: bool,
+    source_width: i32,
+    type_width: i32,
+    blocks_width: i32,
+    block_used_width: i32,
+    block_free_width: i32
+) i32 = {
+    let mut v: platform_filesystem::ZovStatvfs = platform_filesystem::ZovStatvfs {
+        f_bsize = 0u64,
+        f_frsize = 0u64,
+        f_blocks = 0u64,
+        f_bfree = 0u64,
+        f_bavail = 0u64,
+        f_files = 0u64,
+        f_ffree = 0u64,
+    };
+    let rc: i32 = platform_filesystem::zov_statvfs(path.data as *i8, &mut v);
+    if (rc != 0i32) {
+        c::fprintf(c::stderr, "df: %s: %s\n", path.data as *i8, strc::strerror(rc));
+        return 1;
+    };
+
+    let mut mount_buf: [4096]u8;
+    platform_filesystem::zov_df_mount(path.data as *i8, (&mut mount_buf[0usize]) as *i8, 4096usize);
+    let mut fs_buf: [256]u8;
+    let mut type_buf: [64]u8;
+    type_buf[0usize] = 0u8;
+    platform_filesystem::zov_df_source_type((&mut mount_buf[0usize]) as *i8, (&mut fs_buf[0usize]) as *i8, 256usize, (&mut type_buf[0usize]) as *i8, 64usize);
+
+    if (inodes) {
+        let total: u64 = v.f_files;
+        let avail: u64 = v.f_ffree;
+        let mut used: u64 = 0u64;
+        if (total >= avail) {
+            used = total - avail;
+        };
+        let mut pct: u64 = 0u64;
+        if (used + avail > 0u64) {
+            pct = (used * 100u64 + used + avail - 1u64) / (used + avail);
+        };
+        c::printf("%-14s %7llu %5llu %7llu %4llu%% %s\n", (&mut fs_buf[0usize]) as *i8, total, used, avail, pct, (&mut mount_buf[0usize]) as *i8);
+        return 0;
+    };
+
+    let size: u64 = if_u64(v.f_frsize != 0u64, v.f_frsize, v.f_bsize);
+    let total_bytes: u64 = v.f_blocks * size;
+    let used_bytes: u64 = (v.f_blocks - v.f_bfree) * size;
+    let avail_bytes: u64 = v.f_bavail * size;
+    let blocks: u64 = total_bytes / 1024u64;
+    let used: u64 = used_bytes / 1024u64;
+    let avail: u64 = avail_bytes / 1024u64;
+    let mut pct: u64 = 0u64;
+    if (used + avail > 0u64) {
+        pct = (used * 100u64 + used + avail - 1u64) / (used + avail);
+    };
+
+    if (human) {
+        let mut hs: [32]u8;
+        let mut hu: [32]u8;
+        let mut ha: [32]u8;
+        let base: i32 = if_u64(si, 1000u64, 1024u64) as i32;
+        platform_filesystem::zov_df_human(total_bytes, base, (&mut hs[0usize]) as *i8, 32usize);
+        platform_filesystem::zov_df_human(used_bytes, base, (&mut hu[0usize]) as *i8, 32usize);
+        platform_filesystem::zov_df_human(avail_bytes, base, (&mut ha[0usize]) as *i8, 32usize);
+        if (print_type) {
+            c::printf("%-14s %-5s %4s %5s %5s %3llu%% %s\n", (&mut fs_buf[0usize]) as *i8, (&mut type_buf[0usize]) as *i8, (&mut hs[0usize]) as *i8, (&mut hu[0usize]) as *i8, (&mut ha[0usize]) as *i8, pct, (&mut mount_buf[0usize]) as *i8);
+        } else {
+            c::printf("%-15s %4s %5s %5s %3llu%% %s\n", (&mut fs_buf[0usize]) as *i8, (&mut hs[0usize]) as *i8, (&mut hu[0usize]) as *i8, (&mut ha[0usize]) as *i8, pct, (&mut mount_buf[0usize]) as *i8);
+        };
+    } else if (print_type) {
+        c::printf("%-*s %-*s %*llu %*llu %*llu %3llu%% %s\n", source_width, (&mut fs_buf[0usize]) as *i8, type_width, (&mut type_buf[0usize]) as *i8, blocks_width, blocks, block_used_width, used, block_free_width, avail, pct, (&mut mount_buf[0usize]) as *i8);
+    } else {
+        c::printf("%-14s %11llu %6llu %9llu %7llu%% %s\n", (&mut fs_buf[0usize]) as *i8, blocks, used, avail, pct, (&mut mount_buf[0usize]) as *i8);
+    };
+
+    return 0;
+};
+
 export fn run(start: usize, argc: usize) i32 = {
-    let count: usize = argc - start;
-    if (count > 4096usize) { return 1; };
-    let mut argv: [4096]*i8;
-    for (let i in 0usize..count) { argv[i] = args::argat(start + i).data as *i8; };
-    return backend::zov_df_run(count as i32, (&argv[0usize]) as **i8);
+    let mut inodes: bool = false;
+    let mut print_type: bool = false;
+    let mut human: bool = false;
+    let mut si: bool = false;
+
+    let mut paths: vec::Vec<str> = vec::new<str>();
+
+    let mut i: usize = start;
+    while (i < argc) {
+        let a: str = args::argat(i).view();
+        if (a == "--help") {
+            print_help();
+            return 0;
+        };
+        if (a == "--version") {
+            c::fputs("df (zovutils) 0.10.61\n", c::stdout);
+            return 0;
+        };
+        if (a == "-P" || a == "--portability") {
+            i += 1usize;
+            continue;
+        };
+        if (a == "-i" || a == "--inodes") {
+            inodes = true;
+            i += 1usize;
+            continue;
+        };
+        if (a == "-T" || a == "--print-type") {
+            print_type = true;
+            i += 1usize;
+            continue;
+        };
+        if (a == "-h" || a == "--human-readable") {
+            human = true;
+            i += 1usize;
+            continue;
+        };
+        if (a == "-H" || a == "--si") {
+            human = true;
+            si = true;
+            i += 1usize;
+            continue;
+        };
+        if (a.len > 0usize && a[0usize] == 45u8 && a != "-") {
+            c::fprintf(c::stderr, "df: unrecognized option '%s'\nTry 'df --help' for more information.\n", a.data as *i8);
+            return 1;
+        };
+        paths.push(a);
+        i += 1usize;
+    };
+
+    if (paths.len() == 0usize) {
+        paths.push(".");
+    };
+
+    let mut used_width: i32 = 5i32;
+    let mut inode_total_width: i32 = 7i32;
+    let mut inode_used_width: i32 = 5i32;
+    let mut inode_free_width: i32 = 7i32;
+    let mut source_width: i32 = 14i32;
+    let mut type_width: i32 = 4i32;
+    let mut blocks_width: i32 = 9i32;
+    let mut block_used_width: i32 = 6i32;
+    let mut block_free_width: i32 = 9i32;
+
+    for (let p_idx in 0usize..paths.len()) {
+        let p: str = paths.get(p_idx);
+        let width: i32 = get_used_width(p);
+        if (width > used_width) {
+            used_width = width;
+        };
+
+        if (print_type && !human) {
+            let mut mount_buf: [4096]u8;
+            platform_filesystem::zov_df_mount(p.data as *i8, (&mut mount_buf[0usize]) as *i8, 4096usize);
+            let mut fs_buf: [256]u8;
+            let mut type_buf: [64]u8;
+            type_buf[0usize] = 0u8;
+            platform_filesystem::zov_df_source_type((&mut mount_buf[0usize]) as *i8, (&mut fs_buf[0usize]) as *i8, 256usize, (&mut type_buf[0usize]) as *i8, 64usize);
+            let a_len: i32 = strc::strlen((&fs_buf[0usize]) as *i8) as i32;
+            let b_len: i32 = strc::strlen((&type_buf[0usize]) as *i8) as i32;
+            if (a_len > source_width) { source_width = a_len; };
+            if (b_len > type_width) { type_width = b_len; };
+
+            let mut tv: platform_filesystem::ZovStatvfs = platform_filesystem::ZovStatvfs {
+                f_bsize = 0u64,
+                f_frsize = 0u64,
+                f_blocks = 0u64,
+                f_bfree = 0u64,
+                f_bavail = 0u64,
+                f_files = 0u64,
+                f_ffree = 0u64,
+            };
+            if (platform_filesystem::zov_statvfs(p.data as *i8, &mut tv) == 0i32) {
+                let size: u64 = if_u64(tv.f_frsize != 0u64, tv.f_frsize, tv.f_bsize);
+                let tb: u64 = tv.f_blocks * size / 1024u64;
+                let tu: u64 = (tv.f_blocks - tv.f_bfree) * size / 1024u64;
+                let ta: u64 = tv.f_bavail * size / 1024u64;
+                let c_len: i32 = num_digits(tb);
+                let d_len: i32 = num_digits(tu);
+                let e_len: i32 = num_digits(ta);
+                if (c_len > blocks_width) { blocks_width = c_len; };
+                if (d_len > block_used_width) { block_used_width = d_len; };
+                if (e_len > block_free_width) { block_free_width = e_len; };
+            };
+        };
+
+        if (inodes) {
+            let mut v: platform_filesystem::ZovStatvfs = platform_filesystem::ZovStatvfs {
+                f_bsize = 0u64,
+                f_frsize = 0u64,
+                f_blocks = 0u64,
+                f_bfree = 0u64,
+                f_bavail = 0u64,
+                f_files = 0u64,
+                f_ffree = 0u64,
+            };
+            if (platform_filesystem::zov_statvfs(p.data as *i8, &mut v) == 0i32) {
+                let total: u64 = v.f_files;
+                let free_count: u64 = v.f_ffree;
+                let mut used_count: u64 = 0u64;
+                if (total >= free_count) {
+                    used_count = total - free_count;
+                };
+                let a_len: i32 = num_digits(total);
+                let b_len: i32 = num_digits(used_count);
+                let c_len: i32 = num_digits(free_count);
+                if (a_len > inode_total_width) { inode_total_width = a_len; };
+                if (b_len > inode_used_width) { inode_used_width = b_len; };
+                if (c_len > inode_free_width) { inode_free_width = c_len; };
+            };
+        };
+    };
+
+    if (inodes) {
+        c::printf("%-14s %*s %*s %*s IUse%% Mounted on\n", "Filesystem", inode_total_width, "Inodes", inode_used_width, "IUsed", inode_free_width, "IFree");
+    } else if (human) {
+        c::puts("Filesystem      Size  Used Avail Use% Mounted on");
+    } else if (print_type) {
+        c::printf("%-*s %-*s %*s %*s %*s %3s Mounted on\n", source_width, "Filesystem", type_width, "Type", blocks_width, "1K-blocks", block_used_width, "Used", block_free_width, "Available", "Use%");
+    } else {
+        c::printf("Filesystem     1024-blocks");
+        let limit: i32 = used_width - 3i32;
+        for (let s in 0i32..limit) {
+            c::putchar(32i32);
+        };
+        c::puts("Used Available Capacity Mounted on");
+    };
+
+    let mut status: i32 = 0i32;
+    for (let p_idx in 0usize..paths.len()) {
+        let rc: i32 = df_one(
+            paths.get(p_idx),
+            inodes, print_type, human, si,
+            source_width, type_width, blocks_width, block_used_width, block_free_width
+        );
+        if (rc != 0i32) {
+            status = 1i32;
+        };
+    };
+
+    return status;
 };

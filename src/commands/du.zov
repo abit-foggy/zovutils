@@ -1,9 +1,259 @@
 use std::env as args;
-use <du_backend.h> as backend;
+use std::vec as vec;
+use <stdio.h> as c;
+use <string.h> as strc;
+use <platform_errno.h> as platform_errno;
+use <platform_stat.h> as platform_stat;
+
+fn print_help() = {
+    c::fputs("Usage: du [OPTION]... [FILE]...\n", c::stdout);
+    c::fputs("Summarize disk usage of the set of FILEs, recursively for directories.\n", c::stdout);
+    c::fputs("  -a, --all             write counts for all files, not just directories\n", c::stdout);
+    c::fputs("  -b, --bytes           equivalent to --apparent-size --block-size=1\n", c::stdout);
+    c::fputs("  -h, --human-readable  print sizes in human readable format\n", c::stdout);
+    c::fputs("  -L, --dereference     follow all symbolic links\n", c::stdout);
+    c::fputs("  -s, --summarize       display only a total for each argument\n", c::stdout);
+    c::fputs("  -d, --max-depth=N     print totals for directories at most N levels deep\n", c::stdout);
+    c::fputs("      --help            display this help and exit\n", c::stdout);
+    c::fputs("      --version         output version information and exit\n", c::stdout);
+};
+
+fn if_u8(cond: bool, a: u8, b: u8) u8 = {
+    if (cond) { return a; };
+    return b;
+};
+
+fn parse_i64_simple(s: str, out: &mut i64) bool = {
+    if (s.len == 0usize) { return false; };
+    let mut val: i64 = 0i64;
+    for (let i in 0usize..s.len) {
+        let b: u8 = s.data[i];
+        if (b < 48u8 || b > 57u8) { return false; };
+        val = val * 10i64 + ((b - 48u8) as i64);
+    };
+    *out = val;
+    return true;
+};
+
+fn print_du_size(n: u64, path: str, human: bool) = {
+    if (human) {
+        let mut v: f64 = n as f64;
+        let mut u: str = "K";
+        if (v >= 1024.0) {
+            v = v / 1024.0;
+            u = "M";
+        };
+        if (v >= 1024.0) {
+            v = v / 1024.0;
+            u = "G";
+        };
+        if (v >= 1024.0) {
+            v = v / 1024.0;
+            u = "T";
+        };
+        if (v < 10.0) {
+            c::printf("%.1f%s\t%s\n", v, u.data as *i8, path.data as *i8);
+        } else {
+            c::printf("%.0f%s\t%s\n", v, u.data as *i8, path.data as *i8);
+        };
+    } else {
+        c::printf("%llu\t%s\n", n, path.data as *i8);
+    };
+};
+
+fn du_walk(
+    path: str,
+    all: bool,
+    apparent: bool,
+    human: bool,
+    one: bool,
+    follow: bool,
+    depth_set: bool,
+    maxdepth_val: i64,
+    depth: i64,
+    status: &mut i32
+) u64 = {
+    let mut size_val: u64 = 0u64;
+    let mut blocks_val: u64 = 0u64;
+    let mut mode: u32 = 0u32;
+    let follow_flag: i32 = if_u8(follow, 1u8, 0u8) as i32;
+
+    let rc: i32 = platform_stat::zov_du_stat(path.data as *i8, follow_flag, &mut size_val, &mut blocks_val, &mut mode);
+    if (rc != 0i32) {
+        c::fprintf(c::stderr, "du: cannot access '%s': %s\n", path.data as *i8, strc::strerror(rc));
+        *status = 1i32;
+        return 0u64;
+    };
+
+    let is_dir: bool = (mode & 0o170000u32) == 0o040000u32;
+    let mut item_size: u64 = 0u64;
+    if (apparent) {
+        if (!is_dir) {
+            item_size = size_val;
+        };
+    } else {
+        item_size = blocks_val;
+    };
+
+    let mut total: u64 = item_size;
+
+    if (is_dir && depth < 1024i64) {
+        let dir: nullable *void = platform_stat::zov_opendir(path.data as *i8);
+        if (dir == null) {
+            let err: i32 = platform_errno::zov_errno_value();
+            c::fprintf(c::stderr, "du: cannot read directory '%s': %s\n", path.data as *i8, strc::strerror(err));
+            *status = 1i32;
+        } else {
+            let d: *void = dir!;
+            while (true) {
+                let ent: nullable *i8 = platform_stat::zov_readdir(d);
+                if (ent == null) {
+                    break;
+                };
+                let ename: str = zov_str_from_raw(ent! as *u8, strc::strlen(ent!));
+                if (ename == "." || ename == "..") {
+                    continue;
+                };
+                let mut child_str: String = String::from(path);
+                if (path.len > 0usize && path[path.len - 1usize] != 47u8) {
+                    child_str = child_str + "/";
+                };
+                child_str = child_str + ename;
+                let sub: u64 = du_walk(
+                    child_str.view(),
+                    all, apparent, human, one, follow, depth_set, maxdepth_val,
+                    depth + 1i64, status
+                );
+                total += sub;
+            };
+            platform_stat::zov_closedir(d);
+        };
+
+        if ((one && depth == 0i64) || (!one && (!depth_set || depth <= maxdepth_val))) {
+            print_du_size(total, path, human);
+        };
+    } else {
+        if ((all || depth == 0i64) && (!depth_set || depth <= maxdepth_val)) {
+            print_du_size(total, path, human);
+        };
+    };
+
+    return total;
+};
+
 export fn run(start: usize, argc: usize) i32 = {
-    let count: usize = argc - start;
-    if (count > 4096usize) { return 1; };
-    let mut argv: [4096]*i8;
-    for (let i in 0usize..count) { argv[i] = args::argat(start + i).data as *i8; };
-    return backend::zov_du_run(count as i32, (&argv[0usize]) as **i8);
+    let mut all: bool = false;
+    let mut apparent: bool = false;
+    let mut human: bool = false;
+    let mut one: bool = false;
+    let mut follow: bool = false;
+    let mut depth_set: bool = false;
+    let mut maxdepth_val: i64 = 0i64;
+
+    let mut paths: vec::Vec<str> = vec::new<str>();
+
+    let mut i: usize = start;
+    while (i < argc) {
+        let a: str = args::argat(i).view();
+        if (a == "--help") {
+            print_help();
+            return 0;
+        };
+        if (a == "--version") {
+            c::fputs("du (zovutils) 0.10.61\n", c::stdout);
+            return 0;
+        };
+        if (a == "-a" || a == "--all") {
+            all = true;
+            i += 1usize;
+            continue;
+        };
+        if (a == "-s" || a == "--summarize") {
+            one = true;
+            i += 1usize;
+            continue;
+        };
+        if (a == "-h" || a == "--human-readable") {
+            human = true;
+            i += 1usize;
+            continue;
+        };
+        if (a == "-b" || a == "--bytes") {
+            apparent = true;
+            i += 1usize;
+            continue;
+        };
+        if (a == "-L" || a == "--dereference") {
+            follow = true;
+            i += 1usize;
+            continue;
+        };
+        if (a == "-d" || a == "--max-depth") {
+            if (i + 1usize >= argc) {
+                return 1;
+            };
+            i += 1usize;
+            parse_i64_simple(args::argat(i).view(), &mut maxdepth_val);
+            depth_set = true;
+            i += 1usize;
+            continue;
+        };
+        if (a.len >= 12usize && a[0usize..12usize] == "--max-depth=") {
+            parse_i64_simple(a[12usize..a.len], &mut maxdepth_val);
+            depth_set = true;
+            i += 1usize;
+            continue;
+        };
+        if (a.len > 1usize && a[0usize] == 45u8 && a[1usize] != 45u8) {
+            let mut j: usize = 1usize;
+            let mut err: bool = false;
+            let mut bad_opt: u8 = 0u8;
+            while (j < a.len) {
+                let opt: u8 = a[j];
+                if (opt == 97u8) { // 'a'
+                    all = true;
+                } else if (opt == 115u8) { // 's'
+                    one = true;
+                } else if (opt == 104u8) { // 'h'
+                    human = true;
+                } else if (opt == 98u8) { // 'b'
+                    apparent = true;
+                } else if (opt == 76u8) { // 'L'
+                    follow = true;
+                } else {
+                    bad_opt = opt;
+                    err = true;
+                    break;
+                };
+                j += 1usize;
+            };
+            if (err) {
+                c::fprintf(c::stderr, "du: invalid option -- '%c'\nTry 'du --help' for more information.\n", bad_opt as i32);
+                return 1;
+            };
+            i += 1usize;
+            continue;
+        };
+        if (a.len > 1usize && a[0usize] == 45u8 && a[1usize] == 45u8) {
+            c::fprintf(c::stderr, "du: unrecognized option '%s'\nTry 'du --help' for more information.\n", a.data as *i8);
+            return 1;
+        };
+        paths.push(a);
+        i += 1usize;
+    };
+
+    if (paths.len() == 0usize) {
+        paths.push(".");
+    };
+
+    let mut status: i32 = 0i32;
+    for (let p_idx in 0usize..paths.len()) {
+        du_walk(
+            paths.get(p_idx),
+            all, apparent, human, one, follow, depth_set, maxdepth_val,
+            0i64, &mut status
+        );
+    };
+
+    return status;
 };
