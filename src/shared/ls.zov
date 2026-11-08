@@ -1,0 +1,705 @@
+use std::env as args;
+use std::io;
+use std::vec as vec;
+use <stdio.h> as c;
+use <string.h> as strc;
+use <platform_ls.h> as platform_ls;
+use <platform_stat.h> as platform_stat;
+use <platform_errno.h> as platform_errno;
+
+export type ZovLsStat = struct {
+    size: i64,
+    blocks: i64,
+    nlink: u64,
+    mtime_sec: i64,
+    mtime_nsec: i64,
+    uid: u32,
+    gid: u32,
+    mode: u32,
+    is_dir: i32,
+    is_link: i32,
+    padding: i32,
+};
+
+type LsOptions = struct {
+    all: bool,
+    almost: bool,
+    longfmt: bool,
+    one: bool,
+    columns: bool,
+    dirself: bool,
+    classify: bool,
+    reverse: bool,
+    sort_mode: i32,
+    apple_all_long: bool,
+};
+
+fn format_usize(val: usize) String = {
+    let mut n: usize = val;
+    if (n == 0usize) {
+        return String::from("0");
+    };
+    let mut buf: [32]u8;
+    let mut i: usize = 32usize;
+    while (n > 0usize) {
+        i -= 1usize;
+        buf[i] = ((n % 10usize) as u8) + 48u8;
+        n /= 10usize;
+    };
+    let s: str = zov_str_from_raw((&buf[i]) as *u8, 32usize - i);
+    return String::from(s);
+};
+
+fn path_join(dir: str, name: str) String = {
+    if (dir.len == 0usize) {
+        return String::from(name);
+    };
+    if (dir.data[dir.len - 1usize] == 47u8) {
+        return String::from(dir) + name;
+    };
+    return String::from(dir) + "/" + name;
+};
+
+fn ls_digits(val: i64) i32 = {
+    let mut n: i64 = val;
+    let mut d: i32 = 1i32;
+    while (n >= 10i64) {
+        n /= 10i64;
+        d += 1i32;
+    };
+    return d;
+};
+
+fn compare_str(a: str, b: str) i32 = {
+    let mut min_len: usize = a.len;
+    if (b.len < min_len) {
+        min_len = b.len;
+    };
+    for (let i in 0usize..min_len) {
+        if (a.data[i] != b.data[i]) {
+            if (a.data[i] < b.data[i]) { return -1i32; } else { return 1i32; };
+        };
+    };
+    if (a.len < b.len) { return -1i32; };
+    if (a.len > b.len) { return 1i32; };
+    return 0i32;
+};
+
+fn format_ls_mode(mode: u32, out: *u8) void = {
+    let kind: u32 = mode & 0xf000u32;
+    if (kind == 0x4000u32) {
+        out[0usize] = 100u8; // 'd'
+    } else if (kind == 0xa000u32) {
+        out[0usize] = 108u8; // 'l'
+    } else if (kind == 0x2000u32) {
+        out[0usize] = 99u8;  // 'c'
+    } else if (kind == 0x6000u32) {
+        out[0usize] = 98u8;  // 'b'
+    } else if (kind == 0x1000u32) {
+        out[0usize] = 112u8; // 'p'
+    } else if (kind == 0xc000u32) {
+        out[0usize] = 115u8; // 's'
+    } else {
+        out[0usize] = 45u8;  // '-'
+    };
+
+    let bits: [9]u32 = [
+        0x100u32, 0x080u32, 0x040u32,
+        0x020u32, 0x010u32, 0x008u32,
+        0x004u32, 0x002u32, 0x001u32
+    ];
+    let chars: [9]u8 = [
+        114u8, 119u8, 120u8,
+        114u8, 119u8, 120u8,
+        114u8, 119u8, 120u8
+    ];
+    for (let i in 0usize..9usize) {
+        if ((mode & bits[i]) != 0u32) {
+            out[i + 1usize] = chars[i];
+        } else {
+            out[i + 1usize] = 45u8; // '-'
+        };
+    };
+
+    if ((mode & 0x800u32) != 0u32) { // SUID
+        if ((mode & 0x040u32) != 0u32) {
+            out[3usize] = 115u8; // 's'
+        } else {
+            out[3usize] = 83u8;  // 'S'
+        };
+    };
+    if ((mode & 0x400u32) != 0u32) { // SGID
+        if ((mode & 0x008u32) != 0u32) {
+            out[6usize] = 115u8; // 's'
+        } else {
+            out[6usize] = 83u8;  // 'S'
+        };
+    };
+    if ((mode & 0x200u32) != 0u32) { // SVTX
+        if ((mode & 0x001u32) != 0u32) {
+            out[9usize] = 116u8; // 't'
+        } else {
+            out[9usize] = 84u8;  // 'T'
+        };
+    };
+    out[10usize] = 0u8;
+};
+
+fn print_classify_indicator(mode: u32) void = {
+    let kind: u32 = mode & 0xf000u32;
+    if (kind == 0x4000u32) {
+        c::putchar(47i32); // '/'
+    } else if (kind == 0xa000u32) {
+        c::putchar(64i32); // '@'
+    } else if ((mode & 73u32) != 0u32) {
+        c::putchar(42i32); // '*'
+    };
+};
+
+fn print_long_entry(name: str, st: &ZovLsStat, full_path: str, sw: i32, apple_all_long: bool) void = {
+    let mut mode_buf: [11]u8;
+    format_ls_mode(st.mode, (&mut mode_buf[0usize]) as *u8);
+
+    let mut marker: i32 = 32i32; // ' '
+    let mut null_full: String = String::from(full_path);
+    if (platform_ls::zov_ls_has_selinux_xattr(null_full.view().data as *i8) != 0i32) {
+        marker = 46i32; // '.'
+    };
+
+    let mut owner_str: String = String::from("");
+    let uname: nullable *i8 = platform_stat::zov_get_username(st.uid);
+    if (uname != null) {
+        owner_str = String::from(zov_str_from_raw((uname!) as *u8, strc::strlen(uname!)));
+    } else {
+        owner_str = format_usize(st.uid as usize);
+    };
+
+    let mut group_str: String = String::from("");
+    let gname: nullable *i8 = platform_stat::zov_get_groupname(st.gid);
+    if (gname != null) {
+        group_str = String::from(zov_str_from_raw((gname!) as *u8, strc::strlen(gname!)));
+    } else {
+        group_str = format_usize(st.gid as usize);
+    };
+
+    let mut date_buf: [64]i8;
+    platform_ls::zov_ls_format_time(st.mtime_sec, (&mut date_buf[0usize]) as *i8, 64usize);
+
+    let mut link_target: [4096]i8;
+    link_target[0usize] = 0i8;
+    if (st.is_link != 0i32) {
+        let _ = platform_ls::zov_ls_readlink(null_full.view().data as *i8, (&mut link_target[0usize]) as *i8, 4096usize);
+    };
+
+    let mut apple_val: i32 = 0i32;
+    if (apple_all_long) {
+        apple_val = 1i32;
+    };
+    let mut null_name: String = String::from(name);
+    platform_ls::zov_ls_print_long(
+        (&mode_buf[0usize]) as *i8,
+        marker as u8 as i8,
+        st.nlink,
+        owner_str.view().data as *i8,
+        group_str.view().data as *i8,
+        sw,
+        st.size,
+        (&date_buf[0usize]) as *i8,
+        null_name.view().data as *i8,
+        (&link_target[0usize]) as *i8,
+        apple_val
+    );
+};
+
+fn ls_compare(
+    idx_a: usize,
+    idx_b: usize,
+    names: &vec::Vec[String],
+    stats: &vec::Vec[ZovLsStat],
+    sort_mode: i32,
+    reverse: bool
+) i32 = {
+    let mut r: i32 = 0i32;
+    if (sort_mode == 1i32) { // sort by size
+        let size_a: i64 = stats.get(idx_a).size;
+        let size_b: i64 = stats.get(idx_b).size;
+        if (size_a != size_b) {
+            if (size_a > size_b) { r = -1i32; } else { r = 1i32; };
+        } else {
+            let name_a: str = names.getref(idx_a).view();
+            let name_b: str = names.getref(idx_b).view();
+            r = compare_str(name_a, name_b);
+        };
+    } else if (sort_mode == 2i32) { // sort by time
+        let mtime_a: i64 = stats.get(idx_a).mtime_sec;
+        let mtime_b: i64 = stats.get(idx_b).mtime_sec;
+        if (mtime_a != mtime_b) {
+            if (mtime_a > mtime_b) { r = -1i32; } else { r = 1i32; };
+        } else {
+            let nsec_a: i64 = stats.get(idx_a).mtime_nsec;
+            let nsec_b: i64 = stats.get(idx_b).mtime_nsec;
+            if (nsec_a != nsec_b) {
+                if (nsec_a > nsec_b) { r = -1i32; } else { r = 1i32; };
+            } else {
+                let name_a: str = names.getref(idx_a).view();
+                let name_b: str = names.getref(idx_b).view();
+                r = compare_str(name_a, name_b);
+            };
+        };
+    } else { // sort_mode == 0 (by name)
+        let name_a: str = names.getref(idx_a).view();
+        let name_b: str = names.getref(idx_b).view();
+        r = compare_str(name_a, name_b);
+    };
+
+    if (reverse) {
+        return -r;
+    };
+    return r;
+};
+
+fn merge(
+    indices: &mut vec::Vec[usize],
+    aux: &mut vec::Vec[usize],
+    low: usize,
+    mid: usize,
+    high: usize,
+    names: &vec::Vec[String],
+    stats: &vec::Vec[ZovLsStat],
+    sort_mode: i32,
+    reverse: bool
+) void = {
+    let mut i: usize = low;
+    let mut j: usize = mid + 1usize;
+    let mut k: usize = low;
+
+    while (i <= mid && j <= high) {
+        let cmp: i32 = ls_compare(indices.get(i), indices.get(j), names, stats, sort_mode, reverse);
+        if (cmp <= 0i32) {
+            aux.set(k, indices.get(i));
+            i += 1usize;
+        } else {
+            aux.set(k, indices.get(j));
+            j += 1usize;
+        };
+        k += 1usize;
+    };
+    while (i <= mid) {
+        aux.set(k, indices.get(i));
+        i += 1usize;
+        k += 1usize;
+    };
+    while (j <= high) {
+        aux.set(k, indices.get(j));
+        j += 1usize;
+        k += 1usize;
+    };
+    for (let idx in low..(high + 1usize)) {
+        indices.set(idx, aux.get(idx));
+    };
+};
+
+fn merge_sort_range(
+    indices: &mut vec::Vec[usize],
+    aux: &mut vec::Vec[usize],
+    low: usize,
+    high: usize,
+    names: &vec::Vec[String],
+    stats: &vec::Vec[ZovLsStat],
+    sort_mode: i32,
+    reverse: bool
+) void = {
+    if (low >= high) {
+        return;
+    };
+    let mid: usize = low + (high - low) / 2usize;
+    merge_sort_range(indices, aux, low, mid, names, stats, sort_mode, reverse);
+    merge_sort_range(indices, aux, mid + 1usize, high, names, stats, sort_mode, reverse);
+    merge(indices, aux, low, mid, high, names, stats, sort_mode, reverse);
+};
+
+fn sort_indices(
+    indices: &mut vec::Vec[usize],
+    names: &vec::Vec[String],
+    stats: &vec::Vec[ZovLsStat],
+    sort_mode: i32,
+    reverse: bool
+) void = {
+    let count: usize = indices.len();
+    if (count <= 1usize || sort_mode == 3i32) {
+        return;
+    };
+    let mut aux: vec::Vec[usize] = vec::new[usize]();
+    for (let _i in 0usize..count) {
+        aux.push(0usize);
+    };
+    merge_sort_range(indices, &mut aux, 0usize, count - 1usize, names, stats, sort_mode, reverse);
+};
+
+fn list_path(
+    utility: str,
+    path: str,
+    opts: &LsOptions
+) i32 = {
+    let mut null_path: String = String::from(path);
+    let mut root_st: ZovLsStat;
+    if (platform_ls::zov_ls_lstat(null_path.view().data as *i8, (&mut root_st) as *void) != 0i32) {
+        let err: i32 = platform_errno::zov_errno_value();
+        c::fprintf(c::stderr, "%s: cannot access '%s': %s\n".data as *i8, utility.data as *i8, path.data as *i8, strc::strerror(err));
+        return 2i32;
+    };
+
+    if (opts.dirself || root_st.is_dir == 0i32) {
+        if (opts.longfmt) {
+            let sw: i32 = ls_digits(root_st.size);
+            print_long_entry(path, &root_st, path, sw, opts.apple_all_long);
+        } else {
+            c::fputs(path.data as *i8, c::stdout);
+            if (opts.classify) {
+                print_classify_indicator(root_st.mode);
+            };
+            c::putchar(10i32);
+        };
+        return 0i32;
+    };
+
+    let dir_ptr: nullable *void = platform_stat::zov_opendir(null_path.view().data as *i8);
+    if (dir_ptr == null) {
+        let err: i32 = platform_errno::zov_errno_value();
+        c::fprintf(c::stderr, "%s: cannot open directory '%s': %s\n".data as *i8, utility.data as *i8, path.data as *i8, strc::strerror(err));
+        return 2i32;
+    };
+
+    let mut names: vec::Vec[String] = vec::new[String]();
+    let mut stats: vec::Vec[ZovLsStat] = vec::new[ZovLsStat]();
+    let mut valids: vec::Vec[bool] = vec::new[bool]();
+    let mut indices: vec::Vec[usize] = vec::new[usize]();
+    let mut total_blocks: i64 = 0i64;
+
+    while (true) {
+        let ent_name: nullable *i8 = platform_stat::zov_readdir(dir_ptr!);
+        if (ent_name == null) {
+            break;
+        };
+        let name_str: str = zov_str_from_raw((ent_name!) as *u8, strc::strlen(ent_name!));
+        if (!opts.all && !opts.almost && name_str.len > 0usize && name_str.data[0usize] == 46u8) {
+            continue;
+        };
+        if (opts.almost && (name_str == "." || name_str == "..")) {
+            continue;
+        };
+
+        let mut full: String = path_join(path, name_str);
+        let mut st: ZovLsStat;
+        let mut valid: bool = false;
+        if (platform_ls::zov_ls_lstat(full.view().data as *i8, (&mut st) as *void) == 0i32) {
+            valid = true;
+            total_blocks += (st.blocks + 1i64) / 2i64;
+        };
+
+        let cur_idx: usize = names.len();
+        names.push(String::from(name_str));
+        stats.push(st);
+        valids.push(valid);
+        indices.push(cur_idx);
+    };
+    let _ = platform_stat::zov_closedir(dir_ptr!);
+
+    let count: usize = indices.len();
+    sort_indices(&mut indices, &names, &stats, opts.sort_mode, opts.reverse);
+
+    let mut sw: i32 = 1i32;
+    for (let i in 0usize..count) {
+        let d: i32 = ls_digits(stats.get(indices.get(i)).size);
+        if (d > sw) {
+            sw = d;
+        };
+    };
+
+    if (opts.longfmt) {
+        c::printf("total %ld\n".data as *i8, total_blocks);
+    };
+
+    if (opts.columns && !opts.longfmt) {
+        let mut width: usize = 0usize;
+        for (let i in 0usize..count) {
+            let idx: usize = indices.get(i);
+            let name_len: usize = names.getref(idx).view().len;
+            let st: ZovLsStat = stats.get(idx);
+            let valid: bool = valids.get(idx);
+            let is_dir: bool = (st.mode & 0xf000u32) == 0x4000u32;
+            let has_class: bool = opts.classify && valid && (is_dir || (st.mode & 0x40u32) != 0u32);
+            let mut z: usize = name_len;
+            if (has_class) {
+                z += 1usize;
+            };
+            if (z > width) {
+                width = z;
+            };
+        };
+
+        let mut cols: usize = 1usize;
+        if (width > 0usize) {
+            cols = 82usize / (width + 2usize);
+            if (cols < 1usize) {
+                cols = 1usize;
+            };
+        };
+        let rows: usize = (count + cols - 1usize) / cols;
+
+        let mut cw: vec::Vec[usize] = vec::new[usize]();
+        for (let _c_idx in 0usize..cols) {
+            cw.push(0usize);
+        };
+
+        for (let c in 0usize..cols) {
+            for (let r in 0usize..rows) {
+                let item_pos: usize = c * rows + r;
+                if (item_pos < count) {
+                    let idx: usize = indices.get(item_pos);
+                    let name_len: usize = names.getref(idx).view().len;
+                    let st: ZovLsStat = stats.get(idx);
+                    let valid: bool = valids.get(idx);
+                    let is_dir: bool = (st.mode & 0xf000u32) == 0x4000u32;
+                    let has_class: bool = opts.classify && valid && (is_dir || (st.mode & 0x40u32) != 0u32);
+                    let mut z: usize = name_len;
+                    if (has_class) {
+                        z += 1usize;
+                    };
+                    if (z > cw.get(c)) {
+                        cw.set(c, z);
+                    };
+                };
+            };
+        };
+
+        for (let r in 0usize..rows) {
+            for (let c in 0usize..cols) {
+                let item_pos: usize = c * rows + r;
+                if (item_pos >= count) {
+                    continue;
+                };
+                let idx: usize = indices.get(item_pos);
+                let name_str: str = names.getref(idx).view();
+                let mut z: usize = name_str.len;
+                c::fputs(name_str.data as *i8, c::stdout);
+
+                let st: ZovLsStat = stats.get(idx);
+                let valid: bool = valids.get(idx);
+                let is_dir: bool = (st.mode & 0xf000u32) == 0x4000u32;
+                let has_class: bool = opts.classify && valid && (is_dir || (st.mode & 0x40u32) != 0u32);
+                if (has_class) {
+                    if (is_dir) {
+                        c::putchar(47i32);
+                    } else {
+                        c::putchar(42i32);
+                    };
+                    z += 1usize;
+                };
+
+                if (c + 1usize < cols && item_pos + rows < count) {
+                    if (z % 8usize == 7usize) {
+                        c::putchar(9i32); // '\t'
+                    } else {
+                        let col_w: usize = cw.get(c);
+                        if (col_w + 2usize > z) {
+                            let mut pad: usize = col_w + 2usize - z;
+                            while (pad > 0usize) {
+                                c::putchar(32i32); // ' '
+                                pad -= 1usize;
+                            };
+                        };
+                    };
+                };
+            };
+            c::putchar(10i32);
+        };
+    } else {
+        for (let i in 0usize..count) {
+            let idx: usize = indices.get(i);
+            let name_str: str = names.getref(idx).view();
+            let valid: bool = valids.get(idx);
+            let st: ZovLsStat = stats.get(idx);
+            if (opts.longfmt && valid) {
+                let mut full: String = path_join(path, name_str);
+                print_long_entry(name_str, &st, full.view(), sw, opts.apple_all_long);
+            } else {
+                c::fputs(name_str.data as *i8, c::stdout);
+                if (opts.classify && valid) {
+                    print_classify_indicator(st.mode);
+                };
+                c::putchar(10i32);
+            };
+        };
+    };
+
+    return 0i32;
+};
+
+export fn run_common(utility: str, start: usize, argc: usize) i32 = {
+    let mut opt: LsOptions = LsOptions {
+        all = false,
+        almost = false,
+        longfmt = utility == "vdir",
+        one = false,
+        columns = utility == "dir",
+        dirself = false,
+        classify = false,
+        reverse = false,
+        sort_mode = 0i32,
+        apple_all_long = false,
+    };
+
+    let mut paths: vec::Vec[String] = vec::new[String]();
+    let mut end: bool = false;
+
+    let count: usize = argc - start;
+    for (let i in 0usize..count) {
+        let arg: str = args::argat(start + i);
+        if (!end && arg == "--") {
+            end = true;
+            continue;
+        };
+        if (!end && arg == "--reverse") {
+            opt.reverse = true;
+            continue;
+        };
+        if (!end && arg == "--sort=size") {
+            opt.sort_mode = 1i32;
+            continue;
+        };
+        if (!end && arg == "--sort=time") {
+            opt.sort_mode = 2i32;
+            continue;
+        };
+        if (!end && arg == "--sort=none") {
+            opt.sort_mode = 3i32;
+            continue;
+        };
+        if (!end && arg == "--all") {
+            opt.all = true;
+            continue;
+        };
+        if (!end && arg == "--almost-all") {
+            opt.almost = true;
+            continue;
+        };
+        if (!end && arg == "--directory") {
+            opt.dirself = true;
+            continue;
+        };
+        if (!end && arg == "--classify") {
+            opt.classify = true;
+            continue;
+        };
+        if (!end && (arg == "--help" || arg == "--version")) {
+            if (arg == "--version") {
+                c::printf("%s (zovutils) 0.10.61\n".data as *i8, utility.data as *i8);
+                return 0i32;
+            };
+            c::printf("Usage: %s [OPTION]... [FILE]...\nList information about the FILEs (the current directory by default).\n  -a, --all             do not ignore entries starting with .\n  -A, --almost-all      do not list implied . and ..\n  -d, --directory       list directories themselves\n  -l                    use a long listing format\n  -1                    list one file per line\n  -C                    list entries by columns\n  -F, --classify        append indicator characters to entries\n      --help            display this help and exit\n      --version         output version information and exit\n".data as *i8, utility.data as *i8);
+            return 0i32;
+        };
+
+        if (!end && arg.len >= 2usize && arg.data[0usize] == 45u8) {
+            if (arg.data[1usize] == 45u8) {
+                c::fprintf(c::stderr, "%s: unrecognized option '%s'\nTry '%s --help' for more information.\n".data as *i8, utility.data as *i8, arg.data as *i8, utility.data as *i8);
+                return 2i32;
+            };
+            let mut bad_opt: bool = false;
+            let mut bad_ch: u8 = 0u8;
+            for (let j in 1usize..arg.len) {
+                let ch: u8 = arg.data[j];
+                if (ch == 97u8) { // 'a'
+                    opt.all = true;
+                } else if (ch == 65u8) { // 'A'
+                    opt.almost = true;
+                } else if (ch == 108u8) { // 'l'
+                    opt.longfmt = true;
+                } else if (ch == 49u8) { // '1'
+                    opt.one = true;
+                    opt.columns = false;
+                    opt.longfmt = false;
+                } else if (ch == 67u8) { // 'C'
+                    opt.columns = true;
+                    opt.one = false;
+                    opt.longfmt = false;
+                } else if (ch == 100u8) { // 'd'
+                    opt.dirself = true;
+                } else if (ch == 70u8) { // 'F'
+                    opt.classify = true;
+                } else if (ch == 114u8) { // 'r'
+                    opt.reverse = true;
+                } else if (ch == 83u8) { // 'S'
+                    opt.sort_mode = 1i32;
+                } else if (ch == 116u8) { // 't'
+                    opt.sort_mode = 2i32;
+                } else if (ch == 85u8) { // 'U'
+                    opt.sort_mode = 3i32;
+                } else {
+                    bad_opt = true;
+                    bad_ch = ch;
+                    break;
+                };
+            };
+            if (bad_opt) {
+                c::fprintf(c::stderr, "%s: invalid option -- '%c'\nTry '%s --help' for more information.\n".data as *i8, utility.data as *i8, bad_ch as i32, utility.data as *i8);
+                return 2i32;
+            };
+            continue;
+        };
+
+        paths.push(String::from(arg));
+    };
+
+    if (paths.len() == 0usize) {
+        paths.push(String::from("."));
+    };
+
+    if (opt.longfmt) {
+        opt.columns = false;
+    };
+    opt.apple_all_long = opt.all && opt.longfmt;
+
+    let nf: usize = paths.len();
+    let mut status: i32 = 0i32;
+
+    for (let i in 0usize..nf) {
+        let path_str: str = paths.getref(i).view();
+        let mut null_path: String = String::from(path_str);
+        let mut st: ZovLsStat;
+        if (platform_ls::zov_ls_lstat(null_path.view().data as *i8, (&mut st) as *void) != 0i32) {
+            let err: i32 = platform_errno::zov_errno_value();
+            c::fprintf(c::stderr, "%s: cannot access '%s': %s\n".data as *i8, utility.data as *i8, path_str.data as *i8, strc::strerror(err));
+            status = 2i32;
+            continue;
+        };
+
+        if (nf > 1usize && st.is_dir != 0i32 && !opt.dirself) {
+            c::printf("%s:\n".data as *i8, path_str.data as *i8);
+        };
+
+        let r: i32 = list_path(utility, path_str, &opt);
+        if (r > status) {
+            status = r;
+        };
+
+        if (i + 1usize < nf) {
+            c::putchar(10i32);
+        };
+    };
+
+    return status;
+};
+
+export fn run_ls(start: usize, argc: usize) i32 = {
+    return run_common("ls", start, argc);
+};
+
+export fn run_dir(start: usize, argc: usize) i32 = {
+    return run_common("dir", start, argc);
+};
+
+export fn run_vdir(start: usize, argc: usize) i32 = {
+    return run_common("vdir", start, argc);
+};
