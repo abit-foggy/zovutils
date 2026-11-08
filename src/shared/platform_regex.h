@@ -1,72 +1,40 @@
 #ifndef ZOVUTILS_PLATFORM_REGEX_H
 #define ZOVUTILS_PLATFORM_REGEX_H
 
+#include <errno.h>
 #include <regex.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
-typedef struct {
-    regex_t expr;
-    size_t max_span;
-} zov_regex;
-
-static inline void *zov_regex_compile(const char *pattern, int extended, int newline, char *errbuf, size_t errsize) {
-    zov_regex *r = (zov_regex *)malloc(sizeof(zov_regex));
-    if (!r) return NULL;
-    int flags = 0;
-    if (extended) flags |= REG_EXTENDED;
-    if (newline) flags |= REG_NEWLINE;
-    /* GNU tac's regex mode does not recognize POSIX named character classes. */
-    const char *source = strstr(pattern, "[:") == NULL ? pattern : "a^";
-    r->max_span = strlen(pattern) + 1;
-    int rc = regcomp(&r->expr, source, flags);
+static inline int zov_regex_match(
+    const char *pattern,
+    const char *text,
+    int64_t *matched_len,
+    char *submatch_buf,
+    size_t submatch_sz
+) {
+    regex_t rx;
+    if (regcomp(&rx, pattern, 0) != 0) {
+        return -1;
+    }
+    regmatch_t m[2];
+    int rc = regexec(&rx, text, 2, m, 0);
+    regfree(&rx);
     if (rc != 0) {
-        if (errbuf && errsize) regerror(rc, &r->expr, errbuf, errsize);
-        free(r);
-        return NULL;
+        return 0; // no match
     }
-    return (void *)r;
-}
-
-static inline void zov_regex_free(void *raw) {
-    zov_regex *r = (zov_regex *)raw;
-    if (r) {
-        regfree(&r->expr);
-        free(r);
+    if (m[1].rm_so >= 0 && submatch_buf && submatch_sz > 0) {
+        size_t n = (size_t)(m[1].rm_eo - m[1].rm_so);
+        if (n >= submatch_sz) n = submatch_sz - 1;
+        memcpy(submatch_buf, text + m[1].rm_so, n);
+        submatch_buf[n] = '\0';
+        return 2; // matched group 1
     }
-}
-
-static inline int zov_regex_match_exact(void *raw, const char *str, size_t len) {
-    zov_regex *r = (zov_regex *)raw;
-    if (!r) return 0;
-    regmatch_t match;
-    if (regexec(&r->expr, str, 1, &match, 0) == 0) {
-        return (match.rm_so == 0 && match.rm_eo == (regoff_t)len);
+    if (matched_len) {
+        *matched_len = (int64_t)m[0].rm_eo;
     }
-    return 0;
-}
-
-static inline size_t zov_regex_max_span(void *raw) {
-    zov_regex *r = (zov_regex *)raw;
-    return r ? r->max_span : 0;
-}
-
-static inline void *zov_regex_compile_bre(const char *pattern) {
-    zov_regex *r = (zov_regex *)malloc(sizeof(zov_regex));
-    if (!r) return NULL;
-    r->max_span = strlen(pattern) + 1;
-    int rc = regcomp(&r->expr, pattern, 0);
-    if (rc != 0) {
-        free(r);
-        return NULL;
-    }
-    return (void *)r;
-}
-
-static inline int zov_regex_search(void *raw, const char *str) {
-    zov_regex *r = (zov_regex *)raw;
-    if (!r) return 0;
-    return regexec(&r->expr, str, 0, NULL, 0) == 0;
+    return 1; // matched length
 }
 
 #endif

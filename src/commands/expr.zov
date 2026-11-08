@@ -1,9 +1,370 @@
 use std::env as args;
-use <expr_backend.h> as backend;
+use <stdio.h> as c;
+use <string.h> as strc;
+use <platform_regex.h> as platform_regex;
+
+fn format_i64(n: i64) String = {
+    let mut buf: [64]u8;
+    c::snprintf((&mut buf[0usize]) as *i8, 64usize, "%lld\0".data as *i8, n);
+    let slen: usize = strc::strlen((&buf[0usize]) as *i8);
+    return String::from(zov_str_from_raw((&buf[0usize]) as *u8, slen));
+};
+
+fn is_truth(s: str) bool = {
+    return s.len > 0usize && s != "0";
+};
+
+fn parse_i64(s: str, out: &mut i64) bool = {
+    if (s.len == 0usize) { return false; };
+    let mut i: usize = 0usize;
+    let mut neg: bool = false;
+    if (s.data[0usize] == 45u8) { // '-'
+        neg = true;
+        i += 1usize;
+    } else if (s.data[0usize] == 43u8) { // '+'
+        i += 1usize;
+    };
+    if (i >= s.len) { return false; };
+    let mut val: i64 = 0i64;
+    while (i < s.len) {
+        let b: u8 = s.data[i];
+        if (b < 48u8 || b > 57u8) { return false; };
+        val = val * 10i64 + ((b - 48u8) as i64);
+        i += 1usize;
+    };
+    if (neg) {
+        *out = -val;
+    } else {
+        *out = val;
+    };
+    return true;
+};
+
+fn parse_or(start: usize, count: usize, pos: &mut usize, invalid: &mut bool) String = {
+    let mut a: String = parse_and(start, count, pos, invalid);
+    while (*pos < count && args::argat(start + *pos).view() == "|") {
+        *pos += 1usize;
+        let b: String = parse_and(start, count, pos, invalid);
+        if (is_truth(a.view())) {
+        } else {
+            a = b;
+        };
+    };
+    return a;
+};
+
+fn parse_and(start: usize, count: usize, pos: &mut usize, invalid: &mut bool) String = {
+    let mut a: String = parse_cmp(start, count, pos, invalid);
+    while (*pos < count && args::argat(start + *pos).view() == "&") {
+        *pos += 1usize;
+        let b: String = parse_cmp(start, count, pos, invalid);
+        if (is_truth(a.view()) && is_truth(b.view())) {
+        } else {
+            a = String::from("0");
+        };
+    };
+    return a;
+};
+
+fn parse_cmp(start: usize, count: usize, pos: &mut usize, invalid: &mut bool) String = {
+    let mut a: String = parse_add(start, count, pos, invalid);
+    while (*pos < count) {
+        let op: str = args::argat(start + *pos).view();
+        if (op != "=" && op != "!=" && op != "<" && op != "<=" && op != ">" && op != ">=") {
+            break;
+        };
+        *pos += 1usize;
+        let b: String = parse_add(start, count, pos, invalid);
+        let mut x: i64 = 0i64;
+        let mut y: i64 = 0i64;
+        let mut c_val: i32 = 0i32;
+        if (parse_i64(a.view(), &mut x) && parse_i64(b.view(), &mut y)) {
+            if (x < y) {
+                c_val = -1i32;
+            } else if (x > y) {
+                c_val = 1i32;
+            } else {
+                c_val = 0i32;
+            };
+        } else {
+            c_val = strc::strcmp(a.view().data as *i8, b.view().data as *i8);
+        };
+
+        let mut yes: bool = false;
+        if (op == "=") {
+            yes = c_val == 0i32;
+        } else if (op == "!=") {
+            yes = c_val != 0i32;
+        } else if (op == "<") {
+            yes = c_val < 0i32;
+        } else if (op == "<=") {
+            yes = c_val <= 0i32;
+        } else if (op == ">") {
+            yes = c_val > 0i32;
+        } else {
+            yes = c_val >= 0i32;
+        };
+
+        if (yes) {
+            a = String::from("1");
+        } else {
+            a = String::from("0");
+        };
+    };
+    return a;
+};
+
+fn parse_add(start: usize, count: usize, pos: &mut usize, invalid: &mut bool) String = {
+    let mut a: String = parse_mul(start, count, pos, invalid);
+    while (*pos < count) {
+        let op: str = args::argat(start + *pos).view();
+        if (op != "+" && op != "-") {
+            break;
+        };
+        *pos += 1usize;
+        let b: String = parse_mul(start, count, pos, invalid);
+        let mut x: i64 = 0i64;
+        let mut y: i64 = 0i64;
+        if (!parse_i64(a.view(), &mut x) || !parse_i64(b.view(), &mut y)) {
+            *invalid = true;
+            return String::from("0");
+        };
+        let mut z: i64 = 0i64;
+        if (op == "+") {
+            z = x + y;
+        } else {
+            z = x - y;
+        };
+        a = format_i64(z);
+    };
+    return a;
+};
+
+fn parse_mul(start: usize, count: usize, pos: &mut usize, invalid: &mut bool) String = {
+    let mut a: String = parse_match(start, count, pos, invalid);
+    while (*pos < count) {
+        let op: str = args::argat(start + *pos).view();
+        if (op != "*" && op != "/" && op != "%") {
+            break;
+        };
+        *pos += 1usize;
+        let b: String = parse_match(start, count, pos, invalid);
+        let mut x: i64 = 0i64;
+        let mut y: i64 = 0i64;
+        if (!parse_i64(a.view(), &mut x) || !parse_i64(b.view(), &mut y) || (y == 0i64 && op != "*")) {
+            *invalid = true;
+            return String::from("0");
+        };
+        let mut z: i64 = 0i64;
+        if (op == "*") {
+            z = x * y;
+        } else if (op == "/") {
+            z = x / y;
+        } else {
+            z = x % y;
+        };
+        a = format_i64(z);
+    };
+    return a;
+};
+
+fn parse_match(start: usize, count: usize, pos: &mut usize, invalid: &mut bool) String = {
+    let mut a: String = parse_primary(start, count, pos, invalid);
+    while (*pos < count && args::argat(start + *pos).view() == ":") {
+        *pos += 1usize;
+        if (*pos >= count) {
+            *invalid = true;
+            return a;
+        };
+        let pat: str = args::argat(start + *pos).view();
+        *pos += 1usize;
+
+        let mut matched_len: i64 = 0i64;
+        let mut submatch: [4096]u8;
+        let owned_pat: String = String::from(pat);
+        let rc: i32 = platform_regex::zov_regex_match(
+            owned_pat.view().data as *i8,
+            a.view().data as *i8,
+            &mut matched_len,
+            (&mut submatch[0usize]) as *i8,
+            4096usize
+        );
+        if (rc < 0i32) {
+            *invalid = true;
+            return a;
+        };
+        if (rc == 0i32) {
+            a = String::from("0");
+        } else if (rc == 2i32) {
+            let slen: usize = strc::strlen((&submatch[0usize]) as *i8);
+            a = String::from(zov_str_from_raw((&submatch[0usize]) as *u8, slen));
+        } else {
+            a = format_i64(matched_len);
+        };
+    };
+    return a;
+};
+
+fn parse_primary(start: usize, count: usize, pos: &mut usize, invalid: &mut bool) String = {
+    if (*pos >= count) {
+        *invalid = true;
+        return String::from("");
+    };
+    let t: str = args::argat(start + *pos).view();
+    *pos += 1usize;
+
+    if (t == "(") {
+        let x: String = parse_or(start, count, pos, invalid);
+        if (*pos >= count || args::argat(start + *pos).view() != ")") {
+            *invalid = true;
+        } else {
+            *pos += 1usize;
+        };
+        return x;
+    };
+
+    if (t == "length" || t == "quote") {
+        if (*pos >= count) {
+            *invalid = true;
+            return String::from("");
+        };
+        let s: str = args::argat(start + *pos).view();
+        *pos += 1usize;
+        if (t == "quote") {
+            return String::from(s);
+        };
+        return format_i64(s.len as i64);
+    };
+
+    if (t == "substr") {
+        if (*pos + 2usize >= count) {
+            *invalid = true;
+            return String::from("");
+        };
+        let a: str = args::argat(start + *pos).view();
+        let b_str: str = args::argat(start + *pos + 1usize).view();
+        let c_str: str = args::argat(start + *pos + 2usize).view();
+        *pos += 3usize;
+
+        let mut p: i64 = 0i64;
+        let mut n: i64 = 0i64;
+        if (!parse_i64(b_str, &mut p) || !parse_i64(c_str, &mut n)) {
+            *invalid = true;
+            return String::from("");
+        };
+        if (p < 1i64) {
+            p = 1i64;
+        };
+        let p_idx: usize = (p - 1i64) as usize;
+        if (p_idx >= a.len || n <= 0i64) {
+            return String::from("");
+        };
+        let mut take: usize = a.len - p_idx;
+        if ((n as usize) < take) {
+            take = n as usize;
+        };
+        return String::from(a[p_idx..p_idx + take]);
+    };
+
+    if (t == "index") {
+        if (*pos + 1usize >= count) {
+            *invalid = true;
+            return String::from("");
+        };
+        let a: str = args::argat(start + *pos).view();
+        let b: str = args::argat(start + *pos + 1usize).view();
+        *pos += 2usize;
+
+        let mut found_pos: i64 = 0i64;
+        for (let i in 0usize..a.len) {
+            if (found_pos != 0i64) {
+                break;
+            };
+            for (let j in 0usize..b.len) {
+                if (a.data[i] == b.data[j]) {
+                    found_pos = (i + 1usize) as i64;
+                    break;
+                };
+            };
+        };
+        return format_i64(found_pos);
+    };
+
+    if (t == "match") {
+        if (*pos + 1usize >= count) {
+            *invalid = true;
+            return String::from("");
+        };
+        let a: str = args::argat(start + *pos).view();
+        let b: str = args::argat(start + *pos + 1usize).view();
+        *pos += 2usize;
+
+        let mut matched_len: i64 = 0i64;
+        let mut submatch: [4096]u8;
+        let owned_b: String = String::from(b);
+        let owned_a: String = String::from(a);
+        let rc: i32 = platform_regex::zov_regex_match(
+            owned_b.view().data as *i8,
+            owned_a.view().data as *i8,
+            &mut matched_len,
+            (&mut submatch[0usize]) as *i8,
+            4096usize
+        );
+        if (rc < 0i32) {
+            *invalid = true;
+            return String::from("");
+        };
+        if (rc == 0i32) {
+            return String::from("0");
+        };
+        if (rc == 2i32) {
+            let slen: usize = strc::strlen((&submatch[0usize]) as *i8);
+            return String::from(zov_str_from_raw((&submatch[0usize]) as *u8, slen));
+        };
+        return format_i64(matched_len);
+    };
+
+    return String::from(t);
+};
+
 export fn run(start: usize, argc: usize) i32 = {
     let count: usize = argc - start;
-    if (count > 4096usize) { return 2; };
-    let mut argv: [4096]*i8;
-    for (let i in 0usize..count) { argv[i] = args::argat(start + i).data as *i8; };
-    return backend::zov_expr_run(count as i32, (&argv[0usize]) as **i8);
+    if (count == 0usize) {
+        c::fprintf(c::stderr, "expr: missing operand\nTry 'expr --help' for more information.\n");
+        return 2;
+    };
+    if (count == 1usize) {
+        let first: str = args::argat(start).view();
+        if (first == "--help") {
+            c::fputs("Usage: expr EXPRESSION\n  --help     display this help and exit\n  --version  output version information and exit\n", c::stdout);
+            return 0;
+        };
+        if (first == "--version") {
+            c::fputs("expr (zovutils) 0.10.61\n", c::stdout);
+            return 0;
+        };
+    };
+
+    let mut pos: usize = 0usize;
+    let mut invalid: bool = false;
+    let r: String = parse_or(start, count, &mut pos, &mut invalid);
+    if (pos != count) {
+        invalid = true;
+    };
+    if (invalid) {
+        let mut err_tok: str = "";
+        if (pos < count) {
+            err_tok = args::argat(start + pos).view();
+        } else {
+            err_tok = args::argat(argc - 1usize).view();
+        };
+        c::fprintf(c::stderr, "expr: syntax error: %s\n", err_tok.data as *i8);
+        return 2;
+    };
+
+    c::puts(r.view().data as *i8);
+    if (is_truth(r.view())) {
+        return 0;
+    };
+    return 1;
 };
