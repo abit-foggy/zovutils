@@ -1,10 +1,215 @@
 use std::env as args;
-use <readlink_backend.h> as backend;
+use std::io;
+use std::vec;
+use <unistd.h> as u;
+use <stdio.h> as c;
+use <stdlib.h> as stdlib;
+use <string.h> as strc;
+use <platform_errno.h> as platform_errno;
+use <platform_path.h> as platform_path;
+
+fn print_help() void = {
+    io::print("Usage: readlink [OPTION]... FILE...\n" +
+          "Print value of a symbolic link or canonical file name\n\n" +
+          "  -f, --canonicalize             canonicalize by following every symlink\n" +
+          "                                 in every component of the given name recursively;\n" +
+          "                                 all but the last component must exist\n" +
+          "  -e, --canonicalize-existing    canonicalize by following every symlink\n" +
+          "                                 in every component of the given name recursively;\n" +
+          "                                 all components must exist\n" +
+          "  -m, --canonicalize-missing     canonicalize by following every symlink\n" +
+          "                                 in every component of the given name recursively,\n" +
+          "                                 without requirements on components existence\n" +
+          "  -n, --no-newline               do not output the trailing delimiter\n" +
+          "  -q, --quiet, -s, --silent      suppress most error messages\n" +
+          "  -v, --verbose                  report error messages\n" +
+          "  -z, --zero                     end each output line with NUL\n" +
+          "      --help                      display this help and exit\n" +
+          "      --version                   output version information and exit\n\n" +
+          "Report bugs to: bug-coreutils@gnu.org\n" +
+          "GNU coreutils home page: <https://www.gnu.org/software/coreutils/>\n" +
+          "General help using GNU software: <https://www.gnu.org/gethelp/>\n" +
+          "Report any translation bugs to <https://translationproject.org/team/>\n" +
+          "Full documentation <https://www.gnu.org/software/coreutils/readlink>\n" +
+          "or available locally via: info '(coreutils) readlink invocation'\n");
+};
+
+fn is_option_prefix(key: str, name: str) bool = {
+    let n: usize = key.len;
+    return n > 2usize && n <= name.len && key == name[0usize..n];
+};
+
+fn readlink_print(path: str, mode: i32, no_newline: bool, zero: bool, quiet: bool, verbose: bool) i32 = {
+    if (mode != 0i32) {
+        let mut resolve_mode: i32 = 2i32;
+        if (mode == 2i32) {
+            resolve_mode = 0i32;
+        } else if (mode == 1i32) {
+            resolve_mode = 1i32;
+        };
+        let mut resolved: [4096]u8;
+        platform_errno::zov_errno_set(0i32);
+        if (platform_path::zov_path_resolve(path.data as *i8, resolve_mode, 0i32, 0i32, (&resolved[0usize]) as *i8, 4096usize) == 0i32) {
+            if (!quiet || verbose) {
+                let err: i32 = platform_errno::zov_errno_value();
+                c::fprintf(c::stderr, "readlink: %s: %s\n", path.data as *i8, strc::strerror(err));
+            };
+            return 1i32;
+        };
+        c::fputs((&resolved[0usize]) as *i8, c::stdout);
+    } else {
+        let mut buf: [4096]u8;
+        platform_errno::zov_errno_set(0i32);
+        let length: i64 = u::readlink(path.data as *void, (&buf[0usize]) as *void, 4096usize);
+        if (length < 0i64) {
+            let err: i32 = platform_errno::zov_errno_value();
+            if (!quiet || verbose) {
+                c::fprintf(c::stderr, "readlink: %s: %s\n", path.data as *i8, strc::strerror(err));
+            };
+            return 1i32;
+        };
+        c::fwrite((&buf[0usize]) as *void, 1usize, length as usize, c::stdout);
+    };
+
+    if (!no_newline) {
+        if (zero) {
+            c::putchar(0i32);
+        } else {
+            c::putchar(10i32);
+        };
+    };
+    if (c::ferror(c::stdout) != 0i32) {
+        return 1i32;
+    };
+    return 0i32;
+};
 
 export fn run(start: usize, argc: usize) i32 = {
-    let count: usize = argc - start;
-    if (count > 4096usize) { return 1; };
-    let mut argv: [4096]*i8;
-    for (let i in 0usize..count) { argv[i] = args::argat(start + i).data as *i8; };
-    return backend::zov_readlink_run(count as i32, (&argv[0usize]) as **i8);
+    let posix: nullable *i8 = stdlib::getenv("POSIXLY_CORRECT");
+    let mut mode: i32 = 0i32;
+    let mut no_newline: bool = false;
+    let mut zero: bool = false;
+    let mut quiet: bool = posix == null || (posix![0usize] == 0i8);
+    let mut verbose: bool = !quiet;
+    let mut options_done: bool = false;
+    let mut paths = vec::new[str]();
+
+    let mut i: usize = start;
+    while (i < argc) {
+        let arg: str = args::argat(i);
+        if (!options_done && arg == "--") {
+            options_done = true;
+            i += 1usize;
+            continue;
+        };
+        if (!options_done && arg.len >= 2usize && arg[0usize..2usize] == "--") {
+            let mut key: str = arg;
+            let mut has_eq: bool = false;
+            for (let j in 2usize..arg.len) {
+                if (arg.data[j] == 61u8) { // '='
+                    key = arg[0usize..j];
+                    has_eq = true;
+                    break;
+                };
+            };
+            if (is_option_prefix(key, "--help") || is_option_prefix(key, "--version")) {
+                let mut name: str = "--version";
+                if (is_option_prefix(key, "--help")) {
+                    name = "--help";
+                };
+                if (has_eq) {
+                    c::fprintf(c::stderr, "readlink: option '%s' doesn't allow an argument\nTry 'readlink --help' for more information.\n", name.data as *i8);
+                    return 1i32;
+                };
+                if (name == "--help") {
+                    print_help();
+                } else {
+                    io::println("readlink (zovutils) 0.10.61");
+                };
+                return 0i32;
+            };
+            if (is_option_prefix(key, "--canonicalize")) {
+                mode = 2i32;
+                i += 1usize;
+                continue;
+            };
+            if (is_option_prefix(key, "--canonicalize-existing")) {
+                mode = 1i32;
+                i += 1usize;
+                continue;
+            };
+            if (is_option_prefix(key, "--canonicalize-missing")) {
+                mode = 3i32;
+                i += 1usize;
+                continue;
+            };
+            if (is_option_prefix(key, "--no-newline")) {
+                no_newline = true;
+                i += 1usize;
+                continue;
+            };
+            if (is_option_prefix(key, "--quiet") || is_option_prefix(key, "--silent")) {
+                quiet = true;
+                verbose = false;
+                i += 1usize;
+                continue;
+            };
+            if (is_option_prefix(key, "--verbose")) {
+                verbose = true;
+                quiet = false;
+                i += 1usize;
+                continue;
+            };
+            if (is_option_prefix(key, "--zero")) {
+                zero = true;
+                i += 1usize;
+                continue;
+            };
+            c::fprintf(c::stderr, "readlink: unrecognized option '%s'\nTry 'readlink --help' for more information.\n", arg.data as *i8);
+            return 1i32;
+        };
+        if (!options_done && arg.len > 1usize && arg.data[0usize] == 45u8) {
+            for (let j in 1usize..arg.len) {
+                let ch: u8 = arg.data[j];
+                if (ch == 102u8) { // 'f'
+                    mode = 2i32;
+                } else if (ch == 101u8) { // 'e'
+                    mode = 1i32;
+                } else if (ch == 109u8) { // 'm'
+                    mode = 3i32;
+                } else if (ch == 110u8) { // 'n'
+                    no_newline = true;
+                } else if (ch == 113u8 || ch == 115u8) { // 'q', 's'
+                    quiet = true;
+                    verbose = false;
+                } else if (ch == 118u8) { // 'v'
+                    verbose = true;
+                    quiet = false;
+                } else if (ch == 122u8) { // 'z'
+                    zero = true;
+                } else {
+                    c::fprintf(c::stderr, "readlink: invalid option -- '%c'\nTry 'readlink --help' for more information.\n", ch as i32);
+                    return 1i32;
+                };
+            };
+            i += 1usize;
+            continue;
+        };
+        paths.push(arg);
+        i += 1usize;
+    };
+
+    if (paths.len() == 0usize) {
+        c::fputs("readlink: missing operand\nTry 'readlink --help' for more information.\n", c::stderr);
+        return 1i32;
+    };
+
+    let mut status: i32 = 0i32;
+    for (let pi in 0usize..paths.len()) {
+        let rc: i32 = readlink_print(paths.get(pi), mode, no_newline, zero, quiet, verbose);
+        if (rc != 0i32) {
+            status = 1i32;
+        };
+    };
+    return status;
 };

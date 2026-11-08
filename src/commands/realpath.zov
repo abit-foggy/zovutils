@@ -1,10 +1,281 @@
 use std::env as args;
-use <realpath_backend.h> as backend;
+use std::io;
+use std::vec;
+use <stdio.h> as c;
+use <string.h> as strc;
+use <platform_errno.h> as platform_errno;
+use <platform_path.h> as platform_path;
+
+fn print_help() void = {
+    io::print("Usage: realpath [OPTION]... FILE...\n" +
+          "Print the resolved absolute file name.\n" +
+          "  -E, --canonicalize             all but the last component must exist (default)\n" +
+          "  -e, --canonicalize-existing    all components of the path must exist\n" +
+          "  -m, --canonicalize-missing     no path components need exist or be a directory\n" +
+          "  -L, --logical                  resolve '..' components before symlinks\n" +
+          "  -P, --physical                 resolve symlinks as encountered (default)\n" +
+          "  -q, --quiet                    suppress most error messages\n" +
+          "      --relative-to=DIR          print the resolved path relative to DIR\n" +
+          "      --relative-base=DIR        print absolute paths unless below DIR\n" +
+          "  -s, --strip, --no-symlinks     don't expand symlinks\n" +
+          "  -z, --zero                     end each output line with NUL\n" +
+          "      --help                     display this help and exit\n" +
+          "      --version                  output version information and exit\n\n" +
+          "Report bugs to: bug-coreutils@gnu.org\n" +
+          "GNU coreutils home page: <https://www.gnu.org/software/coreutils/>\n" +
+          "General help using GNU software: <https://www.gnu.org/gethelp/>\n" +
+          "Report any translation bugs to <https://translationproject.org/team/>\n" +
+          "Full documentation <https://www.gnu.org/software/coreutils/realpath>\n" +
+          "or available locally via: info '(coreutils) realpath invocation'\n");
+};
+
+fn is_option_prefix(key: str, name: str) bool = {
+    let n: usize = key.len;
+    return n > 2usize && n <= name.len && key == name[0usize..n];
+};
 
 export fn run(start: usize, argc: usize) i32 = {
-    let count: usize = argc - start;
-    if (count > 4096usize) { return 1; };
-    let mut argv: [4096]*i8;
-    for (let i in 0usize..count) { argv[i] = args::argat(start + i).data as *i8; };
-    return backend::zov_realpath_run(count as i32, (&argv[0usize]) as **i8);
+    let mut mode: i32 = 1i32;
+    let mut logical: i32 = 0i32;
+    let mut strip: i32 = 0i32;
+    let mut quiet: bool = false;
+    let mut zero: bool = false;
+    let mut options_done: bool = false;
+    let mut relative_to: str = "";
+    let mut has_rel_to: bool = false;
+    let mut relative_base: str = "";
+    let mut has_rel_base: bool = false;
+
+    let mut paths = vec::new[str]();
+
+    let mut i: usize = start;
+    while (i < argc) {
+        let a: str = args::argat(i);
+        if (!options_done && a == "--") {
+            options_done = true;
+            i += 1usize;
+            continue;
+        };
+        if (!options_done && a.len >= 2usize && a[0usize..2usize] == "--") {
+            let mut key: str = a;
+            let mut val: str = "";
+            let mut has_eq: bool = false;
+            for (let j in 2usize..a.len) {
+                if (a.data[j] == 61u8) { // '='
+                    key = a[0usize..j];
+                    val = a[(j + 1usize)..a.len];
+                    has_eq = true;
+                    break;
+                };
+            };
+            if (is_option_prefix(key, "--help")) {
+                if (has_eq) {
+                    c::fprintf(c::stderr, "realpath: option '%s' doesn't allow an argument\nTry 'realpath --help' for more information.\n", a.data as *i8);
+                    return 1i32;
+                };
+                print_help();
+                return 0i32;
+            };
+            if (is_option_prefix(key, "--version")) {
+                if (has_eq) {
+                    c::fprintf(c::stderr, "realpath: option '%s' doesn't allow an argument\nTry 'realpath --help' for more information.\n", a.data as *i8);
+                    return 1i32;
+                };
+                io::println("realpath (zovutils) 0.10.61");
+                return 0i32;
+            };
+            if (is_option_prefix(key, "--canonicalize")) {
+                mode = 1i32;
+                i += 1usize;
+                continue;
+            };
+            if (is_option_prefix(key, "--canonicalize-existing")) {
+                mode = 0i32;
+                i += 1usize;
+                continue;
+            };
+            if (is_option_prefix(key, "--canonicalize-missing")) {
+                mode = 2i32;
+                i += 1usize;
+                continue;
+            };
+            if (is_option_prefix(key, "--logical")) {
+                logical = 1i32;
+                i += 1usize;
+                continue;
+            };
+            if (is_option_prefix(key, "--physical")) {
+                logical = 0i32;
+                i += 1usize;
+                continue;
+            };
+            if (is_option_prefix(key, "--quiet")) {
+                quiet = true;
+                i += 1usize;
+                continue;
+            };
+            if (is_option_prefix(key, "--strip") || is_option_prefix(key, "--no-symlinks")) {
+                strip = 1i32;
+                mode = 2i32;
+                i += 1usize;
+                continue;
+            };
+            if (is_option_prefix(key, "--zero")) {
+                zero = true;
+                i += 1usize;
+                continue;
+            };
+            if (is_option_prefix(key, "--relative-to") || is_option_prefix(key, "--relative-base")) {
+                let mut v: str = "";
+                let mut has_v: bool = false;
+                if (has_eq) {
+                    v = val;
+                    has_v = true;
+                    i += 1usize;
+                } else if (i + 1usize < argc) {
+                    v = args::argat(i + 1usize);
+                    has_v = true;
+                    i += 2usize;
+                } else {
+                    i += 1usize;
+                };
+                if (!has_v) {
+                    c::fprintf(c::stderr, "realpath: option '%s' requires an argument\nTry 'realpath --help' for more information.\n", key.data as *i8);
+                    return 1i32;
+                };
+                if (is_option_prefix(key, "--relative-to")) {
+                    relative_to = v;
+                    has_rel_to = true;
+                } else {
+                    relative_base = v;
+                    has_rel_base = true;
+                };
+                continue;
+            };
+            c::fprintf(c::stderr, "realpath: unrecognized option '%s'\nTry 'realpath --help' for more information.\n", a.data as *i8);
+            return 1i32;
+        };
+        if (!options_done && a.len > 1usize && a.data[0usize] == 45u8) {
+            for (let j in 1usize..a.len) {
+                let ch: u8 = a.data[j];
+                if (ch == 69u8) { mode = 1i32; } // 'E'
+                else if (ch == 101u8) { mode = 0i32; } // 'e'
+                else if (ch == 109u8) { mode = 2i32; } // 'm'
+                else if (ch == 76u8) { logical = 1i32; } // 'L'
+                else if (ch == 80u8) { logical = 0i32; } // 'P'
+                else if (ch == 113u8) { quiet = true; } // 'q'
+                else if (ch == 115u8) { strip = 1i32; mode = 2i32; } // 's'
+                else if (ch == 122u8) { zero = true; } // 'z'
+                else {
+                    c::fprintf(c::stderr, "realpath: invalid option -- '%c'\nTry 'realpath --help' for more information.\n", ch as i32);
+                    return 1i32;
+                };
+            };
+            i += 1usize;
+            continue;
+        };
+        paths.push(a);
+        i += 1usize;
+    };
+
+    if (paths.len() == 0usize) {
+        c::fputs("realpath: missing operand\nTry 'realpath --help' for more information.\n", c::stderr);
+        return 1i32;
+    };
+
+    let mut base: [4096]u8;
+    let mut base_len: usize = 0usize;
+    if (has_rel_to) {
+        platform_errno::zov_errno_set(0i32);
+        if (platform_path::zov_path_resolve(relative_to.data as *i8, 0i32, logical, strip, (&base[0usize]) as *i8, 4096usize) == 0i32) {
+            if (!quiet) {
+                let err: i32 = platform_errno::zov_errno_value();
+                c::fprintf(c::stderr, "realpath: %s: %s\n", relative_to.data as *i8, strc::strerror(err));
+            };
+            return 1i32;
+        };
+        base_len = strc::strlen((&base[0usize]) as *i8);
+    };
+
+    let mut relbase: [4096]u8;
+    let mut relbase_len: usize = 0usize;
+    if (has_rel_base) {
+        platform_errno::zov_errno_set(0i32);
+        if (platform_path::zov_path_resolve(relative_base.data as *i8, 0i32, logical, strip, (&relbase[0usize]) as *i8, 4096usize) == 0i32) {
+            if (!quiet) {
+                let err: i32 = platform_errno::zov_errno_value();
+                c::fprintf(c::stderr, "realpath: %s: %s\n", relative_base.data as *i8, strc::strerror(err));
+            };
+            return 1i32;
+        };
+        relbase_len = strc::strlen((&relbase[0usize]) as *i8);
+    };
+
+    let mut status: i32 = 0i32;
+    for (let pi in 0usize..paths.len()) {
+        let p: str = paths.get(pi);
+        let mut result: [4096]u8;
+        platform_errno::zov_errno_set(0i32);
+        if (platform_path::zov_path_resolve(p.data as *i8, mode, logical, strip, (&result[0usize]) as *i8, 4096usize) == 0i32) {
+            if (!quiet) {
+                let err: i32 = platform_errno::zov_errno_value();
+                c::fprintf(c::stderr, "realpath: %s: %s\n", p.data as *i8, strc::strerror(err));
+            };
+            status = 1i32;
+            continue;
+        };
+
+        let res_len: usize = strc::strlen((&result[0usize]) as *i8);
+        let mut against_ptr: nullable *u8 = null;
+        let mut against_len: usize = 0usize;
+        if (has_rel_to) {
+            against_ptr = (&base[0usize]) as *u8;
+            against_len = base_len;
+        } else if (has_rel_base) {
+            against_ptr = (&relbase[0usize]) as *u8;
+            against_len = relbase_len;
+        };
+
+        let mut out_offset: usize = 0usize;
+        let mut output_dot: bool = false;
+        if (against_ptr != null) {
+            let ap: *u8 = against_ptr!;
+            if (res_len >= against_len) {
+                let mut matches: bool = true;
+                for (let j in 0usize..against_len) {
+                    if (result[j] != ap[j]) {
+                        matches = false;
+                        break;
+                    };
+                };
+                if (matches && (result[against_len] == 47u8 || result[against_len] == 0u8)) { // '/' or '\0'
+                    let mut tail: usize = against_len;
+                    while (tail < res_len && result[tail] == 47u8) {
+                        tail += 1usize;
+                    };
+                    if (has_rel_to && tail == res_len) {
+                        output_dot = true;
+                    } else {
+                        out_offset = tail;
+                    };
+                };
+            };
+        };
+
+        if (output_dot) {
+            c::fputs(".", c::stdout);
+        } else {
+            c::fputs((&result[out_offset]) as *i8, c::stdout);
+        };
+        if (zero) {
+            c::putchar(0i32);
+        } else {
+            c::putchar(10i32);
+        };
+    };
+
+    if (c::fflush(c::stdout) != 0i32) {
+        return 1i32;
+    };
+    return status;
 };
