@@ -476,7 +476,7 @@ export fn run(start: usize, argc: usize) i32 = {
                         print_help();
                         return 0i32;
                     };
-                    io::println("chmod (zovutils) 0.11.0");
+                    io::println("chmod (zovutils) 0.12.0");
                     return 0i32;
                 };
 

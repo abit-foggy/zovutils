@@ -48,7 +48,7 @@ export fn run(start: usize, argc: usize) i32 = {
             return 0i32;
         };
         if (a == "--version") {
-            io::println("id (zovutils) 0.11.0");
+            io::println("id (zovutils) 0.12.0");
             return 0i32;
         };
         if (a == "-a") { _all = true; i += 1usize; continue; };

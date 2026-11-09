@@ -169,7 +169,7 @@ export fn run(start: usize, argc: usize) i32 = {
             return 0;
         };
         if (a == "--version") {
-            c::fputs("df (zovutils) 0.11.0\n", c::stdout);
+            c::fputs("df (zovutils) 0.12.0\n", c::stdout);
             return 0;
         };
         if (a == "-P" || a == "--portability") {

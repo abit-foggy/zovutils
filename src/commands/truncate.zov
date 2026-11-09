@@ -87,7 +87,7 @@ export fn run(start: usize, argc: usize) i32 = {
         };
         if (!options_done && (a == "--help" || a == "--version")) {
             if (a == "--version") {
-                io::println("truncate (zovutils) 0.11.0");
+                io::println("truncate (zovutils) 0.12.0");
             } else {
                 print_help();
             };

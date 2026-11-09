@@ -163,7 +163,7 @@ export fn run(start: usize, argc: usize) i32 = {
             return 0;
         };
         if (a == "--version") {
-            io::println("stat (zovutils) 0.11.0");
+            io::println("stat (zovutils) 0.12.0");
             return 0;
         };
         if (a == "-L" || a == "--dereference") {

@@ -160,7 +160,7 @@ export fn run(start: usize, argc: usize) i32 = {
             return 0;
         };
         if (a == "--version") {
-            c::fputs("du (zovutils) 0.11.0\n", c::stdout);
+            c::fputs("du (zovutils) 0.12.0\n", c::stdout);
             return 0;
         };
         if (a == "-a" || a == "--all") {

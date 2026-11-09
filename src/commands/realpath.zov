@@ -81,7 +81,7 @@ export fn run(start: usize, argc: usize) i32 = {
                     c::fprintf(c::stderr, "realpath: option '%s' doesn't allow an argument\nTry 'realpath --help' for more information.\n", a.data as *i8);
                     return 1i32;
                 };
-                io::println("realpath (zovutils) 0.11.0");
+                io::println("realpath (zovutils) 0.12.0");
                 return 0i32;
             };
             if (is_option_prefix(key, "--canonicalize")) {

@@ -15,7 +15,7 @@ export fn run(start: usize, argc: usize) i32 = {
             return 0i32;
         };
         if (a == "--version") {
-            io::println("whoami (zovutils) 0.11.0");
+            io::println("whoami (zovutils) 0.12.0");
             return 0i32;
         };
         if (a.len > 0usize && a.data[0usize] == 45u8) {

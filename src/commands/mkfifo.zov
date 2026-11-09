@@ -63,7 +63,7 @@ export fn run(start: usize, argc: usize) i32 = {
                 if (is_option_prefix(key, "--help")) {
                     print_help();
                 } else {
-                    io::println("mkfifo (zovutils) 0.11.0");
+                    io::println("mkfifo (zovutils) 0.12.0");
                 };
                 return 0i32;
             };

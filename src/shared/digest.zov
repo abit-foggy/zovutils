@@ -1258,7 +1258,7 @@ export fn run_hash(
             continue;
         };
         if (options_allowed && a == "--version") {
-            c::printf("%s (zovutils) 0.11.0\n", program.data as *i8);
+            c::printf("%s (zovutils) 0.12.0\n", program.data as *i8);
             return 0i32;
         };
         if (options_allowed && a == "--help") {
@@ -1421,7 +1421,7 @@ export fn run_b2sum(start: usize, argc: usize) i32 = {
             continue;
         };
         if (options_allowed && a == "--version") {
-            c::printf("b2sum (zovutils) 0.11.0\n");
+            c::printf("b2sum (zovutils) 0.12.0\n");
             return 0i32;
         };
         if (options_allowed && a == "--help") {
