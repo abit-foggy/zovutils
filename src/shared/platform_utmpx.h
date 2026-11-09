@@ -106,6 +106,9 @@ static inline void zov_utmpx_end(void) {
     endutxent();
 }
 
+static int zov_utmp_last_term = 0;
+static int zov_utmp_last_exit = 0;
+
 static inline int zov_utmpx_next_entry(
     int *ut_type,
     int64_t *tv_sec,
@@ -179,9 +182,6 @@ static inline int zov_utmpx_next_entry(
 #endif
     return 1;
 }
-
-static int zov_utmp_last_term = 0;
-static int zov_utmp_last_exit = 0;
 
 static inline int zov_utmpx_last_term(void) { return zov_utmp_last_term; }
 static inline int zov_utmpx_last_exit(void) { return zov_utmp_last_exit; }
