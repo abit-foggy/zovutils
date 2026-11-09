@@ -64,7 +64,7 @@ export fn run(start: usize, argc: usize) i32 = {
                     c::fputs("link: option '--version' doesn't allow an argument\nTry 'link --help' for more information.\n", c::stderr);
                     return 1i32;
                 };
-                io::println("link (zovutils) 0.10.61");
+                io::println("link (zovutils) 0.11.0");
                 return 0i32;
             };
             c::fprintf(c::stderr, "link: unrecognized option '%s'\nTry 'link --help' for more information.\n", arg.data as *i8);

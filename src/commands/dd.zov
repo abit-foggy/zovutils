@@ -88,7 +88,7 @@ export fn run(start: usize, argc: usize) i32 = {
             return 0;
         };
         if (a == "--version") {
-            c::fputs("dd (zovutils) 0.10.61\n", c::stdout);
+            c::fputs("dd (zovutils) 0.11.0\n", c::stdout);
             return 0;
         };
         let mut eq_pos: usize = 0usize;

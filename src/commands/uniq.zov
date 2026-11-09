@@ -216,7 +216,7 @@ export fn run(start: usize, argc: usize) i32 = {
                 continue;
             };
             if (key == "--help" || is_prefix(key, "--help")) { help(); stream::finishoutput("uniq"); return 0; };
-            if (key == "--version" || is_prefix(key, "--version")) { io::println("uniq (zovutils) 0.10.61"); stream::finishoutput("uniq"); return 0; };
+            if (key == "--version" || is_prefix(key, "--version")) { io::println("uniq (zovutils) 0.11.0"); stream::finishoutput("uniq"); return 0; };
             io::eprintln("uniq: unrecognized option '" + arg + "'"); usage_error(); return 1;
         };
         if (!options_done && arg.len > 1usize && arg.data[0usize] == 45u8) {

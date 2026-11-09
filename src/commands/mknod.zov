@@ -63,7 +63,7 @@ export fn run(start: usize, argc: usize) i32 = {
             return 0i32;
         };
         if (a == "--version") {
-            io::println("mknod (zovutils) 0.10.61");
+            io::println("mknod (zovutils) 0.11.0");
             return 0i32;
         };
         if (a == "-m" || a == "--mode") {

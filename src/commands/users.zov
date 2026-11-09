@@ -18,7 +18,7 @@ export fn run(start: usize, argc: usize) i32 = {
             return 0;
         };
         if (a == "--version") {
-            c::fputs("users (zovutils) 0.10.61\n", c::stdout);
+            c::fputs("users (zovutils) 0.11.0\n", c::stdout);
             return 0;
         };
         c::fprintf(c::stderr, "users: extra operand '%s'\nTry 'users --help' for more information.\n", a.data as *i8);

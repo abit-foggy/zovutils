@@ -29,7 +29,7 @@ export fn run(start: usize, argc: usize) i32 = {
             return 0;
         };
         if (a == "--version") {
-            io::println("tty (zovutils) 0.10.61");
+            io::println("tty (zovutils) 0.11.0");
             stream::finishoutput("tty");
             return 0;
         };

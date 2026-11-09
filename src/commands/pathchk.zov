@@ -27,7 +27,7 @@ export fn run(start: usize, argc: usize) i32 = {
             return 0i32;
         };
         if (options && a == "--version") {
-            io::println("pathchk (zovutils) 0.10.61");
+            io::println("pathchk (zovutils) 0.11.0");
             return 0i32;
         };
         if (options && a == "--portability") {

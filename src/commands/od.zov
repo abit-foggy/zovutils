@@ -519,7 +519,7 @@ export fn run(start: usize, argc: usize) i32 = {
                     return 1;
                 };
                 if (name == "--help") { help(); stream::finishoutput("od"); return 0; };
-                if (name == "--version") { io::println("od (zovutils) 0.10.61"); stream::finishoutput("od"); return 0; };
+                if (name == "--version") { io::println("od (zovutils) 0.11.0"); stream::finishoutput("od"); return 0; };
                 if (name == "--output-duplicates") { show_duplicates = true; i += 1usize; continue; };
                 // --traditional
                 i += 1usize;

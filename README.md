@@ -1,7 +1,7 @@
 # zovutils
 
 [![Parity CI](https://github.com/abit-foggy/zovutils/actions/workflows/parity.yml/badge.svg?branch=master)](https://github.com/abit-foggy/zovutils/actions/workflows/parity.yml)
-![Version 0.10.61](https://img.shields.io/badge/version-0.10.61-blue)
+![Version 0.11.0](https://img.shields.io/badge/version-0.11.0-blue)
 ![Alpha](https://img.shields.io/badge/status-alpha-orange)
 ![GNU Coreutils target 9.11](https://img.shields.io/badge/target-GNU%20Coreutils%209.11-lightgrey)
 ![Zov 0.11.0](https://img.shields.io/badge/language-Zov%200.11.0-6f42c1)
@@ -16,7 +16,7 @@ is copied, ported, or linked into this project.
 
 ## Status
 
-The project is in alpha (`0.10.61`). The current command set is:
+The project is in alpha (`0.11.0`). The current command set is:
 
 - `b2sum`
 - `base32`
@@ -203,5 +203,8 @@ python3 tests/bench/run.py --quick
 5. **Specialized utilities:** device and terminal tools, buffering,
    privilege-sensitive commands, and the remaining GNU 9.11 utilities.
 
-The project and required Zov compiler stay in the `0.x` alpha series. Minor
-versions mark command-family additions; patch versions mark fixes.
+## Versioning Policy
+
+`zovutils` follows semantic versioning within the `0.x` series:
+- **`0.X.0` (Minor updates)**: Marks major feature additions, new tool implementations, major platform compatibility milestones (e.g., native Windows support), benchmark test suites, or architecture overhauls.
+- **`0.X.Y` (Patch updates)**: Marks bug fixes, GNU parity adjustments, performance optimizations, documentation improvements, and maintenance releases.

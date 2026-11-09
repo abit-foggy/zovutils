@@ -522,7 +522,7 @@ export fn run_ownership(start: usize, argc: usize, group_only: bool) i32 = {
                         };
                         return 0i32;
                     };
-                    c::printf("%s (zovutils) 0.10.61\n", name.data as *i8);
+                    c::printf("%s (zovutils) 0.11.0\n", name.data as *i8);
                     return 0i32;
                 };
 

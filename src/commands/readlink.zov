@@ -124,7 +124,7 @@ export fn run(start: usize, argc: usize) i32 = {
                 if (name == "--help") {
                     print_help();
                 } else {
-                    io::println("readlink (zovutils) 0.10.61");
+                    io::println("readlink (zovutils) 0.11.0");
                 };
                 return 0i32;
             };

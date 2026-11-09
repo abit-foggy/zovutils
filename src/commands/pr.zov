@@ -26,7 +26,7 @@ export fn run(start: usize, argc: usize) i32 = {
             return 0;
         };
         if (a == "--version") {
-            c::fputs("pr (zovutils) 0.10.61\n", c::stdout);
+            c::fputs("pr (zovutils) 0.11.0\n", c::stdout);
             return 0;
         };
         if (a == "-t" || a == "-T") {

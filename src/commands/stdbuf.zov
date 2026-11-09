@@ -25,7 +25,7 @@ export fn run(start: usize, argc: usize) i32 = {
             return 0i32;
         };
         if (a == "--version") {
-            io::println("stdbuf (zovutils) 0.10.61");
+            io::println("stdbuf (zovutils) 0.11.0");
             return 0i32;
         };
         if (a == "--") {

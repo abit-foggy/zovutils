@@ -41,7 +41,7 @@ export fn run(start: usize, argc: usize) i32 = {
                 return 0;
             };
             if (arg == "--version") {
-                io::println("sync (zovutils) 0.10.61");
+                io::println("sync (zovutils) 0.11.0");
                 stream::finishoutput("sync");
                 return 0;
             };

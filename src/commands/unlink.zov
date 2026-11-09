@@ -63,7 +63,7 @@ export fn run(start: usize, argc: usize) i32 = {
                     c::fputs("unlink: option '--version' doesn't allow an argument\nTry 'unlink --help' for more information.\n", c::stderr);
                     return 1i32;
                 };
-                io::println("unlink (zovutils) 0.10.61");
+                io::println("unlink (zovutils) 0.11.0");
                 return 0i32;
             };
             c::fprintf(c::stderr, "unlink: unrecognized option '%s'\nTry 'unlink --help' for more information.\n", arg.data as *i8);

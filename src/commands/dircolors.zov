@@ -102,7 +102,7 @@ export fn run(start: usize, argc: usize) i32 = {
             return 0;
         };
         if (a == "--version") {
-            c::fputs("dircolors (zovutils) 0.10.61\n", c::stdout);
+            c::fputs("dircolors (zovutils) 0.11.0\n", c::stdout);
             return 0;
         };
         if (a == "-b" || a == "--sh" || a == "--bourne-shell") {

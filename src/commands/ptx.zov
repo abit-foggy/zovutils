@@ -299,7 +299,7 @@ export fn run(start: usize, argc: usize) i32 = {
 
     while (i < argc) {
         let a: str = args::argat(i);
-        if (a == "--version") { c::puts("ptx (zovutils) 0.10.61".data as *i8); return 0; };
+        if (a == "--version") { c::puts("ptx (zovutils) 0.11.0".data as *i8); return 0; };
         if (a == "--help") { help(); stream::finishoutput("ptx"); return 0; };
         if (a == "-A" || a == "--auto-reference") { auto_ref = true; i += 1usize; continue; };
         if (a == "-R" || a == "--right-side-refs") { right_ref = true; i += 1usize; continue; };

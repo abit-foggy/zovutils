@@ -594,7 +594,7 @@ export fn run_common(utility: str, start: usize, argc: usize) i32 = {
         };
         if (!end && (arg == "--help" || arg == "--version")) {
             if (arg == "--version") {
-                c::printf("%s (zovutils) 0.10.61\n".data as *i8, utility.data as *i8);
+                c::printf("%s (zovutils) 0.11.0\n".data as *i8, utility.data as *i8);
                 return 0i32;
             };
             c::printf("Usage: %s [OPTION]... [FILE]...\nList information about the FILEs (the current directory by default).\n  -a, --all             do not ignore entries starting with .\n  -A, --almost-all      do not list implied . and ..\n  -d, --directory       list directories themselves\n  -l                    use a long listing format\n  -1                    list one file per line\n  -C                    list entries by columns\n  -F, --classify        append indicator characters to entries\n      --help            display this help and exit\n      --version         output version information and exit\n".data as *i8, utility.data as *i8);

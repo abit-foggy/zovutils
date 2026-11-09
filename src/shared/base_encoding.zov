@@ -72,7 +72,7 @@ export fn run_basenc(program: str, start: usize, argc: usize) i32 = {
             return 0;
         };
         if (a == "--version") {
-            io::println(program + " (zovutils) 0.10.61");
+            io::println(program + " (zovutils) 0.11.0");
             return 0;
         };
         if (a == "-d" || a == "--decode") {

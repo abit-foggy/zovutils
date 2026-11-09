@@ -998,7 +998,7 @@ export fn run_cp(start: usize, argc: usize) i32 = {
                 return 0;
             };
             if (key == "--version" || is_prefix(key, "--version")) {
-                c::fputs("cp (zovutils) 0.10.61\n".data as *i8, c::stdout);
+                c::fputs("cp (zovutils) 0.11.0\n".data as *i8, c::stdout);
                 stream::finishoutput("cp");
                 return 0;
             };
@@ -1285,7 +1285,7 @@ export fn run_mv(start: usize, argc: usize) i32 = {
                 return 0;
             };
             if (key == "--version" || is_prefix(key, "--version")) {
-                c::fputs("mv (zovutils) 0.10.61\n".data as *i8, c::stdout);
+                c::fputs("mv (zovutils) 0.11.0\n".data as *i8, c::stdout);
                 stream::finishoutput("mv");
                 return 0;
             };

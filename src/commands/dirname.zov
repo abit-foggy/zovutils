@@ -111,7 +111,7 @@ export fn run(start: usize, argc: usize) i32 = {
             };
             if (longprefix(arg, "--version")) {
                 if (longhasvalue(arg)) { badlongargument("--version"); return 1; };
-                io::println("dirname (zovutils) 0.10.61");
+                io::println("dirname (zovutils) 0.11.0");
                 if (!stream::finishoutput("dirname")) { return 1; };
                 return 0;
             };

@@ -103,7 +103,7 @@ export fn run(start: usize, argc: usize) i32 = {
                         c::fprintf(c::stderr, "mktemp: option '%s' doesn't allow an argument\nTry 'mktemp --help' for more information.\n", bad_option.data as *i8);
                         return 1;
                     };
-                    io::println("mktemp (zovutils) 0.10.61");
+                    io::println("mktemp (zovutils) 0.11.0");
                     return 0;
                 };
 
