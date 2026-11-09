@@ -132,7 +132,7 @@ and coverage status.
 
 ## Build and run
 
-Install Zov 0.10.0, then run:
+Install Zov 0.11.0, then run:
 
 ```sh
 zovc check
@@ -173,6 +173,20 @@ Command cases live in separate Python scripts under `tests/parity/`; shared
 fixtures and comparison helpers live beside them. CI builds GNU Coreutils 9.11
 from its checksum-verified release archive and runs the same checks across the
 supported platform matrix.
+
+## Benchmarks
+
+Run high-throughput streaming and latency benchmarks against GNU Coreutils 9.11:
+
+```sh
+make bench
+```
+
+Or run with `--quick` for a fast evaluation pass:
+
+```sh
+python3 tests/bench/run.py --quick
+```
 
 ## Roadmap
 
