@@ -1,6 +1,6 @@
 use std::env as args;
 use std::io;
-use <unistd.h> as u;
+use <platform_hostid.h> as platform_hostid;
 use <stdio.h> as c;
 
 export fn run(start: usize, argc: usize) i32 = {
@@ -25,7 +25,7 @@ export fn run(start: usize, argc: usize) i32 = {
         return 1i32;
     };
 
-    let id: i64 = u::gethostid();
+    let id: i64 = platform_hostid::zov_gethostid();
     c::printf("%08lx\n", (id as u64) & 0xffffffffu64);
     return 0i32;
 };

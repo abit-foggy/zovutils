@@ -151,20 +151,36 @@ static inline int zov_change_directory(const char *path) {
 }
 
 static inline int zov_chroot(const char *path) {
-#if defined(__APPLE__)
+#if defined(_WIN32)
+    (void)path;
+    errno = ENOSYS;
+    return -1;
+#elif defined(__APPLE__)
     extern int chroot(const char *);
-#endif
     return chroot(path);
+#else
+    return chroot(path);
+#endif
 }
 
 static inline int zov_exec_shell(const char *shell) {
+#if defined(_WIN32)
+    _execl(shell, shell, (char *)NULL);
+    return errno;
+#else
     execl(shell, shell, (char *)NULL);
     return errno;
+#endif
 }
 
 static inline int zov_exec_command(const char *file, void *argv) {
+#if defined(_WIN32)
+    _execvp(file, (const char *const *)argv);
+    return errno;
+#else
     execvp(file, (char *const *)argv);
     return errno;
+#endif
 }
 
 static inline int zov_signal_number(const char *text) {
@@ -624,6 +640,10 @@ static inline int zov_stdbuf_setup_preload_slice(
     const char *mode_o, size_t o_len,
     const char *mode_e, size_t e_len
 ) {
+#if defined(_WIN32)
+    (void)mode_i; (void)i_len; (void)mode_o; (void)o_len; (void)mode_e; (void)e_len;
+    return ENOSYS;
+#else
     if (i_len > 0) {
         char buf[128];
         if (i_len >= sizeof buf) return -1;
@@ -666,6 +686,7 @@ static inline int zov_stdbuf_setup_preload_slice(
     if (setenv("LD_PRELOAD", preload, 1) != 0) return errno;
 #endif
     return 0;
+#endif
 }
 
 static inline FILE *zov_popen_write(const char *command) {
