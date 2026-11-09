@@ -177,7 +177,19 @@ export fn run(start: usize, argc: usize) i32 = {
     };
 
     if (header && !quick) {
-        c::puts("NAME     LINE         TIME         COMMENT");
+        if (all) {
+            c::puts("NAME       LINE         TIME         IDLE          PID COMMENT  EXIT");
+        } else if (dead) {
+            c::puts("NAME     LINE         TIME         IDLE          PID COMMENT  EXIT");
+        } else if (login || runlevel || idle_info) {
+            c::puts("NAME     LINE         TIME         IDLE          PID COMMENT");
+        } else if (boot || process) {
+            c::puts("NAME     LINE         TIME                PID COMMENT");
+        } else if (message_info) {
+            c::puts("NAME       LINE         TIME         COMMENT");
+        } else {
+            c::puts("NAME     LINE         TIME         COMMENT");
+        };
     };
 
     platform_utmpx::zov_utmpx_start();
@@ -243,7 +255,15 @@ export fn run(start: usize, argc: usize) i32 = {
         };
         if ((dead || all) && ut_type == dead_type) {
             platform_utmpx::zov_utmpx_format_time(tv_sec, (&mut b[0usize]) as *i8, 64usize);
-            c::printf("%-8s %-12s %s\n", (&mut user[0usize]) as *i8, (&mut line[0usize]) as *i8, (&mut b[0usize]) as *i8);
+            let mut indent: i32 = 9i32;
+            if (all) { indent = 11i32; };
+            let term: i32 = platform_utmpx::zov_utmpx_last_term();
+            let exit_code: i32 = platform_utmpx::zov_utmpx_last_exit();
+            let mut comment: [32]u8;
+            c::snprintf((&mut comment[0usize]) as *i8, 32usize, "id=%s", (&mut id[0usize]) as *i8);
+            let mut exit_str: [32]u8;
+            c::snprintf((&mut exit_str[0usize]) as *i8, 32usize, "term=%d exit=%d", term, exit_code);
+            c::printf("%*s%-12s %s%18d %-8s %s\n", indent, "", (&mut line[0usize]) as *i8, (&mut b[0usize]) as *i8, pid, (&mut comment[0usize]) as *i8, (&mut exit_str[0usize]) as *i8);
             continue;
         };
         if ((clock_change || all) && (ut_type == old_time_type || ut_type == new_time_type)) {

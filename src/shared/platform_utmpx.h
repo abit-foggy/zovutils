@@ -89,8 +89,21 @@ static inline int zov_utmpx_next_entry(
 #endif
         }
     }
+#if defined(__linux__)
+    zov_utmp_last_term = (int)u->ut_exit.__e_termination;
+    zov_utmp_last_exit = (int)u->ut_exit.__e_exit;
+#else
+    zov_utmp_last_term = 0;
+    zov_utmp_last_exit = 0;
+#endif
     return 1;
 }
+
+static int zov_utmp_last_term = 0;
+static int zov_utmp_last_exit = 0;
+
+static inline int zov_utmpx_last_term(void) { return zov_utmp_last_term; }
+static inline int zov_utmpx_last_exit(void) { return zov_utmp_last_exit; }
 
 static inline int zov_utmp_type_user(void) { return USER_PROCESS; }
 static inline int zov_utmp_type_boot(void) { return BOOT_TIME; }
