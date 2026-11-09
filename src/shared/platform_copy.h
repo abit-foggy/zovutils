@@ -1,6 +1,8 @@
 #ifndef ZOVUTILS_PLATFORM_COPY_H
 #define ZOVUTILS_PLATFORM_COPY_H
 
+#define _GNU_SOURCE
+
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
@@ -30,6 +32,9 @@
 #define zov_realpath_copy(p, r) _fullpath(r, p, (r) ? PATH_MAX : 0)
 #else
 #include <unistd.h>
+#if defined(__linux__)
+ssize_t copy_file_range(int fd_in, off_t *off_in, int fd_out, off_t *off_out, size_t len, unsigned int flags);
+#endif
 #define zov_realpath_copy realpath
 #endif
 
@@ -123,6 +128,18 @@ static inline uint32_t zov_cp_create_mode(uint32_t src_mode) {
 }
 
 static inline int zov_cp_copy_data(int in_fd, int out_fd) {
+#if defined(__linux__)
+    for (;;) {
+        ssize_t ret = copy_file_range(in_fd, NULL, out_fd, NULL, 1073741824, 0);
+        if (ret == 0) return 0;
+        if (ret > 0) continue;
+        if (errno == EINTR) continue;
+        if (errno == EXDEV || errno == ENOSYS || errno == EINVAL || errno == EOPNOTSUPP || errno == EBADF) {
+            break;
+        }
+        return errno;
+    }
+#endif
     char buffer[65536];
     for (;;) {
         ssize_t n = read(in_fd, buffer, sizeof(buffer));
