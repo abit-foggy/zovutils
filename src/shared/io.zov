@@ -29,6 +29,10 @@ export fn regularfile(fp: *c::FILE) bool = {
     return platform_stat::zov_file_is_regular(c::fileno(fp)) != 0;
 };
 
+export fn seekableregularfile(fp: *c::FILE) bool = {
+    return platform_stat::zov_file_is_seekable_regular(c::fileno(fp)) != 0;
+};
+
 export fn characterfile(fp: *c::FILE) bool = {
     return platform_stat::zov_file_is_character(c::fileno(fp)) != 0;
 };

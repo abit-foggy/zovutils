@@ -99,34 +99,98 @@ fn tail_bytes_pipe(fp: *c::FILE, count: usize, dest: *c::FILE, raw_input: bool) 
 
 fn tailfrom(fp: *c::FILE, count: usize, bytes: bool, delim: u8, dest: *c::FILE, raw_input: bool, presume_input_pipe: bool) bool = {
     if (bytes && presume_input_pipe) { return tail_bytes_pipe(fp, count, dest, raw_input); };
-    if (bytes && stream::characterfile(fp)) {
+    if (!presume_input_pipe && (stream::seekableregularfile(fp) || (bytes && stream::characterfile(fp)))) {
         let descriptor: i32 = c::fileno(fp);
         let initial: i64 = posix::lseek(descriptor, 0i64, c::SEEK_CUR);
         if (initial >= 0i64) {
             let end: i64 = posix::lseek(descriptor, 0i64, c::SEEK_END);
             if (end >= 0i64) {
+                if (count == 0usize) {
+                    if (c::fseek(fp, end, c::SEEK_SET) != 0 || !stream::seekdescriptor(fp, end)) { return false; };
+                    return true;
+                };
+                if (stream::seekableregularfile(fp) && end <= initial) {
+                    posix::lseek(descriptor, initial, c::SEEK_SET);
+                    return true;
+                };
                 let mut target: i64 = initial;
-                if (end > initial && count < (end - initial) as usize) {
-                    target = end - count as i64;
+                if (bytes) {
+                    if (end > initial && count < (end - initial) as usize) {
+                        target = end - count as i64;
+                    };
+                } else {
+                    let mut found: usize = 0usize;
+                    let mut pos: i64 = end;
+                    let mut reached: bool = false;
+                    let buf: [65536]u8;
+                    while (pos > initial && !reached) {
+                        let mut chunk_size: usize = 65536usize;
+                        if ((pos - initial) < 65536i64) {
+                            chunk_size = (pos - initial) as usize;
+                        };
+                        let read_pos: i64 = pos - chunk_size as i64;
+                        if (posix::lseek(descriptor, read_pos, c::SEEK_SET) != read_pos) {
+                            reached = true;
+                            target = initial;
+                            break;
+                        };
+                        let n_read: i64 = posix::read(descriptor, ((&buf[0usize]) as *void), chunk_size) as i64;
+                        if (n_read != chunk_size as i64) {
+                            reached = true;
+                            target = initial;
+                            break;
+                        };
+                        let mut idx: usize = chunk_size;
+                        while (idx > 0usize) {
+                            idx -= 1usize;
+                            let cur_pos: i64 = read_pos + idx as i64;
+                            if (cur_pos == end - 1i64 && buf[idx] == delim) {
+                                continue;
+                            };
+                            if (buf[idx] == delim) {
+                                found += 1usize;
+                                if (found == count) {
+                                    target = cur_pos + 1i64;
+                                    reached = true;
+                                    break;
+                                };
+                            };
+                        };
+                        pos = read_pos;
+                    };
                 };
                 if (c::fseek(fp, target, c::SEEK_SET) != 0
                     || !stream::seekdescriptor(fp, target)) { return false; };
                 let buf: [65536]u8;
-                let mut remaining: usize = count;
-                while (remaining > 0usize) {
-                    let mut want: usize = remaining;
-                    if (want > 65536usize) { want = 65536usize; };
-                    let read_count: i64 = readinput(fp, ((&buf[0usize]) as *u8), want, raw_input);
-                    if (read_count < 0i64) {
-                        if (raw_input && platform_errno::zov_errno_would_block() != 0i32) { break; };
-                        return false;
+                if (bytes) {
+                    let mut remaining: usize = count;
+                    while (remaining > 0usize) {
+                        let mut want: usize = remaining;
+                        if (want > 65536usize) { want = 65536usize; };
+                        let read_count: i64 = readinput(fp, ((&buf[0usize]) as *u8), want, raw_input);
+                        if (read_count < 0i64) {
+                            if (raw_input && platform_errno::zov_errno_would_block() != 0i32) { break; };
+                            return false;
+                        };
+                        if (read_count == 0i64) { break; };
+                        let n: usize = read_count as usize;
+                        if (!stream::writebytes(dest, ((&buf[0usize]) as *u8), n)) { return false; };
+                        remaining -= n;
                     };
-                    if (read_count == 0i64) { break; };
-                    let n: usize = read_count as usize;
-                    if (!stream::writebytes(dest, ((&buf[0usize]) as *u8), n)) { return false; };
-                    remaining -= n;
+                    return true;
+                } else {
+                    while (true) {
+                        let read_count: i64 = readinput(fp, ((&buf[0usize]) as *u8), 65536usize, raw_input);
+                        if (read_count < 0i64) {
+                            if (raw_input && platform_errno::zov_errno_would_block() != 0i32) { break; };
+                            return false;
+                        };
+                        if (read_count == 0i64) { break; };
+                        let n: usize = read_count as usize;
+                        if (!stream::writebytes(dest, ((&buf[0usize]) as *u8), n)) { return false; };
+                    };
+                    return true;
                 };
-                return true;
             };
             posix::lseek(descriptor, initial, c::SEEK_SET);
         };

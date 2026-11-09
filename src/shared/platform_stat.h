@@ -15,6 +15,7 @@
 #include <limits.h>
 #if defined(__linux__)
 #include <sys/sysmacros.h>
+#include <sys/vfs.h>
 #endif
 
 #if defined(__APPLE__) || defined(__linux__)
@@ -40,6 +41,20 @@ extern time_t timegm(struct tm *);
 static inline int zov_file_is_regular(int descriptor) {
     struct stat info;
     return fstat(descriptor, &info) == 0 && S_ISREG(info.st_mode);
+}
+
+static inline int zov_file_is_seekable_regular(int descriptor) {
+    struct stat info;
+    if (fstat(descriptor, &info) != 0 || !S_ISREG(info.st_mode)) return 0;
+#if defined(__linux__)
+    struct statfs sfs;
+    if (fstatfs(descriptor, &sfs) == 0) {
+        if (sfs.f_type == 0x62656572 || sfs.f_type == 0x9fa0) {
+            return 0;
+        }
+    }
+#endif
+    return 1;
 }
 
 static inline int zov_file_is_character(int descriptor) {

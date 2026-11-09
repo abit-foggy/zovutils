@@ -409,6 +409,23 @@ export fn run(start: usize, argc: usize) i32 = {
         };
     };
 
+    if (!delete_mode && !squeeze) {
+        let mut in_buf: [65536]u8;
+        while (true) {
+            let n: usize = c::fread((&mut in_buf[0usize]) as *void, 1usize, 65536usize, c::stdin);
+            if (n == 0usize) { break; };
+            for (let i in 0usize..n) {
+                in_buf[i] = maps_to[in_buf[i] as usize];
+            };
+            if (!stream::writebytes(c::stdout, (&mut in_buf[0usize]) as *u8, n)) {
+                return 1;
+            };
+        };
+        if (stream::readerror(c::stdin)) { return 1; };
+        if (!stream::finishoutput("tr")) { return 1; };
+        return 0;
+    };
+
     let mut prev_valid: bool = false;
     let mut prev_byte: u8 = 0u8;
     let mut in_buf: [8192]u8;
