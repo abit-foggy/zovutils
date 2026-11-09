@@ -77,7 +77,10 @@ fn df_one(
     type_width: i32,
     blocks_width: i32,
     block_used_width: i32,
-    block_free_width: i32
+    block_free_width: i32,
+    inode_total_width: i32,
+    inode_used_width: i32,
+    inode_free_width: i32
 ) i32 = {
     let mut v: ZovStatvfs = ZovStatvfs {
         f_bsize = 0u64,
@@ -112,7 +115,7 @@ fn df_one(
         if (used + avail > 0u64) {
             pct = (used * 100u64 + used + avail - 1u64) / (used + avail);
         };
-        c::printf("%-14s %7llu %5llu %7llu %4llu%% %s\n", (&mut fs_buf[0usize]) as *i8, total, used, avail, pct, (&mut mount_buf[0usize]) as *i8);
+        c::printf("%-*s %*llu %*llu %*llu %4llu%% %s\n", source_width, (&mut fs_buf[0usize]) as *i8, inode_total_width, total, inode_used_width, used, inode_free_width, avail, pct, (&mut mount_buf[0usize]) as *i8);
         return 0;
     };
 
@@ -207,9 +210,9 @@ export fn run(start: usize, argc: usize) i32 = {
     };
 
     let mut used_width: i32 = 5i32;
-    let mut inode_total_width: i32 = 7i32;
+    let mut inode_total_width: i32 = 6i32;
     let mut inode_used_width: i32 = 5i32;
-    let mut inode_free_width: i32 = 7i32;
+    let mut inode_free_width: i32 = 5i32;
     let mut source_width: i32 = 14i32;
     let mut type_width: i32 = 4i32;
     let mut blocks_width: i32 = 9i32;
@@ -259,6 +262,15 @@ export fn run(start: usize, argc: usize) i32 = {
         };
 
         if (inodes) {
+            let mut mount_buf: [4096]u8;
+            platform_filesystem::zov_df_mount(p.data as *i8, (&mut mount_buf[0usize]) as *i8, 4096usize);
+            let mut fs_buf: [256]u8;
+            let mut type_buf: [64]u8;
+            type_buf[0usize] = 0u8;
+            platform_filesystem::zov_df_source_type((&mut mount_buf[0usize]) as *i8, (&mut fs_buf[0usize]) as *i8, 256usize, (&mut type_buf[0usize]) as *i8, 64usize);
+            let a_len: i32 = strc::strlen((&fs_buf[0usize]) as *i8) as i32;
+            if (a_len > source_width) { source_width = a_len; };
+
             let mut v: ZovStatvfs = ZovStatvfs {
                 f_bsize = 0u64,
                 f_frsize = 0u64,
@@ -286,7 +298,7 @@ export fn run(start: usize, argc: usize) i32 = {
     };
 
     if (inodes) {
-        c::printf("%-14s %*s %*s %*s IUse%% Mounted on\n", "Filesystem", inode_total_width, "Inodes", inode_used_width, "IUsed", inode_free_width, "IFree");
+        c::printf("%-*s %*s %*s %*s %4s%% %s\n", source_width, "Filesystem", inode_total_width, "Inodes", inode_used_width, "IUsed", inode_free_width, "IFree", "IUse", "Mounted on");
     } else if (human) {
         c::puts("Filesystem      Size  Used Avail Use% Mounted on");
     } else if (print_type) {
@@ -305,7 +317,8 @@ export fn run(start: usize, argc: usize) i32 = {
         let rc: i32 = df_one(
             paths.get(p_idx),
             inodes, print_type, human, si,
-            source_width, type_width, blocks_width, block_used_width, block_free_width
+            source_width, type_width, blocks_width, block_used_width, block_free_width,
+            inode_total_width, inode_used_width, inode_free_width
         );
         if (rc != 0i32) {
             status = 1i32;
