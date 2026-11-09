@@ -205,4 +205,10 @@ static inline int zov_fseeko(FILE *fp, int64_t offset, int whence) {
 #endif
 }
 
+static inline int64_t zov_memchr_offset(const void *s, int c, size_t n) {
+    const void *p = memchr(s, c, n);
+    if (!p) return -1;
+    return (int64_t)((const char *)p - (const char *)s);
+}
+
 #endif

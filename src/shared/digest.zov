@@ -117,9 +117,7 @@ fn md5_update(ctx: &mut Md5, data: *u8, len: usize) void = {
     while (n > 0usize) {
         let mut rem: usize = 64usize - ctx.used;
         if (rem > n) { rem = n; };
-        for (let i in 0usize..rem) {
-            ctx.buf[ctx.used + i] = data[offset + i];
-        };
+        strc::memcpy(((&mut ctx.buf[ctx.used]) as *void), ((&data[offset]) as *void), rem);
         ctx.used += rem;
         offset += rem;
         n -= rem;
@@ -177,6 +175,9 @@ fn sha1_init(s: &mut Sha1) void = {
 };
 
 fn sha1_transform(ctx: &mut Sha1) void = {
+    if (platform_digest::zov_sha1_transform_block(&mut ctx.h0, &mut ctx.h1, &mut ctx.h2, &mut ctx.h3, &mut ctx.h4, (&ctx.buf[0usize]) as *u8) == 1i32) {
+        return;
+    };
     let mut w: [80]u32;
     for (let i in 0usize..16usize) {
         let base: usize = i * 4usize;
@@ -229,9 +230,7 @@ fn sha1_update(ctx: &mut Sha1, data: *u8, len: usize) void = {
     while (n > 0usize) {
         let mut rem: usize = 64usize - ctx.used;
         if (rem > n) { rem = n; };
-        for (let i in 0usize..rem) {
-            ctx.buf[ctx.used + i] = data[offset + i];
-        };
+        strc::memcpy(((&mut ctx.buf[ctx.used]) as *void), ((&data[offset]) as *void), rem);
         ctx.used += rem;
         offset += rem;
         n -= rem;
@@ -384,9 +383,7 @@ fn sha256_update(ctx: &mut Sha256, data: *u8, len: usize) void = {
     while (n > 0usize) {
         let mut rem: usize = 64usize - ctx.used;
         if (rem > n) { rem = n; };
-        for (let i in 0usize..rem) {
-            ctx.buf[ctx.used + i] = data[offset + i];
-        };
+        strc::memcpy(((&mut ctx.buf[ctx.used]) as *void), ((&data[offset]) as *void), rem);
         ctx.used += rem;
         offset += rem;
         n -= rem;
@@ -546,9 +543,7 @@ fn sha512_update(ctx: &mut Sha512, data: *u8, len: usize) void = {
     while (n > 0usize) {
         let mut rem: usize = 128usize - ctx.used;
         if (rem > n) { rem = n; };
-        for (let i in 0usize..rem) {
-            ctx.buf[ctx.used + i] = data[offset + i];
-        };
+        strc::memcpy(((&mut ctx.buf[ctx.used]) as *void), ((&data[offset]) as *void), rem);
         ctx.used += rem;
         offset += rem;
         n -= rem;
@@ -712,9 +707,7 @@ fn b2_update(b: &mut Blake2b, data: *u8, len: usize) void = {
         };
         let mut z: usize = 128usize - b.used;
         if (z > n) { z = n; };
-        for (let i in 0usize..z) {
-            b.buf[b.used + i] = data[offset + i];
-        };
+        strc::memcpy(((&mut b.buf[b.used]) as *void), ((&data[offset]) as *void), z);
         b.used += z;
         offset += z;
         n -= z;
@@ -818,13 +811,13 @@ fn hasher_file_cstr(c_name: *i8, is_stdin: bool, alg: i32, b2_len: usize, out: *
     let file_ptr: *c::FILE = fp!;
     let mut h: Hasher;
     hasher_init(&mut h, alg, b2_len);
-    let mut buf: [16384]u8;
+    let mut buf: [65536]u8;
     while (true) {
-        let n: usize = c::fread((&buf[0usize]) as *void, 1usize, 16384usize, file_ptr);
+        let n: usize = c::fread((&buf[0usize]) as *void, 1usize, 65536usize, file_ptr);
         if (n > 0usize) {
             hasher_update(&mut h, (&buf[0usize]) as *u8, n);
         };
-        if (n < 16384usize) {
+        if (n < 65536usize) {
             if (c::ferror(file_ptr) != 0i32) {
                 if (!is_stdin) {
                     c::fclose(file_ptr);

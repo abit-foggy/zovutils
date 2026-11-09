@@ -6,6 +6,7 @@ use <stdio.h> as c;
 use <string.h> as strc;
 use <platform_errno.h> as platform_errno;
 use <platform_locale.h> as platform_locale;
+use <platform_io.h> as platform_io;
 use shared::io as stream;
 
 fn usage_error() void = {
@@ -203,8 +204,12 @@ fn emit_line(out: *c::FILE, line: *u8, length: usize, has_terminator: bool, term
         };
     } else {
         let mut has_delimeter: bool = false;
-        for (let i in 0usize..length) {
-            if (is_separator(mode, line[i], delimiter)) { has_delimeter = true; };
+        if (mode == 2i32) {
+            has_delimeter = platform_io::zov_memchr_offset((line as *void), delimiter as i32, length) >= 0i64;
+        } else {
+            for (let i in 0usize..length) {
+                if (is_separator(mode, line[i], delimiter)) { has_delimeter = true; };
+            };
         };
         if (!has_delimeter) {
             if (suppress) { return true; };
@@ -223,38 +228,59 @@ fn emit_line(out: *c::FILE, line: *u8, length: usize, has_terminator: bool, term
                 };
             };
             i = start;
-            while (i < length) {
-                if (!is_separator(mode, line[i], delimiter)) {
-                    i += 1usize;
-                    continue;
+            if (mode == 2i32) {
+                while (i < length) {
+                    let d_off: i64 = platform_io::zov_memchr_offset(((&line[i]) as *void), delimiter as i32, length - i);
+                    if (d_off < 0i64) {
+                        break;
+                    };
+                    let delim_pos: usize = i + (d_off as usize);
+                    if (!emit_field(out, line, start, delim_pos, index, ranges, complement,
+                                    field_delim, output_delimiter, has_output_delimiter, &mut wrote)) {
+                        return false;
+                    };
+                    index += 1u64;
+                    start = delim_pos + 1usize;
+                    i = start;
                 };
-                if (!emit_field(out, line, start, i, index, ranges, complement,
-                                field_delim, output_delimiter, has_output_delimiter, &mut wrote)) {
-                    return false;
-                };
-                index += 1u64;
-                if (whitespace_mode) {
-                    while (i < length && is_separator(mode, line[i], delimiter)) { i += 1usize; };
-                } else {
-                    i += 1usize;
-                };
-                start = i;
-            };
-            if (!trimmed || start < length) {
                 if (!emit_field(out, line, start, length, index, ranges, complement,
                                 field_delim, output_delimiter, has_output_delimiter, &mut wrote)) {
                     return false;
                 };
-            } else if (start == length && !trimmed) {
-                if (!emit_field(out, line, start, length, index, ranges, complement,
-                                field_delim, output_delimiter, has_output_delimiter, &mut wrote)) {
-                    return false;
+            } else {
+                while (i < length) {
+                    if (!is_separator(mode, line[i], delimiter)) {
+                        i += 1usize;
+                        continue;
+                    };
+                    if (!emit_field(out, line, start, i, index, ranges, complement,
+                                    field_delim, output_delimiter, has_output_delimiter, &mut wrote)) {
+                        return false;
+                    };
+                    index += 1u64;
+                    if (whitespace_mode) {
+                        while (i < length && is_separator(mode, line[i], delimiter)) { i += 1usize; };
+                    } else {
+                        i += 1usize;
+                    };
+                    start = i;
                 };
-            };
-            if (!trimmed && length == 0usize) {
-                if (!emit_field(out, line, 0usize, 0usize, index, ranges, complement,
-                                field_delim, output_delimiter, has_output_delimiter, &mut wrote)) {
-                    return false;
+                if (!trimmed || start < length) {
+                    if (!emit_field(out, line, start, length, index, ranges, complement,
+                                    field_delim, output_delimiter, has_output_delimiter, &mut wrote)) {
+                        return false;
+                    };
+                } else if (start == length && !trimmed) {
+                    if (!emit_field(out, line, start, length, index, ranges, complement,
+                                    field_delim, output_delimiter, has_output_delimiter, &mut wrote)) {
+                        return false;
+                    };
+                };
+                if (!trimmed && length == 0usize) {
+                    if (!emit_field(out, line, 0usize, 0usize, index, ranges, complement,
+                                    field_delim, output_delimiter, has_output_delimiter, &mut wrote)) {
+                        return false;
+                    };
                 };
             };
         };
@@ -284,11 +310,12 @@ fn process_file(path: str, ranges: &vec::Vec[Range], mode: i32,
     let mut terminator: u8 = 10u8;
     if (zero_terminated) { terminator = 0u8; };
 
-    let mut line: CutLine = CutLine { data = mem::alloc[u8](256usize), len = 0usize, cap = 256usize };
+    let mut line: CutLine = CutLine { data = mem::alloc[u8](1024usize), len = 0usize, cap = 1024usize };
     let mut status: i32 = 0;
+    let mut read_buf: [65536]u8;
     while (true) {
-        let ch: i32 = c::fgetc(fp);
-        if (ch == -1i32) {
+        let n: usize = c::fread(((&read_buf[0usize]) as *void), 1usize, 65536usize, fp);
+        if (n == 0usize) {
             if (stream::readerror(fp)) {
                 let err: i32 = platform_errno::zov_errno_value();
                 c::fprintf(c::stderr, "cut: read error: %s\n", strc::strerror(err));
@@ -301,22 +328,48 @@ fn process_file(path: str, ranges: &vec::Vec[Range], mode: i32,
             };
             break;
         };
-        if ((ch as u8) == terminator) {
-            if (!emit_line(c::stdout, line.data, line.len, true, terminator, ranges, mode, delimiter,
-                           output_delimiter, has_output_delimiter, no_partial, complement, suppress)) {
-                status = 1;
-                break;
+        let mut pos: usize = 0usize;
+        while (pos < n) {
+            let rem: usize = n - pos;
+            let offset: i64 = platform_io::zov_memchr_offset(((&read_buf[pos]) as *void), terminator as i32, rem);
+            if (offset >= 0i64) {
+                let seg_len: usize = offset as usize;
+                if (line.len == 0usize) {
+                    if (!emit_line(c::stdout, ((&read_buf[pos]) as *u8), seg_len, true, terminator, ranges, mode, delimiter,
+                                   output_delimiter, has_output_delimiter, no_partial, complement, suppress)) {
+                        status = 1;
+                        break;
+                    };
+                } else {
+                    if (line.len + seg_len > line.cap) {
+                        let mut next: usize = line.cap * 2usize;
+                        while (next < line.len + seg_len) { next = next * 2usize; };
+                        line.data = mem::reallocbuf[u8](line.data, next);
+                        line.cap = next;
+                    };
+                    strc::memcpy(((&line.data[line.len]) as *void), ((&read_buf[pos]) as *void), seg_len);
+                    line.len += seg_len;
+                    if (!emit_line(c::stdout, line.data, line.len, true, terminator, ranges, mode, delimiter,
+                                   output_delimiter, has_output_delimiter, no_partial, complement, suppress)) {
+                        status = 1;
+                        break;
+                    };
+                    line.len = 0usize;
+                };
+                pos += seg_len + 1usize;
+            } else {
+                if (line.len + rem > line.cap) {
+                    let mut next: usize = line.cap * 2usize;
+                    while (next < line.len + rem) { next = next * 2usize; };
+                    line.data = mem::reallocbuf[u8](line.data, next);
+                    line.cap = next;
+                };
+                strc::memcpy(((&line.data[line.len]) as *void), ((&read_buf[pos]) as *void), rem);
+                line.len += rem;
+                pos = n;
             };
-            line.len = 0usize;
-            continue;
         };
-        if (line.len == line.cap) {
-            let next: usize = line.cap * 2usize;
-            line.data = mem::reallocbuf[u8](line.data, next);
-            line.cap = next;
-        };
-        line.data[line.len] = ch as u8;
-        line.len += 1usize;
+        if (status != 0) { break; };
     };
     mem::freeptr[u8](line.data);
     if (!is_stdin) {

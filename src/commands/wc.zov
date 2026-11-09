@@ -110,6 +110,32 @@ fn scan(fp: *c::FILE, out: &mut Counts, singlebyte_c: bool, line_fast: bool,
         };
         let mut i: usize = 0usize;
         while (i < n) {
+            if (pending == 0usize && buf[i] < 128u8) {
+                while (i < n && buf[i] < 128u8) {
+                    let b: u8 = buf[i];
+                    out.chars += 1usize;
+                    if (b == 10u8) {
+                        out.lines += 1usize;
+                        if (linebytes > out.maxline) { out.maxline = linebytes; };
+                        linebytes = 0usize;
+                    } else if (b == 13u8 || b == 12u8) {
+                        if (linebytes > out.maxline) { out.maxline = linebytes; };
+                        linebytes = 0usize;
+                    } else if (b == 9u8) {
+                        linebytes += 8usize - (linebytes % 8usize);
+                    } else if (b >= 32u8 && b < 127u8) {
+                        linebytes += 1usize;
+                    };
+                    if (b == 32u8 || (b >= 9u8 && b <= 13u8)) {
+                        inword = false;
+                    } else if (!inword) {
+                        out.words += 1usize;
+                        inword = true;
+                    };
+                    i += 1usize;
+                };
+                continue;
+            };
             if (utf8_locale && buf[i] > 244u8) {
                 if (pending > 0usize) {
                     pending = 0usize;
