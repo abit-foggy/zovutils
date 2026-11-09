@@ -223,9 +223,8 @@ fn parse_mode(text: str, current: u32, mask: u32, is_directory: bool, result: &m
 
         if (!any && op != 61u8) { return false; }; // not '='
         if (!explicit_who) {
-            let restricted: u32 = affected & ~(mask & 0o777u32);
             affected &= ~(mask & 0o777u32);
-            bits &= ~restricted;
+            bits &= ~(mask & 0o777u32);
         };
 
         if (op == 61u8) { // '='
