@@ -3,6 +3,7 @@ use std::vec;
 use <stdio.h> as c;
 use <string.h> as strc;
 use <platform_errno.h> as platform_errno;
+use <platform_digest.h> as platform_digest;
 
 export fn alg_md5() i32 = { return 0i32; };
 export fn alg_sha1() i32 = { return 1i32; };
@@ -307,6 +308,9 @@ fn sha256_init(s: &mut Sha256, is224: bool) void = {
 };
 
 fn sha256_transform(ctx: &mut Sha256) void = {
+    if (platform_digest::zov_sha256_transform_block(&mut ctx.h0, &mut ctx.h1, &mut ctx.h2, &mut ctx.h3, &mut ctx.h4, &mut ctx.h5, &mut ctx.h6, &mut ctx.h7, (&ctx.buf[0usize]) as *u8) == 1i32) {
+        return;
+    };
     let k: [64]u32 = [
         0x428a2f98u32,0x71374491u32,0xb5c0fbcfu32,0xe9b5dba5u32,
         0x3956c25bu32,0x59f111f1u32,0x923f82a4u32,0xab1c5ed5u32,

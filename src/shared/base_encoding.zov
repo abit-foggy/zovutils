@@ -4,6 +4,7 @@ use std::vec;
 use <stdio.h> as c;
 use <string.h> as strc;
 use <platform_errno.h> as platform_errno;
+use <platform_encoding.h> as platform_encoding;
 use io as stream;
 
 fn b64_value(c_byte: u8, url: bool, ignore: bool) i32 = {
@@ -185,6 +186,26 @@ export fn run_basenc(program: str, start: usize, argc: usize) i32 = {
                 c::fputc(10i32, c::stderr);
                 return 1;
             },
+        };
+    };
+
+    if (mode == 0i32) {
+        let mut url_val: i32 = 0i32;
+        if (url) { url_val = 1i32; };
+        if (!decode) {
+            let rc: i32 = platform_encoding::zov_base64_encode_stream(in_fp, c::stdout, wrap, url_val);
+            if (in_fp != c::stdin) { c::fclose(in_fp); };
+            return rc;
+        } else {
+            let mut ign_val: i32 = 0i32;
+            if (ignore) { ign_val = 1i32; };
+            let rc: i32 = platform_encoding::zov_base64_decode_stream(in_fp, c::stdout, ign_val, url_val);
+            if (in_fp != c::stdin) { c::fclose(in_fp); };
+            if (rc != 0i32) {
+                io::eprintln(program + ": invalid input");
+                return 1;
+            };
+            return 0;
         };
     };
 
