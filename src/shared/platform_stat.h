@@ -4,22 +4,55 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <stdint.h>
-#include <unistd.h>
 #include <errno.h>
 #include <string.h>
 #include <time.h>
+#include <limits.h>
+
+#if defined(_WIN32)
+#include <windows.h>
+#include <io.h>
+#include <direct.h>
+#ifndef S_ISREG
+#define S_ISREG(m) (((m) & _S_IFMT) == _S_IFREG)
+#endif
+#ifndef S_ISDIR
+#define S_ISDIR(m) (((m) & _S_IFMT) == _S_IFDIR)
+#endif
+#ifndef S_ISCHR
+#define S_ISCHR(m) (((m) & _S_IFMT) == _S_IFCHR)
+#endif
+#ifndef S_ISLNK
+#define S_ISLNK(m) 0
+#endif
+#ifndef S_ISBLK
+#define S_ISBLK(m) 0
+#endif
+#ifndef S_ISFIFO
+#define S_ISFIFO(m) 0
+#endif
+#ifndef S_ISSOCK
+#define S_ISSOCK(m) 0
+#endif
+#define lstat(p, s) stat(p, s)
+#define timegm(tm) _mkgmtime(tm)
+#define zov_stat_getuid() 1000
+#define zov_stat_getgid() 1000
+#else
+#include <unistd.h>
 #include <sys/time.h>
 #include <pwd.h>
 #include <grp.h>
 #include <dirent.h>
-#include <limits.h>
 #if defined(__linux__)
 #include <sys/sysmacros.h>
 #include <sys/vfs.h>
 #endif
-
 #if defined(__APPLE__) || defined(__linux__)
 extern time_t timegm(struct tm *);
+#endif
+#define zov_stat_getuid() getuid()
+#define zov_stat_getgid() getgid()
 #endif
 
 #ifndef AT_FDCWD
@@ -385,19 +418,46 @@ static inline int zov_du_stat(const char *path, int follow, uint64_t *size_out, 
 }
 
 static inline const char *zov_get_username(uint32_t uid) {
+#if defined(_WIN32)
+    (void)uid;
+    const char *u = getenv("USERNAME");
+    return u ? u : "user";
+#else
     struct passwd *pw = getpwuid((uid_t)uid);
     return pw ? pw->pw_name : NULL;
+#endif
 }
 
 static inline const char *zov_get_groupname(uint32_t gid) {
+#if defined(_WIN32)
+    (void)gid;
+    return "Users";
+#else
     struct group *gr = getgrgid((gid_t)gid);
     return gr ? gr->gr_name : NULL;
+#endif
+}
+
+static inline struct tm *zov_localtime_r(const time_t *timep, struct tm *result) {
+#if defined(_WIN32)
+    return localtime_s(result, timep) == 0 ? result : NULL;
+#else
+    return localtime_r(timep, result);
+#endif
+}
+
+static inline struct tm *zov_gmtime_r(const time_t *timep, struct tm *result) {
+#if defined(_WIN32)
+    return gmtime_s(result, timep) == 0 ? result : NULL;
+#else
+    return gmtime_r(timep, result);
+#endif
 }
 
 static inline void zov_format_time(int64_t t, char *buf, size_t buflen) {
     time_t sec = (time_t)t;
     struct tm tmv;
-    localtime_r(&sec, &tmv);
+    zov_localtime_r(&sec, &tmv);
     char b[64];
     strftime(b, sizeof(b), "%Y-%m-%d %H:%M:%S", &tmv);
     snprintf(buf, buflen, "%s.000000000 +0000", b);
@@ -406,7 +466,7 @@ static inline void zov_format_time(int64_t t, char *buf, size_t buflen) {
 static inline int zov_format_strftime(int64_t sec, int utc, const char *format, char *buf, size_t buflen) {
     time_t t = (time_t)sec;
     struct tm tmv;
-    struct tm *pt = utc ? gmtime_r(&t, &tmv) : localtime_r(&t, &tmv);
+    struct tm *pt = utc ? zov_gmtime_r(&t, &tmv) : zov_localtime_r(&t, &tmv);
     if (!pt) return -1;
     size_t n = strftime(buf, buflen, format, pt);
     if (!n && *format) return -2;
@@ -481,8 +541,15 @@ static inline int zov_closedir(void *dir) {
 
 static inline int zov_realpath_is_root(const char *path) {
     char buf[PATH_MAX];
+#if defined(_WIN32)
+    if (_fullpath(buf, path, sizeof(buf)) == NULL) return 0;
+    size_t len = strlen(buf);
+    if (len == 3 && buf[1] == ':' && (buf[2] == '/' || buf[2] == '\\')) return 1;
+    return strcmp(buf, "/") == 0 || strcmp(buf, "\\") == 0;
+#else
     if (realpath(path, buf) == NULL) return 0;
     return strcmp(buf, "/") == 0;
+#endif
 }
 
 static inline int zov_lchmod(const char *path, uint32_t mode) {
@@ -503,11 +570,21 @@ static inline int zov_stat_mode(const char *path, int follow, uint32_t *mode_out
 }
 
 static inline int zov_chown(const char *path, uint32_t uid, uint32_t gid) {
+#if defined(_WIN32)
+    (void)path; (void)uid; (void)gid;
+    return 0;
+#else
     return chown(path, (uid_t)uid, (gid_t)gid) == 0 ? 0 : errno;
+#endif
 }
 
 static inline int zov_lchown(const char *path, uint32_t uid, uint32_t gid) {
+#if defined(_WIN32)
+    (void)path; (void)uid; (void)gid;
+    return 0;
+#else
     return lchown(path, (uid_t)uid, (gid_t)gid) == 0 ? 0 : errno;
+#endif
 }
 
 static inline int zov_parse_user(const char *text, uint32_t *uid) {
@@ -518,10 +595,19 @@ static inline int zov_parse_user(const char *text, uint32_t *uid) {
         *uid = (uint32_t)val;
         return 1;
     }
+#if defined(_WIN32)
+    const char *cur = getenv("USERNAME");
+    if (cur && strcmp(text, cur) == 0) {
+        *uid = 1000;
+        return 1;
+    }
+    return 0;
+#else
     struct passwd *pw = getpwnam(text);
     if (!pw) return 0;
     *uid = (uint32_t)pw->pw_uid;
     return 1;
+#endif
 }
 
 static inline int zov_parse_group(const char *text, uint32_t *gid) {
@@ -532,10 +618,18 @@ static inline int zov_parse_group(const char *text, uint32_t *gid) {
         *gid = (uint32_t)val;
         return 1;
     }
+#if defined(_WIN32)
+    if (strcmp(text, "Users") == 0 || strcmp(text, "users") == 0) {
+        *gid = 1000;
+        return 1;
+    }
+    return 0;
+#else
     struct group *gr = getgrnam(text);
     if (!gr) return 0;
     *gid = (uint32_t)gr->gr_gid;
     return 1;
+#endif
 }
 
 static inline int zov_parse_user_slice(const char *text, size_t len, uint32_t *uid) {
@@ -592,13 +686,23 @@ static inline int zov_test_file(const char *op, const char *path, const char *ex
     if (strcmp(op, "-c") == 0) return rc == 0 && S_ISCHR(st.st_mode);
     if (strcmp(op, "-p") == 0) return rc == 0 && S_ISFIFO(st.st_mode);
     if (strcmp(op, "-S") == 0) return rc == 0 && S_ISSOCK(st.st_mode);
+#if defined(_WIN32)
+    if (strcmp(op, "-r") == 0) return _access(path, 4) == 0;
+    if (strcmp(op, "-w") == 0) return _access(path, 2) == 0;
+    if (strcmp(op, "-x") == 0) return _access(path, 0) == 0;
+#else
     if (strcmp(op, "-r") == 0) return access(path, R_OK) == 0;
     if (strcmp(op, "-w") == 0) return access(path, W_OK) == 0;
     if (strcmp(op, "-x") == 0) return access(path, X_OK) == 0;
+#endif
     if (strcmp(op, "-s") == 0) return rc == 0 && st.st_size > 0;
-    if (strcmp(op, "-O") == 0) return rc == 0 && st.st_uid == getuid();
-    if (strcmp(op, "-G") == 0) return rc == 0 && st.st_gid == getgid();
+    if (strcmp(op, "-O") == 0) return rc == 0 && st.st_uid == zov_stat_getuid();
+    if (strcmp(op, "-G") == 0) return rc == 0 && st.st_gid == zov_stat_getgid();
+#if defined(_WIN32)
+    if (strcmp(op, "-t") == 0) return _isatty(atoi(path));
+#else
     if (strcmp(op, "-t") == 0) return isatty(atoi(path));
+#endif
     if (strcmp(op, "-N") == 0) return rc == 0 && st.st_mtime > st.st_atime;
     if (strcmp(op, "-ef") == 0 || strcmp(op, "-nt") == 0 || strcmp(op, "-ot") == 0) {
         struct stat other;

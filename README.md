@@ -8,7 +8,8 @@
 
 `zovutils` is a multicall command-line utilities project written in Zov. It
 targets GNU Coreutils 9.11 behavior and compiles through Zov to C99, then to a
-native executable with libtcc.
+native executable with libtcc. Native Windows support is baselined against
+Microsoft's official Windows coreutils distribution ([`microsoft/coreutils`](https://github.com/microsoft/coreutils)).
 
 GNU Coreutils is used only as an executable parity-test oracle. No GNU source
 is copied, ported, or linked into this project.
@@ -126,9 +127,9 @@ through a command-name symlink. Compatibility work is ongoing; passing the
 current test suite is not a claim of complete GNU Coreutils compatibility.
 
 The parity workflow is configured for Linux and macOS on `x86_64` and
-`aarch64`. See the [compatibility policy](docs/compatibility.md) and [per-utility
-inventory](docs/compatibility-matrix.md) for test scope, platform behavior,
-and coverage status.
+`aarch64`. See the [compatibility policy](docs/compatibility.md), [per-utility
+inventory](docs/compatibility-matrix.md), and [Windows compatibility guide](docs/windows-compatibility.md)
+for test scope, platform behavior, and coverage status.
 
 ## Build and run
 

@@ -11,9 +11,29 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <time.h>
+
+#if defined(_WIN32)
+#include <windows.h>
+#include <io.h>
+#include <direct.h>
+#ifndef S_ISDIR
+#define S_ISDIR(m) (((m) & _S_IFMT) == _S_IFDIR)
+#endif
+#ifndef S_ISLNK
+#define S_ISLNK(m) 0
+#endif
+#define lstat(p, s) stat(p, s)
+static inline struct tm *zov_ls_localtime(const time_t *t, struct tm *res) {
+    return localtime_s(res, t) == 0 ? res : NULL;
+}
+#else
 #include <unistd.h>
 #include <pwd.h>
 #include <grp.h>
+static inline struct tm *zov_ls_localtime(const time_t *t, struct tm *res) {
+    return localtime_r(t, res);
+}
+#endif
 
 #if defined(__linux__)
 #include <sys/xattr.h>
@@ -76,7 +96,7 @@ static inline void zov_ls_format_time(int64_t mtime, char *buf, size_t buflen) {
     time_t now = time(NULL);
     time_t sec = (time_t)mtime;
     struct tm t;
-    localtime_r(&sec, &t);
+    zov_ls_localtime(&sec, &t);
     if (sec > now + 15552000 || sec < now - 15552000) {
         strftime(buf, buflen, "%b %e  %Y", &t);
     } else {
@@ -85,10 +105,15 @@ static inline void zov_ls_format_time(int64_t mtime, char *buf, size_t buflen) {
 }
 
 static inline int zov_ls_readlink(const char *path, char *buf, size_t bufsiz) {
+#if defined(_WIN32)
+    (void)path; (void)buf; (void)bufsiz;
+    return EINVAL;
+#else
     ssize_t n = readlink(path, buf, bufsiz - 1);
     if (n < 0) return errno;
     buf[n] = '\0';
     return 0;
+#endif
 }
 
 static inline void zov_ls_print_long(

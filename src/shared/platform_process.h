@@ -8,11 +8,53 @@
 #include <signal.h>
 #include <ctype.h>
 #include <limits.h>
-#include <unistd.h>
 #include <time.h>
+#include <fcntl.h>
+
+#if defined(_WIN32)
+#include <windows.h>
+#include <io.h>
+#include <process.h>
+#include <direct.h>
+#ifndef SIGHUP
+#define SIGHUP 1
+#endif
+#ifndef SIGQUIT
+#define SIGQUIT 3
+#endif
+#ifndef SIGKILL
+#define SIGKILL 9
+#endif
+#ifndef SIGALRM
+#define SIGALRM 14
+#endif
+#ifndef SIGUSR1
+#define SIGUSR1 10
+#endif
+#ifndef SIGUSR2
+#define SIGUSR2 12
+#endif
+#ifndef WNOHANG
+#define WNOHANG 1
+#endif
+#ifndef WIFEXITED
+#define WIFEXITED(s) 1
+#endif
+#ifndef WEXITSTATUS
+#define WEXITSTATUS(s) (s)
+#endif
+#ifndef WIFSIGNALED
+#define WIFSIGNALED(s) 0
+#endif
+#ifndef WTERMSIG
+#define WTERMSIG(s) 0
+#endif
+#else
+#include <unistd.h>
 #include <sys/resource.h>
 #include <sys/wait.h>
-#include <fcntl.h>
+#endif
+
 #if defined(__APPLE__)
 #include <mach-o/dyld.h>
 #endif
@@ -60,7 +102,11 @@ static inline int zov_get_errno(void) {
 }
 
 static inline int zov_env_unset(const char *name) {
+#if defined(_WIN32)
+    return _putenv_s(name, "");
+#else
     return unsetenv(name);
+#endif
 }
 
 static inline int zov_env_clear(void) {
@@ -360,28 +406,53 @@ static inline long zov_nprocessors_onln(void) {
     }
 #endif
     if (count <= 0) {
+#if defined(_WIN32)
+        SYSTEM_INFO si;
+        GetSystemInfo(&si);
+        count = si.dwNumberOfProcessors > 0 ? (long)si.dwNumberOfProcessors : 1;
+#else
         count = sysconf(_SC_NPROCESSORS_ONLN);
         if (count <= 0) count = 1;
+#endif
     }
     return count;
 }
 
 static inline long zov_nprocessors_conf(void) {
+#if defined(_WIN32)
+    SYSTEM_INFO si;
+    GetSystemInfo(&si);
+    return si.dwNumberOfProcessors > 0 ? (long)si.dwNumberOfProcessors : 1;
+#else
     long installed = sysconf(_SC_NPROCESSORS_CONF);
     if (installed > 0) return installed;
     return zov_nprocessors_onln();
+#endif
 }
 
 static inline int zov_getpriority(void) {
+#if defined(_WIN32)
+    return 0;
+#else
     return getpriority(PRIO_PROCESS, 0);
+#endif
 }
 
 static inline int zov_setpriority(int prio) {
+#if defined(_WIN32)
+    (void)prio;
+    return 0;
+#else
     return setpriority(PRIO_PROCESS, 0, prio);
+#endif
 }
 
 static inline uint64_t zov_random_seed(void) {
+#if defined(_WIN32)
+    uint64_t seed = (uint64_t)time(NULL) ^ ((uint64_t)GetCurrentProcessId() << 32);
+#else
     uint64_t seed = (uint64_t)time(NULL) ^ ((uint64_t)getpid() << 32);
+#endif
     return seed != 0 ? seed : 1;
 }
 
@@ -395,7 +466,11 @@ static inline int zov_isatty(int fd) {
 }
 
 static inline int zov_open_devnull_ro(void) {
+#if defined(_WIN32)
+    return open("NUL", O_RDONLY);
+#else
     return open("/dev/null", O_RDONLY);
+#endif
 }
 
 static inline int zov_open_nohup_out(const char *path) {
@@ -411,23 +486,50 @@ static inline int zov_close(int fd) {
 }
 
 static inline int zov_fork(void) {
+#if defined(_WIN32)
+    errno = ENOSYS;
+    return -1;
+#else
     return (int)fork();
+#endif
 }
 
 static inline int zov_setpgid(int pid, int pgid) {
+#if defined(_WIN32)
+    (void)pid; (void)pgid;
+    return 0;
+#else
     return setpgid((pid_t)pid, (pid_t)pgid);
+#endif
 }
 
 static inline int zov_waitpid_nohang(int pid, int *status) {
+#if defined(_WIN32)
+    (void)pid;
+    if (status) *status = 0;
+    return -1;
+#else
     return (int)waitpid((pid_t)pid, status, WNOHANG);
+#endif
 }
 
 static inline int zov_waitpid_blocking(int pid, int *status) {
+#if defined(_WIN32)
+    (void)pid;
+    if (status) *status = 0;
+    return -1;
+#else
     return (int)waitpid((pid_t)pid, status, 0);
+#endif
 }
 
 static inline int zov_kill(int pid, int sig) {
+#if defined(_WIN32)
+    (void)pid; (void)sig;
+    return 0;
+#else
     return kill((pid_t)pid, sig);
+#endif
 }
 
 static inline int zov_wait_status(int st) {
@@ -437,8 +539,12 @@ static inline int zov_wait_status(int st) {
 }
 
 static inline void zov_timeout_sleep_step(void) {
+#if defined(_WIN32)
+    Sleep(10);
+#else
     struct timespec pause = {0, 10000000};
     while (nanosleep(&pause, &pause) < 0 && errno == EINTR) {}
+#endif
 }
 
 static inline int zov_timeout_parse_signal(const char *s) {
@@ -563,15 +669,28 @@ static inline int zov_stdbuf_setup_preload_slice(
 }
 
 static inline FILE *zov_popen_write(const char *command) {
+#if defined(_WIN32)
+    return _popen(command, "w");
+#else
     return popen(command, "w");
+#endif
 }
 
 static inline int zov_pclose(FILE *pipe) {
+#if defined(_WIN32)
+    return _pclose(pipe);
+#else
     return pclose(pipe);
+#endif
 }
 
 static inline int zov_setenv(const char *name, const char *value, int overwrite) {
+#if defined(_WIN32)
+    if (!overwrite && getenv(name) != NULL) return 0;
+    return _putenv_s(name, value);
+#else
     return setenv(name, value, overwrite);
+#endif
 }
 
 #endif

@@ -7,9 +7,15 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
-#include <sys/statvfs.h>
 #include <sys/types.h>
+
+#if defined(_WIN32)
+#include <windows.h>
+#include <io.h>
+#else
+#include <sys/statvfs.h>
 #include <unistd.h>
+#endif
 
 #if defined(__linux__)
 #include <mntent.h>
@@ -29,6 +35,23 @@ typedef struct {
 } ZovStatvfs;
 
 static inline int zov_statvfs(const char *path, void *out_ptr) {
+#if defined(_WIN32)
+    ULARGE_INTEGER free_bytes_avail, total_bytes, total_free_bytes;
+    if (!GetDiskFreeSpaceExA(path, &free_bytes_avail, &total_bytes, &total_free_bytes)) {
+        return (int)GetLastError();
+    }
+    if (out_ptr) {
+        ZovStatvfs *out = (ZovStatvfs *)out_ptr;
+        out->f_bsize = 4096;
+        out->f_frsize = 4096;
+        out->f_blocks = (uint64_t)(total_bytes.QuadPart / 4096);
+        out->f_bfree = (uint64_t)(total_free_bytes.QuadPart / 4096);
+        out->f_bavail = (uint64_t)(free_bytes_avail.QuadPart / 4096);
+        out->f_files = 1000000;
+        out->f_ffree = 1000000;
+    }
+    return 0;
+#else
     struct statvfs v;
     if (statvfs(path, &v) < 0) {
         return errno;
@@ -44,14 +67,21 @@ static inline int zov_statvfs(const char *path, void *out_ptr) {
         out->f_ffree = (uint64_t)v.f_ffree;
     }
     return 0;
+#endif
 }
 
 static inline void zov_df_mount(const char *path, char *mount_buf, size_t mount_sz) {
     if (mount_sz == 0) return;
-    strcpy(mount_buf, "/");
-#if defined(__linux__)
+#if defined(_WIN32)
+    if (path && path[0] && path[1] == ':') {
+        snprintf(mount_buf, mount_sz, "%c:\\", path[0]);
+    } else {
+        strcpy(mount_buf, "C:\\");
+    }
+#elif defined(__linux__)
     FILE *f = setmntent("/proc/self/mounts", "r");
-    if (!f) return;
+    if (!f) { strcpy(mount_buf, "/"); return; }
+    strcpy(mount_buf, "/");
     struct mntent *m;
     size_t best = 0;
     while ((m = getmntent(f))) {
@@ -63,6 +93,7 @@ static inline void zov_df_mount(const char *path, char *mount_buf, size_t mount_
     }
     endmntent(f);
 #elif defined(__APPLE__)
+    strcpy(mount_buf, "/");
     struct statfs *m;
     int nfs = getmntinfo(&m, MNT_NOWAIT);
     size_t best = 0;
@@ -74,6 +105,7 @@ static inline void zov_df_mount(const char *path, char *mount_buf, size_t mount_
         }
     }
 #else
+    strcpy(mount_buf, "/");
     (void)path;
 #endif
 }

@@ -3,12 +3,24 @@
 
 #include "zov_wcwidth.h"
 
-#include <langinfo.h>
 #include <locale.h>
 #include <stddef.h>
-#include <strings.h>
 #include <wchar.h>
 #include <wctype.h>
+
+#if defined(_WIN32)
+#include <windows.h>
+
+static inline void zov_init_ctype_locale(void) {
+    setlocale(LC_CTYPE, "");
+}
+
+static inline int zov_locale_uses_unicode_quotes(void) {
+    return GetACP() == 65001 || GetConsoleOutputCP() == 65001;
+}
+#else
+#include <langinfo.h>
+#include <strings.h>
 
 static inline void zov_init_ctype_locale(void) {
     setlocale(LC_CTYPE, "");
@@ -20,6 +32,7 @@ static inline int zov_locale_uses_unicode_quotes(void) {
     return codeset != NULL
         && (strcasecmp(codeset, "UTF-8") == 0 || strcasecmp(codeset, "UTF8") == 0);
 }
+#endif
 
 static inline size_t zov_printable_utf8_length(const char *text, size_t length) {
     if (!zov_locale_uses_unicode_quotes() || length == 0) {

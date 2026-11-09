@@ -3,13 +3,94 @@
 
 #include <errno.h>
 #include <limits.h>
-#include <pwd.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
 #include <time.h>
+
+#if defined(_WIN32)
+#include <windows.h>
+#ifndef USER_PROCESS
+#define USER_PROCESS 7
+#endif
+#ifndef INIT_PROCESS
+#define INIT_PROCESS 5
+#endif
+#ifndef LOGIN_PROCESS
+#define LOGIN_PROCESS 6
+#endif
+#ifndef DEAD_PROCESS
+#define DEAD_PROCESS 8
+#endif
+#ifndef BOOT_TIME
+#define BOOT_TIME 2
+#endif
+#ifndef NEW_TIME
+#define NEW_TIME 3
+#endif
+#ifndef OLD_TIME
+#define OLD_TIME 4
+#endif
+#ifndef RUN_LVL
+#define RUN_LVL 1
+#endif
+
+static inline void zov_utmpx_start(void) {}
+static inline void zov_utmpx_end(void) {}
+static inline int zov_utmpx_next_entry(
+    int *ut_type, int64_t *tv_sec, int *pid,
+    char *user, size_t user_sz,
+    char *line, size_t line_sz,
+    char *id, size_t id_sz,
+    char *host, size_t host_sz,
+    int *runlevel
+) {
+    (void)ut_type; (void)tv_sec; (void)pid;
+    (void)user; (void)user_sz; (void)line; (void)line_sz;
+    (void)id; (void)id_sz; (void)host; (void)host_sz; (void)runlevel;
+    return 0;
+}
+static inline int zov_utmpx_last_term(void) { return 0; }
+static inline int zov_utmpx_last_exit(void) { return 0; }
+static inline int zov_utmp_type_user(void) { return USER_PROCESS; }
+static inline int zov_utmp_type_boot(void) { return BOOT_TIME; }
+static inline int zov_utmp_type_runlvl(void) { return RUN_LVL; }
+static inline int zov_utmp_type_login(void) { return LOGIN_PROCESS; }
+static inline int zov_utmp_type_init(void) { return INIT_PROCESS; }
+static inline int zov_utmp_type_dead(void) { return DEAD_PROCESS; }
+static inline int zov_utmp_type_old_time(void) { return OLD_TIME; }
+static inline int zov_utmp_type_new_time(void) { return NEW_TIME; }
+static inline void zov_utmpx_format_time(int64_t sec, char *buf, size_t buflen) {
+    (void)sec;
+    if (buflen > 0) buf[0] = '\0';
+}
+static inline void zov_utmpx_device_status(const char *line, char *mesg_out, char *idle_buf, size_t idle_sz) {
+    (void)line;
+    if (mesg_out) *mesg_out = '?';
+    if (idle_sz > 0) { strncpy(idle_buf, "old", idle_sz); idle_buf[idle_sz - 1] = '\0'; }
+}
+static inline void zov_pinky_tty_info(const char *line, int64_t logged, int show_idle, char *tty_buf, size_t tty_sz, char *idle_buf, size_t idle_sz) {
+    (void)logged; (void)show_idle;
+    if (idle_sz > 0) idle_buf[0] = '\0';
+    if (tty_sz > 0) snprintf(tty_buf, tty_sz, "%s", line);
+}
+static inline int zov_get_user_gecos(const char *user, char *gecos_buf, size_t gecos_sz, char *dir_buf, size_t dir_sz, char *shell_buf, size_t shell_sz) {
+    (void)user;
+    if (gecos_buf && gecos_sz > 0) gecos_buf[0] = '\0';
+    if (dir_buf && dir_sz > 0) {
+        const char *h = getenv("USERPROFILE");
+        snprintf(dir_buf, dir_sz, "%s", h ? h : "C:\\");
+    }
+    if (shell_buf && shell_sz > 0) {
+        const char *c = getenv("COMSPEC");
+        snprintf(shell_buf, shell_sz, "%s", c ? c : "cmd.exe");
+    }
+    return 1;
+}
+#else
+#include <pwd.h>
 #include <unistd.h>
 #include <utmpx.h>
 
@@ -196,5 +277,6 @@ static inline int zov_get_user_gecos(const char *user, char *gecos_buf, size_t g
     }
     return 1;
 }
+#endif
 
 #endif

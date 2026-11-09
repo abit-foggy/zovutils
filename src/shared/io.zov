@@ -7,6 +7,11 @@ use <platform_io.h> as platform_io;
 
 export type StreamError = !i32;
 
+export fn init_platform() void = {
+    platform_io::zov_init_stdio_binary();
+    platform_io::zov_init_windows_console();
+};
+
 export fn openread(path: str) nullable *c::FILE = {
     return c::fopen(path, "rb");
 };

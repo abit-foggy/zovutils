@@ -4,6 +4,16 @@
 #include <errno.h>
 #include <stdio.h>
 #include <string.h>
+
+#if defined(_WIN32)
+#ifndef ENOTTY
+#define ENOTTY 25
+#endif
+static inline int zov_tcgetattr(int fd, void *termios_buf, size_t *termios_sz, unsigned long *speed_out) {
+    (void)fd; (void)termios_buf; (void)termios_sz; (void)speed_out;
+    return ENOTTY;
+}
+#else
 #include <termios.h>
 #include <unistd.h>
 
@@ -22,5 +32,6 @@ static inline int zov_tcgetattr(int fd, void *termios_buf, size_t *termios_sz, u
     }
     return 0;
 }
+#endif
 
 #endif

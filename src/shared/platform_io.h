@@ -6,7 +6,42 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#if defined(_WIN32)
+#include <io.h>
+#include <windows.h>
+#include <direct.h>
+#else
 #include <unistd.h>
+#endif
+
+#if defined(_WIN32)
+static inline void zov_init_stdio_binary(void) {
+    _setmode(_fileno(stdin), _O_BINARY);
+    _setmode(_fileno(stdout), _O_BINARY);
+    _setmode(_fileno(stderr), _O_BINARY);
+}
+
+static inline void zov_init_windows_console(void) {
+    HANDLE hOut = GetStdHandle(STD_OUTPUT_HANDLE);
+    if (hOut != INVALID_HANDLE_VALUE && hOut != NULL) {
+        DWORD dwMode = 0;
+        if (GetConsoleMode(hOut, &dwMode)) {
+            SetConsoleMode(hOut, dwMode | 0x0004 /* ENABLE_VIRTUAL_TERMINAL_PROCESSING */);
+        }
+    }
+    HANDLE hErr = GetStdHandle(STD_ERROR_HANDLE);
+    if (hErr != INVALID_HANDLE_VALUE && hErr != NULL) {
+        DWORD dwMode = 0;
+        if (GetConsoleMode(hErr, &dwMode)) {
+            SetConsoleMode(hErr, dwMode | 0x0004 /* ENABLE_VIRTUAL_TERMINAL_PROCESSING */);
+        }
+    }
+}
+#else
+static inline void zov_init_stdio_binary(void) {}
+static inline void zov_init_windows_console(void) {}
+#endif
 
 /* libc hides O_DIRECT under strict POSIX feature-test macros. */
 #if defined(__linux__) && !defined(O_DIRECT)
@@ -18,6 +53,9 @@
 #endif
 
 static inline void *zov_alloc_read_buffer(void) {
+#if defined(_WIN32)
+    return _aligned_malloc(65536, 65536);
+#else
     void *buffer = NULL;
     /* Direct-I/O descriptors can require both the address and size aligned. */
     int error = posix_memalign(&buffer, 65536, 65536);
@@ -26,6 +64,7 @@ static inline void *zov_alloc_read_buffer(void) {
         return NULL;
     }
     return buffer;
+#endif
 }
 
 static inline void *zov_alloc_write_buffer(void) {
@@ -109,7 +148,11 @@ static inline int zov_write_output(FILE *output, const void *buffer, size_t leng
 }
 
 static inline void zov_free_read_buffer(void *buffer) {
+#if defined(_WIN32)
+    _aligned_free(buffer);
+#else
     free(buffer);
+#endif
 }
 
 static inline void zov_set_unbuffered(FILE *fp) {
@@ -155,7 +198,11 @@ static inline int zov_wc_newline_backend(void) {
 }
 
 static inline int zov_fseeko(FILE *fp, int64_t offset, int whence) {
+#if defined(_WIN32)
+    return _fseeki64(fp, offset, whence);
+#else
     return fseeko(fp, (off_t)offset, whence);
+#endif
 }
 
 #endif
