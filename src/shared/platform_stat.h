@@ -417,10 +417,10 @@ static inline int zov_du_stat(const char *path, int follow, uint64_t *size_out, 
     return 0;
 }
 
-static inline const char *zov_get_username(uint32_t uid) {
+static inline char *zov_get_username(uint32_t uid) {
 #if defined(_WIN32)
     (void)uid;
-    const char *u = getenv("USERNAME");
+    char *u = getenv("USERNAME");
     return u ? u : "user";
 #else
     struct passwd *pw = getpwuid((uid_t)uid);
@@ -428,7 +428,7 @@ static inline const char *zov_get_username(uint32_t uid) {
 #endif
 }
 
-static inline const char *zov_get_groupname(uint32_t gid) {
+static inline char *zov_get_groupname(uint32_t gid) {
 #if defined(_WIN32)
     (void)gid;
     return "Users";
@@ -529,7 +529,7 @@ static inline void *zov_opendir(const char *path) {
     return (void *)opendir(path);
 }
 
-static inline const char *zov_readdir(void *dir) {
+static inline char *zov_readdir(void *dir) {
     struct dirent *ent = readdir((DIR *)dir);
     if (!ent) return NULL;
     return ent->d_name;

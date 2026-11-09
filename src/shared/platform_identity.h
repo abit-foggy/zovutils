@@ -23,13 +23,13 @@
 #if defined(_WIN32)
 #define ZOV_UNAME_OS "Windows_NT"
 
-static inline const char *zov_uname_processor(void) {
-    const char *arch = getenv("PROCESSOR_ARCHITECTURE");
+static inline char *zov_uname_processor(void) {
+    char *arch = getenv("PROCESSOR_ARCHITECTURE");
     return arch ? arch : "x86_64";
 }
 
-static inline const char *zov_uname_os(void) {
-    return ZOV_UNAME_OS;
+static inline char *zov_uname_os(void) {
+    return (char *)ZOV_UNAME_OS;
 }
 
 static inline uint32_t zov_getuid(void) { return 1000; }
@@ -37,15 +37,15 @@ static inline uint32_t zov_geteuid(void) { return 1000; }
 static inline uint32_t zov_getgid(void) { return 1000; }
 static inline uint32_t zov_getegid(void) { return 1000; }
 
-static inline const char *zov_user_name(uint32_t uid) {
+static inline char *zov_user_name(uint32_t uid) {
     (void)uid;
-    const char *u = getenv("USERNAME");
+    char *u = getenv("USERNAME");
     return u ? u : "user";
 }
 
-static inline const char *zov_group_name(uint32_t gid) {
+static inline char *zov_group_name(uint32_t gid) {
     (void)gid;
-    return "Users";
+    return (char *)"Users";
 }
 
 static inline int zov_get_uname_fields(
@@ -88,29 +88,29 @@ static inline int zov_get_current_groups(uint32_t *groups_out, int max_groups) {
 #include <mach-o/arch.h>
 #include <sys/sysctl.h>
 
-static inline const char *zov_uname_processor(void) {
+static inline char *zov_uname_processor(void) {
     cpu_type_t cputype;
     size_t size = sizeof(cputype);
     if (sysctlbyname("hw.cputype", &cputype, &size, NULL, 0) == 0) {
         const NXArchInfo *ai = NXGetArchInfoFromCpuType(cputype, CPU_SUBTYPE_MULTIPLE);
         if (ai && ai->name) {
-            if (strncmp(ai->name, "arm", 3) == 0) return "arm";
-            if (strncmp(ai->name, "x86", 3) == 0 || strncmp(ai->name, "i386", 4) == 0) return "i386";
-            return ai->name;
+            if (strncmp(ai->name, "arm", 3) == 0) return (char *)"arm";
+            if (strncmp(ai->name, "x86", 3) == 0 || strncmp(ai->name, "i386", 4) == 0) return (char *)"i386";
+            return (char *)ai->name;
         }
     }
 #if defined(__aarch64__) || defined(__arm64__) || defined(__arm__)
-    return "arm";
+    return (char *)"arm";
 #elif defined(__x86_64__) || defined(__i386__)
-    return "i386";
+    return (char *)"i386";
 #else
-    return "unknown";
+    return (char *)"unknown";
 #endif
 }
 #define ZOV_UNAME_OS "Darwin"
 
-static inline const char *zov_uname_os(void) {
-    return ZOV_UNAME_OS;
+static inline char *zov_uname_os(void) {
+    return (char *)ZOV_UNAME_OS;
 }
 
 static inline uint32_t zov_getuid(void) { return (uint32_t)getuid(); }
@@ -118,12 +118,12 @@ static inline uint32_t zov_geteuid(void) { return (uint32_t)geteuid(); }
 static inline uint32_t zov_getgid(void) { return (uint32_t)getgid(); }
 static inline uint32_t zov_getegid(void) { return (uint32_t)getegid(); }
 
-static inline const char *zov_user_name(uint32_t uid) {
+static inline char *zov_user_name(uint32_t uid) {
     struct passwd *p = getpwuid((uid_t)uid);
     return p ? p->pw_name : NULL;
 }
 
-static inline const char *zov_group_name(uint32_t gid) {
+static inline char *zov_group_name(uint32_t gid) {
     struct group *p = getgrgid((gid_t)gid);
     return p ? p->gr_name : NULL;
 }
@@ -185,11 +185,11 @@ static inline int zov_get_current_groups(uint32_t *groups_out, int max_groups) {
     return count;
 }
 #else
-static inline const char *zov_uname_processor(void) { return "unknown"; }
+static inline char *zov_uname_processor(void) { return (char *)"unknown"; }
 #define ZOV_UNAME_OS "GNU/Linux"
 
-static inline const char *zov_uname_os(void) {
-    return ZOV_UNAME_OS;
+static inline char *zov_uname_os(void) {
+    return (char *)ZOV_UNAME_OS;
 }
 
 static inline uint32_t zov_getuid(void) { return (uint32_t)getuid(); }
@@ -197,12 +197,12 @@ static inline uint32_t zov_geteuid(void) { return (uint32_t)geteuid(); }
 static inline uint32_t zov_getgid(void) { return (uint32_t)getgid(); }
 static inline uint32_t zov_getegid(void) { return (uint32_t)getegid(); }
 
-static inline const char *zov_user_name(uint32_t uid) {
+static inline char *zov_user_name(uint32_t uid) {
     struct passwd *p = getpwuid((uid_t)uid);
     return p ? p->pw_name : NULL;
 }
 
-static inline const char *zov_group_name(uint32_t gid) {
+static inline char *zov_group_name(uint32_t gid) {
     struct group *p = getgrgid((gid_t)gid);
     return p ? p->gr_name : NULL;
 }

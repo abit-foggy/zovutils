@@ -577,17 +577,17 @@ static inline int zov_timeout_parse_signal(const char *s) {
     return *e || n <= 0 || n >= NSIG ? -1 : (int)n;
 }
 
-static inline const char *zov_timeout_signal_name(int sig) {
+static inline char *zov_timeout_signal_name(int sig) {
     switch (sig) {
-        case SIGTERM: return "TERM";
-        case SIGKILL: return "KILL";
-        case SIGINT: return "INT";
-        case SIGHUP: return "HUP";
-        case SIGQUIT: return "QUIT";
-        case SIGALRM: return "ALRM";
-        case SIGUSR1: return "USR1";
-        case SIGUSR2: return "USR2";
-        default: return "signal";
+        case SIGTERM: return (char *)"TERM";
+        case SIGKILL: return (char *)"KILL";
+        case SIGINT: return (char *)"INT";
+        case SIGHUP: return (char *)"HUP";
+        case SIGQUIT: return (char *)"QUIT";
+        case SIGALRM: return (char *)"ALRM";
+        case SIGUSR1: return (char *)"USR1";
+        case SIGUSR2: return (char *)"USR2";
+        default: return (char *)"signal";
     }
 }
 
